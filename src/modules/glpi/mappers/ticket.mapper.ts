@@ -36,6 +36,11 @@ export interface DomainTicket {
   dueDate: string | null;
   solvedAt: string | null;
   closedAt: string | null;
+  isDeleted: boolean;
+}
+
+export function isActiveTicket(ticket: DomainTicket): boolean {
+  return !ticket.isDeleted;
 }
 
 export class TicketMapper {
@@ -49,13 +54,14 @@ export class TicketMapper {
       description: TicketMapper.stripHtml(raw.content ?? null),
       categoryId: raw.itilcategories_id ?? null,
       locationId: raw.locations_id ?? null,
-      requesterId: opts.requesterId ?? raw.users_id_recipient ?? null,
+      requesterId: opts.requesterId ?? null,
       technicianId: opts.technicianId ?? null,
       createdAt: raw.date ?? null,
       updatedAt: raw.date_mod ?? null,
       dueDate: raw.time_to_resolve ?? null,
       solvedAt: raw.solvedate ?? null,
       closedAt: raw.closedate ?? null,
+      isDeleted: raw.is_deleted === 1,
     };
   }
 

@@ -87,6 +87,7 @@ export interface GlpiTicketRaw {
   solvedate?: string | null;
   time_to_resolve?: string | null;
   entities_id?: number;
+  is_deleted?: number | null;
 }
 
 export interface GlpiSearchResult<T = unknown> {

@@ -1,6 +1,6 @@
 ﻿import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
-import { IsBoolean, IsEnum, IsOptional, IsString } from "class-validator";
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Min } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
 import { TICKET_STATUS, type TicketStatus } from "../domain/ticket-status";
 import { TICKET_TYPE, type TicketType } from "../domain/ticket-type";
@@ -33,5 +33,14 @@ export class ListTicketsQueryDto extends PaginationDto {
   @ApiPropertyOptional({ type: Number, example: 47 })
   @IsOptional()
   @Type(() => Number)
+  @IsInt()
+  @Min(1)
   technicianId?: number;
+
+  @ApiPropertyOptional({ type: Number, example: 12, description: "Filter by ticket location (sede)" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  locationId?: number;
 }

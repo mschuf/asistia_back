@@ -4,7 +4,7 @@ import {
   GLPI_ENDPOINTS,
   GLPI_TICKET_USER_TYPE,
 } from "../glpi.constants";
-import { TicketMapper, type DomainTicket } from "../mappers/ticket.mapper";
+import { isActiveTicket, TicketMapper, type DomainTicket } from "../mappers/ticket.mapper";
 import type { GlpiTicketRaw } from "../glpi.types";
 
 export interface ListTicketsFilter {
@@ -12,6 +12,9 @@ export interface ListTicketsFilter {
   type?: number;
   requesterId?: number;
   technicianId?: number;
+  locationId?: number;
+  createdFrom?: string;
+  createdTo?: string;
   search?: string;
   page: number;
   limit: number;
@@ -20,6 +23,11 @@ export interface ListTicketsFilter {
 export interface ListTicketsResult {
   items: DomainTicket[];
   total: number;
+}
+
+export interface ListTicketsOptions {
+  /** Solicitante/técnico vía Ticket_User. Desactivar en métricas agregadas. */
+  includeActors?: boolean;
 }
 
 export interface CreateTicketInput {
@@ -35,11 +43,18 @@ export interface CreateTicketInput {
   technicians_id?: number;
 }
 
+const GLPI_REQUEST_CONCURRENCY = 6;
+
 @Injectable()
 export class TicketsGlpiRepository {
   constructor(private readonly glpi: GlpiClient) {}
 
-  async list(sessionKey: string, filter: ListTicketsFilter): Promise<ListTicketsResult> {
+  async list(
+    sessionKey: string,
+    filter: ListTicketsFilter,
+    options: ListTicketsOptions = {},
+  ): Promise<ListTicketsResult> {
+    const includeActors = options.includeActors ?? true;
     let ticketIds: number[] | null = null;
 
     if (filter.technicianId !== undefined) {
@@ -65,12 +80,13 @@ export class TicketsGlpiRepository {
     let totalFromHeader: number | null = null;
 
     if (ticketIds !== null) {
-      items = await this.fetchTicketsByIds(sessionKey, ticketIds);
+      items = await this.fetchTicketsByIdsInternal(sessionKey, ticketIds);
     } else {
       const start = (filter.page - 1) * filter.limit;
       const end = start + filter.limit - 1;
 
       const query: Record<string, string | number | boolean | undefined> = {
+        is_deleted: 0,
         range: `${start}-${end}`,
         expand_dropdowns: false,
         with_logs: false,
@@ -100,19 +116,6 @@ export class TicketsGlpiRepository {
         TicketMapper.toDomain(raw),
       );
       totalFromHeader = TicketsGlpiRepository.parseTotal(response.headers["content-range"]);
-
-      const links = await this.fetchTicketUsersBatch(
-        sessionKey,
-        items.map((ticket) => ticket.id),
-      );
-      items = items.map((ticket) => {
-        const link = links.get(ticket.id);
-        return {
-          ...ticket,
-          requesterId: link?.requesterId ?? ticket.requesterId,
-          technicianId: link?.technicianId ?? ticket.technicianId,
-        };
-      });
     }
 
     items = TicketsGlpiRepository.applyListFilters(items, filter);
@@ -125,9 +128,12 @@ export class TicketsGlpiRepository {
     const total = totalFromHeader ?? items.length;
     const start = (filter.page - 1) * filter.limit;
     const paginated = ticketIds !== null ? items.slice(start, start + filter.limit) : items;
+    const resultItems = includeActors
+      ? await this.attachTicketActors(sessionKey, paginated)
+      : paginated;
 
     return {
-      items: paginated,
+      items: resultItems,
       total: ticketIds !== null ? items.length : total,
     };
   }
@@ -140,6 +146,7 @@ export class TicketsGlpiRepository {
         sessionKey,
       });
       const ticket = TicketMapper.toDomain(response.data);
+      if (!isActiveTicket(ticket)) return null;
       const links = await this.fetchTicketUsers(sessionKey, id);
       return {
         ...ticket,
@@ -155,29 +162,22 @@ export class TicketsGlpiRepository {
     sessionKey: string,
     ticketId: number,
   ): Promise<{ requesterId: number | null; technicianId: number | null }> {
-    const response = await this.glpi.request<
-      Array<{ tickets_id?: number; users_id?: number; type?: number }>
-    >({
-      method: "GET",
-      path: GLPI_ENDPOINTS.TICKET_USER,
-      sessionKey,
-      query: { searchText: `tickets_id:${ticketId}`, range: "0-49" },
-    });
-    const list = Array.isArray(response.data) ? response.data : [];
-
-    let requesterId: number | null = null;
-    let technicianId: number | null = null;
-
-    for (const entry of list) {
-      if (entry.tickets_id !== ticketId) continue;
-      if (entry.type === GLPI_TICKET_USER_TYPE.REQUESTER && !requesterId) {
-        requesterId = entry.users_id ?? null;
-      }
-      if (entry.type === GLPI_TICKET_USER_TYPE.ASSIGNED && !technicianId) {
-        technicianId = entry.users_id ?? null;
-      }
+    try {
+      const response = await this.glpi.request<
+        Array<{ tickets_id?: number; users_id?: number; type?: number | string }>
+      >({
+        method: "GET",
+        path: `${GLPI_ENDPOINTS.TICKET}/${ticketId}/${GLPI_ENDPOINTS.TICKET_USER}`,
+        sessionKey,
+        query: { range: "0-49" },
+      });
+      return TicketsGlpiRepository.parseTicketUserLinks(
+        Array.isArray(response.data) ? response.data : [],
+        ticketId,
+      );
+    } catch {
+      return { requesterId: null, technicianId: null };
     }
-    return { requesterId, technicianId };
   }
 
   async create(sessionKey: string, input: CreateTicketInput): Promise<DomainTicket> {
@@ -218,6 +218,18 @@ export class TicketsGlpiRepository {
         input: { id: ticketId, status: statusGlpi },
       },
     });
+  }
+
+  async listAssignedTicketIds(sessionKey: string, technicianId: number): Promise<number[]> {
+    return this.listTicketIdsForUser(
+      sessionKey,
+      technicianId,
+      GLPI_TICKET_USER_TYPE.ASSIGNED,
+    );
+  }
+
+  async fetchTicketsByIds(sessionKey: string, ticketIds: number[]): Promise<DomainTicket[]> {
+    return this.fetchTicketsByIdsInternal(sessionKey, ticketIds);
   }
 
   async assignTechnician(
@@ -265,14 +277,16 @@ export class TicketsGlpiRepository {
     ];
   }
 
-  private async fetchTicketsByIds(
+  private async fetchTicketsByIdsInternal(
     sessionKey: string,
     ticketIds: number[],
   ): Promise<DomainTicket[]> {
     if (ticketIds.length === 0) return [];
 
-    const rawTickets = await Promise.all(
-      ticketIds.map(async (ticketId) => {
+    const rawTickets = await TicketsGlpiRepository.runWithConcurrency(
+      ticketIds,
+      GLPI_REQUEST_CONCURRENCY,
+      async (ticketId) => {
         try {
           const response = await this.glpi.request<GlpiTicketRaw>({
             method: "GET",
@@ -283,10 +297,20 @@ export class TicketsGlpiRepository {
         } catch {
           return null;
         }
-      }),
+      },
     );
 
-    const tickets = rawTickets.filter((ticket): ticket is DomainTicket => ticket !== null);
+    return rawTickets.filter(
+      (ticket): ticket is DomainTicket => ticket !== null && isActiveTicket(ticket),
+    );
+  }
+
+  private async attachTicketActors(
+    sessionKey: string,
+    tickets: DomainTicket[],
+  ): Promise<DomainTicket[]> {
+    if (tickets.length === 0) return [];
+
     const links = await this.fetchTicketUsersBatch(
       sessionKey,
       tickets.map((ticket) => ticket.id),
@@ -307,39 +331,73 @@ export class TicketsGlpiRepository {
     ticketIds: number[],
   ): Promise<Map<number, { requesterId: number | null; technicianId: number | null }>> {
     const result = new Map<number, { requesterId: number | null; technicianId: number | null }>();
-    const idSet = new Set(ticketIds);
-
-    for (const ticketId of ticketIds) {
-      result.set(ticketId, { requesterId: null, technicianId: null });
-    }
 
     if (ticketIds.length === 0) return result;
 
-    const response = await this.glpi.request<
-      Array<{ tickets_id?: number; users_id?: number; type?: number }>
-    >({
-      method: "GET",
-      path: GLPI_ENDPOINTS.TICKET_USER,
-      sessionKey,
-      query: { range: "0-9999" },
-    });
+    const links = await TicketsGlpiRepository.runWithConcurrency(
+      ticketIds,
+      GLPI_REQUEST_CONCURRENCY,
+      async (ticketId) => ({
+        ticketId,
+        actors: await this.fetchTicketUsers(sessionKey, ticketId),
+      }),
+    );
 
-    for (const entry of Array.isArray(response.data) ? response.data : []) {
-      const ticketId = Number(entry.tickets_id ?? 0);
-      if (!idSet.has(ticketId)) continue;
-
-      const links = result.get(ticketId);
-      if (!links) continue;
-
-      if (entry.type === GLPI_TICKET_USER_TYPE.REQUESTER && !links.requesterId) {
-        links.requesterId = entry.users_id ?? null;
-      }
-      if (entry.type === GLPI_TICKET_USER_TYPE.ASSIGNED && !links.technicianId) {
-        links.technicianId = entry.users_id ?? null;
-      }
+    for (const entry of links) {
+      result.set(entry.ticketId, entry.actors);
     }
 
     return result;
+  }
+
+  private static async runWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    worker: (item: T) => Promise<R>,
+  ): Promise<R[]> {
+    if (items.length === 0) return [];
+
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const poolSize = Math.max(1, Math.min(limit, items.length));
+
+    const runners = Array.from({ length: poolSize }, async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= items.length) return;
+        results[index] = await worker(items[index]);
+      }
+    });
+
+    await Promise.all(runners);
+    return results;
+  }
+
+  private static parseTicketUserLinks(
+    entries: Array<{ tickets_id?: number; users_id?: number; type?: number | string }>,
+    ticketId: number,
+  ): { requesterId: number | null; technicianId: number | null } {
+    let requesterId: number | null = null;
+    let technicianId: number | null = null;
+
+    for (const entry of entries) {
+      const entryTicketId = Number(entry.tickets_id ?? ticketId);
+      if (entryTicketId !== ticketId) continue;
+
+      const userId = Number(entry.users_id ?? 0);
+      if (!Number.isFinite(userId) || userId <= 0) continue;
+
+      const actorType = Number(entry.type);
+      if (actorType === GLPI_TICKET_USER_TYPE.REQUESTER && !requesterId) {
+        requesterId = userId;
+      }
+      if (actorType === GLPI_TICKET_USER_TYPE.ASSIGNED && !technicianId) {
+        technicianId = userId;
+      }
+    }
+
+    return { requesterId, technicianId };
   }
 
   private static applyListFilters(
@@ -358,6 +416,27 @@ export class TicketsGlpiRepository {
         (ticket) => TicketMapper.mapTypeToGlpi(ticket.type) === filter.type,
       );
     }
+    if (filter.locationId !== undefined) {
+      filtered = filtered.filter((ticket) => ticket.locationId === filter.locationId);
+    }
+    if (filter.createdFrom) {
+      const from = Date.parse(filter.createdFrom);
+      if (Number.isFinite(from)) {
+        filtered = filtered.filter((ticket) => {
+          const created = Date.parse(ticket.createdAt ?? "");
+          return Number.isFinite(created) && created >= from;
+        });
+      }
+    }
+    if (filter.createdTo) {
+      const to = Date.parse(filter.createdTo);
+      if (Number.isFinite(to)) {
+        filtered = filtered.filter((ticket) => {
+          const created = Date.parse(ticket.createdAt ?? "");
+          return Number.isFinite(created) && created <= to;
+        });
+      }
+    }
     if (filter.search) {
       const needle = filter.search.toLowerCase();
       filtered = filtered.filter(
@@ -367,7 +446,11 @@ export class TicketsGlpiRepository {
       );
     }
 
-    return filtered;
+    return TicketsGlpiRepository.withoutTrashed(filtered);
+  }
+
+  private static withoutTrashed(items: DomainTicket[]): DomainTicket[] {
+    return items.filter(isActiveTicket);
   }
 
   private static parseTotal(contentRange?: string): number | null {

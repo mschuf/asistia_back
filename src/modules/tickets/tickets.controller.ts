@@ -26,6 +26,7 @@ import {
   TicketListResponseDto,
   TicketResponseDto,
 } from "./dto/ticket.response.dto";
+import { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
 
 @ApiTags("tickets")
 @ApiBearerAuth()
@@ -43,6 +44,17 @@ export class TicketsController {
     @Query() query: ListTicketsQueryDto,
   ): Promise<TicketListResponseDto> {
     return this.ticketsService.list(user, query);
+  }
+
+  @Get("metrics")
+  @Roles("technician")
+  @ApiOperation({ summary: "Aggregated metrics for technicians (TI dashboard)" })
+  @ApiResponse({ status: 200, type: TicketMetricsResponseDto })
+  @ResponseMessage("Ticket metrics retrieved")
+  async metrics(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<TicketMetricsResponseDto> {
+    return this.ticketsService.getMetrics(user);
   }
 
   @Get(":id")

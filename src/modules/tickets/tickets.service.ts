@@ -8,7 +8,7 @@ import { CatalogService } from "../catalog/catalog.service";
 import type { DomainCategory } from "../glpi/mappers/category.mapper";
 import type { DomainLocation } from "../glpi/mappers/location.mapper";
 import type { DomainUser } from "../glpi/mappers/user.mapper";
-import { TicketMapper, type DomainTicket } from "../glpi/mappers/ticket.mapper";
+import { isActiveTicket, TicketMapper, type DomainTicket } from "../glpi/mappers/ticket.mapper";
 import {
   TICKET_STATUS_LABELS,
   TICKET_STATUS,
@@ -38,6 +38,17 @@ import type {
   TicketListResponseDto,
   TicketResponseDto,
 } from "./dto/ticket.response.dto";
+import type { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
+import {
+  computeMyTicketsMetrics,
+  computeSiteMetrics,
+  computeTypeMetrics,
+  isTicketOpen,
+  OPEN_STATUSES,
+} from "./domain/ticket-metrics.helpers";
+
+/** Límite v1 para pool de abiertos globales (sede + gráfico). TODO: búsqueda GLPI agregada. */
+const METRICS_OPEN_POOL_LIMIT = 500;
 
 @Injectable()
 export class TicketsService {
@@ -65,6 +76,90 @@ export class TicketsService {
     return this.bootstrap.withCatalogBootstrapSession(fn);
   }
 
+  async getMetrics(user: AuthenticatedUser): Promise<TicketMetricsResponseDto> {
+    if (user.role !== "technician") {
+      throw new BusinessException({
+        message: "Only technicians can access ticket metrics",
+        code: API_ERROR_CODE.FORBIDDEN,
+        status: HttpStatus.FORBIDDEN,
+      });
+    }
+
+    const openStatusGlpi = OPEN_STATUSES.map((status) =>
+      TicketMapper.mapStatusToGlpi(status),
+    );
+
+    const metricsListOptions = { includeActors: false } as const;
+
+    const [assignedTickets, openPoolResult, siteTickets, locations] = await this.asService(
+      async (key) => {
+        const assignedPromise = this.ticketsRepo
+          .listAssignedTicketIds(key, user.id)
+          .then((ids) => this.ticketsRepo.fetchTicketsByIds(key, ids));
+
+        const [assigned, openPool, siteResult, locs] = await Promise.all([
+          assignedPromise,
+          this.ticketsRepo.list(
+            key,
+            {
+              page: 1,
+              limit: METRICS_OPEN_POOL_LIMIT,
+              status: openStatusGlpi,
+            },
+            metricsListOptions,
+          ),
+          user.locationId != null
+            ? this.ticketsRepo.list(
+                key,
+                {
+                  page: 1,
+                  limit: METRICS_OPEN_POOL_LIMIT,
+                  locationId: user.locationId,
+                },
+                metricsListOptions,
+              )
+            : Promise.resolve({ items: [] as DomainTicket[], total: 0 }),
+          this.catalogService.listLocations(),
+        ]);
+
+        return [assigned, openPool.items, siteResult.items, locs] as const;
+      },
+    );
+
+    const myTickets = computeMyTicketsMetrics(assignedTickets);
+    const myIncidents = computeTypeMetrics(assignedTickets, "incident");
+    const myRequests = computeTypeMetrics(assignedTickets, "request");
+    const mySite =
+      user.locationId != null ? computeSiteMetrics(siteTickets) : null;
+
+    const locationNameById = new Map(locations.map((loc) => [loc.id, loc.name]));
+    const openByLocationMap = new Map<number, number>();
+
+    for (const ticket of openPoolResult.filter((t) => isActiveTicket(t) && isTicketOpen(t))) {
+      if (ticket.locationId == null) continue;
+      openByLocationMap.set(
+        ticket.locationId,
+        (openByLocationMap.get(ticket.locationId) ?? 0) + 1,
+      );
+    }
+
+    const openByLocation = [...openByLocationMap.entries()]
+      .map(([locationId, open]) => ({
+        locationId,
+        name: locationNameById.get(locationId) ?? `Sede #${locationId}`,
+        open,
+      }))
+      .sort((a, b) => b.open - a.open);
+
+    return {
+      myTickets,
+      mySite,
+      myIncidents,
+      myRequests,
+      openByLocation,
+    };
+  }
+
   async list(user: AuthenticatedUser, query: ListTicketsQueryDto): Promise<TicketListResponseDto> {
     const filter = {
       page: query.page ?? 1,
@@ -76,6 +171,7 @@ export class TicketsService {
       technicianId: query.assignedToMe
         ? user.id
         : query.technicianId ?? undefined,
+      locationId: query.locationId ?? undefined,
     };
 
     const result = await this.asService((key) => this.ticketsRepo.list(key, filter));
