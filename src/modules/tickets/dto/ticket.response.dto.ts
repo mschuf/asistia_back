@@ -1,0 +1,92 @@
+﻿import { ApiProperty } from "@nestjs/swagger";
+
+class TicketActorDto {
+  @ApiProperty({ example: 188, nullable: true })
+  id!: number | null;
+
+  @ApiProperty({ example: "Juan P├®rez", nullable: true })
+  name!: string | null;
+
+  @ApiProperty({ example: "jperez@empresa.com", nullable: true })
+  email!: string | null;
+}
+
+class TicketCategoryDto {
+  @ApiProperty({ example: 65 })
+  id!: number;
+
+  @ApiProperty({ example: "Software: Office, Windows, SAP, Aplicaciones" })
+  name!: string;
+}
+
+class TicketLocationDto {
+  @ApiProperty({ example: 12, nullable: true })
+  id!: number | null;
+
+  @ApiProperty({ example: "Casa Central", nullable: true })
+  name!: string | null;
+}
+
+export class TicketResponseDto {
+  @ApiProperty({ example: 10453 })
+  id!: number;
+
+  @ApiProperty({ enum: ["incident", "request"] })
+  type!: "incident" | "request";
+
+  @ApiProperty({
+    enum: ["new", "assigned", "planned", "waiting", "solved", "closed"],
+  })
+  status!: string;
+
+  @ApiProperty({
+    enum: ["very_low", "low", "medium", "high", "very_high"],
+  })
+  urgency!: string;
+
+  @ApiProperty({ example: "No puedo abrir Outlook" })
+  subject!: string;
+
+  @ApiProperty({ nullable: true })
+  description!: string | null;
+
+  @ApiProperty({ type: () => TicketCategoryDto, nullable: true })
+  category!: TicketCategoryDto | null;
+
+  @ApiProperty({ type: () => TicketLocationDto, nullable: true })
+  location!: TicketLocationDto | null;
+
+  @ApiProperty({ type: () => TicketActorDto })
+  requester!: TicketActorDto;
+
+  @ApiProperty({ type: () => TicketActorDto, nullable: true })
+  technician!: TicketActorDto | null;
+
+  @ApiProperty({ example: "2026-05-21T18:02:11Z", nullable: true })
+  createdAt!: string | null;
+
+  @ApiProperty({ example: "2026-05-21T18:02:11Z", nullable: true })
+  updatedAt!: string | null;
+}
+
+export class CreateTicketResponseDto extends TicketResponseDto {
+  @ApiProperty({
+    description: "Mail dispatch outcome for the side-effect.",
+    example: { sent: true, error: null },
+  })
+  mail!: { sent: boolean; error: string | null };
+}
+
+export class TicketListResponseDto {
+  @ApiProperty({ type: () => [TicketResponseDto] })
+  items!: TicketResponseDto[];
+
+  @ApiProperty({ example: 124 })
+  total!: number;
+
+  @ApiProperty({ example: 1 })
+  page!: number;
+
+  @ApiProperty({ example: 25 })
+  limit!: number;
+}

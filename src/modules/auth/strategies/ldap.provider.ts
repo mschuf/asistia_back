@@ -1,0 +1,216 @@
+﻿import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { Client } from "ldapts";
+import type { AppConfig } from "../../../config/configuration";
+import { BusinessException } from "../../../common/exceptions/business.exception";
+import { API_ERROR_CODE } from "../../../common/types/api-error-code";
+import type { IdentityProvider, IdentityResolution } from "./identity-provider.interface";
+
+@Injectable()
+export class LdapProvider implements IdentityProvider {
+  readonly name = "ldap";
+  private readonly logger = new Logger(LdapProvider.name);
+
+  constructor(private readonly config: ConfigService<AppConfig, true>) {}
+
+  async resolveFromRequest(): Promise<IdentityResolution | null> {
+    return null;
+  }
+
+  async resolveFromCredentials(
+    username: string,
+    password: string,
+  ): Promise<IdentityResolution | null> {
+    const url = this.config.get("auth.ldap.url", { infer: true });
+    const domain = this.config.get("auth.ldap.domain", { infer: true });
+    const baseDn = this.config.get("auth.ldap.baseDn", { infer: true });
+    const adminUser = this.config.get("auth.ldap.adminUser", { infer: true });
+    const adminPassword = this.config.get("auth.ldap.adminPassword", { infer: true });
+
+    this.logger.debug(
+      `[LDAP] resolveFromCredentials -> url=${url} domain=${domain} baseDn=${baseDn} ` +
+        `username='${username}' passwordLength=${password?.length ?? 0} ` +
+        `adminUserConfigured=${Boolean(adminUser)} adminPasswordConfigured=${Boolean(adminPassword)}`,
+    );
+
+    if (!url || !domain) {
+      this.logger.error(`[LDAP] missing configuration: url=${url} domain=${domain}`);
+      throw new BusinessException({
+        message: "LDAP is not configured",
+        code: API_ERROR_CODE.UNAUTHORIZED,
+        status: HttpStatus.SERVICE_UNAVAILABLE,
+      });
+    }
+
+    const client = new Client({
+      url,
+      tlsOptions: url.startsWith("ldaps://") ? { rejectUnauthorized: false } : undefined,
+    });
+
+    try {
+      const userPrincipalName = `${username}@${domain}`;
+      this.logger.debug(`[LDAP] binding as user '${userPrincipalName}' against ${url}`);
+
+      await client.bind(userPrincipalName, password);
+      this.logger.debug(`[LDAP] user bind OK for '${userPrincipalName}'`);
+      await client.unbind();
+
+      const resolution = await this.lookupDirectoryEntry(client, username, {
+        url,
+        domain,
+        baseDn,
+        adminUser,
+        adminPassword,
+      });
+      return resolution ?? { login: username, domain };
+    } catch (error) {
+      const err = error as { message?: string; code?: number; name?: string; stack?: string };
+      const message = err.message ?? "";
+      const code = err.code;
+      this.logger.error(
+        `[LDAP] bind/search threw -> name='${err.name}' code=${code} message='${message}'`,
+      );
+      if (err.stack) this.logger.debug(err.stack);
+
+      // AD sub-error 52e = invalid credentials (within LDAP result code 49).
+      const isInvalidCredentials =
+        message.includes("InvalidCredentialsError") ||
+        message.includes("data 52e") ||
+        code === 49;
+      if (isInvalidCredentials) {
+        throw new BusinessException({
+          message: "Invalid username or password",
+          code: API_ERROR_CODE.AUTH_INVALID_CREDENTIALS,
+          status: HttpStatus.UNAUTHORIZED,
+        });
+      }
+
+      // 0000202B / LDAP result code 10 = referral. The DC we hit is not authoritative
+      // for the user's domain. Recommend Global Catalog or a DC of the right domain.
+      const isReferral =
+        message.includes("0000202B") ||
+        message.includes("RefErr") ||
+        message.includes("ReferralError") ||
+        code === 10;
+      if (isReferral) {
+        this.logger.warn(
+          `[LDAP] AD returned a referral. The configured LDAP server (${url}) is not ` +
+            `authoritative for domain '${domain}'. Point LDAP_URL to a DC of that domain ` +
+            `or to the Global Catalog (port 3268 / 3269).`,
+        );
+        throw new BusinessException({
+          message:
+            "LDAP server is not authoritative for the user's domain. Configure LDAP_URL to a DC of '" +
+            domain +
+            "' or to the Global Catalog (port 3268).",
+          code: API_ERROR_CODE.UNAUTHORIZED,
+          status: HttpStatus.UNAUTHORIZED,
+        });
+      }
+
+      throw new BusinessException({
+        message: `Authentication failed: ${message || err.name || "unknown LDAP error"}`,
+        code: API_ERROR_CODE.UNAUTHORIZED,
+        status: HttpStatus.UNAUTHORIZED,
+      });
+    } finally {
+      try {
+        await client.unbind();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  async lookupEmailByLogin(login: string): Promise<string | null> {
+    const url = this.config.get("auth.ldap.url", { infer: true });
+    const domain = this.config.get("auth.ldap.domain", { infer: true });
+    const baseDn = this.config.get("auth.ldap.baseDn", { infer: true });
+    const adminUser = this.config.get("auth.ldap.adminUser", { infer: true });
+    const adminPassword = this.config.get("auth.ldap.adminPassword", { infer: true });
+
+    if (!url || !domain || !adminUser || !adminPassword || !baseDn) {
+      return null;
+    }
+
+    const client = new Client({
+      url,
+      tlsOptions: url.startsWith("ldaps://") ? { rejectUnauthorized: false } : undefined,
+    });
+
+    try {
+      const resolution = await this.lookupDirectoryEntry(client, login, {
+        url,
+        domain,
+        baseDn,
+        adminUser,
+        adminPassword,
+      });
+      return resolution?.email ?? null;
+    } catch (error) {
+      this.logger.warn(
+        `[LDAP] lookupEmailByLogin failed for '${login}': ${(error as Error).message}`,
+      );
+      return null;
+    } finally {
+      try {
+        await client.unbind();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private async lookupDirectoryEntry(
+    client: Client,
+    username: string,
+    config: {
+      url: string;
+      domain: string;
+      baseDn?: string;
+      adminUser?: string;
+      adminPassword?: string;
+    },
+  ): Promise<IdentityResolution | null> {
+    const { domain, baseDn, adminUser, adminPassword } = config;
+    const userPrincipalName = `${username}@${domain}`;
+
+    if (!adminUser || !adminPassword || !baseDn) {
+      this.logger.debug(
+        "[LDAP] skipping admin search (adminUser/adminPassword/baseDn missing); returning minimal resolution",
+      );
+      return { login: username, domain };
+    }
+
+    this.logger.debug(`[LDAP] binding as admin '${adminUser}@${domain}' to look up attributes`);
+    await client.bind(`${adminUser}@${domain}`, adminPassword);
+
+    const searchOptions = {
+      scope: "sub" as const,
+      filter: `(|(userPrincipalName=${userPrincipalName})(sAMAccountName=${username})(cn=${username}))`,
+      attributes: ["cn", "sAMAccountName", "userPrincipalName", "mail", "displayName"],
+    };
+
+    this.logger.debug(
+      `[LDAP] searching baseDn='${baseDn}' filter='${searchOptions.filter}'`,
+    );
+    const search = await client.search(baseDn, searchOptions);
+    const entry = search.searchEntries[0];
+    this.logger.debug(
+      `[LDAP] search returned ${search.searchEntries.length} entries; firstEntry=${
+        entry ? JSON.stringify(entry) : "null"
+      }`,
+    );
+
+    if (!entry) {
+      return { login: username, domain };
+    }
+
+    return {
+      login: String(entry.sAMAccountName ?? username),
+      domain,
+      email: typeof entry.mail === "string" ? entry.mail : null,
+      displayName: typeof entry.displayName === "string" ? entry.displayName : null,
+    };
+  }
+}
