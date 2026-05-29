@@ -57,6 +57,12 @@ const METRICS_ASSIGNED_OPEN_LIMIT = 9999;
 /** Máximo de tickets por página en el listado (historial). */
 const TICKETS_LIST_MAX_PAGE_SIZE = 15;
 
+/** Estados por defecto en Historial cuando no hay filtro explícito. */
+const DEFAULT_HISTORY_STATUSES: TicketStatus[] = [
+  TICKET_STATUS.ASSIGNED,
+  TICKET_STATUS.PLANNED,
+];
+
 @Injectable()
 export class TicketsService {
   private readonly logger = new Logger(TicketsService.name);
@@ -139,6 +145,55 @@ export class TicketsService {
       myIncidents,
       myRequests,
       openByLocation,
+    };
+  }
+
+  async listHistory(
+    user: AuthenticatedUser,
+    query: ListTicketsQueryDto,
+  ): Promise<TicketListResponseDto> {
+    const limit = Math.min(
+      Math.max(query.limit ?? TICKETS_LIST_MAX_PAGE_SIZE, 1),
+      TICKETS_LIST_MAX_PAGE_SIZE,
+    );
+    const trimmedSearch = query.search?.trim();
+    let statusFilter = TicketsService.resolveListStatusFilter(query);
+    if (!statusFilter && !trimmedSearch) {
+      statusFilter = DEFAULT_HISTORY_STATUSES.map((status) =>
+        TicketMapper.mapStatusToGlpi(status),
+      );
+    }
+
+    const filter = {
+      page: query.page ?? 1,
+      limit,
+      status: statusFilter,
+      type: query.type ? TicketMapper.mapTypeToGlpi(query.type) : undefined,
+      search: query.search,
+      requesterId: user.role === "technician" ? undefined : user.id,
+      technicianId:
+        user.role === "technician"
+          ? query.technicianId ?? user.id
+          : undefined,
+      locationId: query.locationId ?? undefined,
+    };
+
+    const result = await this.asService((key) =>
+      this.ticketsRepo.listHistoryPage(key, filter),
+    );
+
+    let items = result.items.filter(isActiveTicket);
+    if (user.role !== "technician") {
+      items = items.filter((ticket) => ticket.requesterId === user.id);
+    }
+
+    const enriched = await this.enrichTickets(items);
+
+    return {
+      items: enriched,
+      total: result.total,
+      page: filter.page,
+      limit: filter.limit,
     };
   }
 

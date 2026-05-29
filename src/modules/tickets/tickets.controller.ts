@@ -60,6 +60,17 @@ export class TicketsController {
     return this.ticketsService.getMetrics(user);
   }
 
+  @Get("history")
+  @ApiOperation({ summary: "Paginated ticket history for the current user (Historial tab)" })
+  @ApiResponse({ status: 200, type: TicketListResponseDto })
+  @ResponseMessage("Ticket history retrieved")
+  async history(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListTicketsQueryDto,
+  ): Promise<TicketListResponseDto> {
+    return this.ticketsService.listHistory(user, query);
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Get a ticket by id" })
   @ApiResponse({ status: 200, type: TicketResponseDto })

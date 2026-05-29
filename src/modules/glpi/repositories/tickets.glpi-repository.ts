@@ -70,6 +70,17 @@ const SCOPED_METRICS_FORCEDISPLAY = [
   GLPI_TICKET_SEARCH_FIELDS.TECHNICIAN,
   GLPI_TICKET_SEARCH_FIELDS.TITLE,
 ] as const;
+/** Columnas para Historial (endpoint dedicado, aislado de list/metrics). */
+const HISTORY_FORCEDISPLAY = [
+  GLPI_TICKET_SEARCH_FIELDS.ID,
+  GLPI_TICKET_SEARCH_FIELDS.STATUS,
+  GLPI_TICKET_SEARCH_FIELDS.LOCATION,
+  GLPI_TICKET_SEARCH_FIELDS.TYPE,
+  GLPI_TICKET_SEARCH_FIELDS.DATE_CREATION,
+  GLPI_TICKET_SEARCH_FIELDS.TECHNICIAN,
+  GLPI_TICKET_SEARCH_FIELDS.REQUESTER,
+  GLPI_TICKET_SEARCH_FIELDS.TITLE,
+] as const;
 
 interface ScopedMetricsSearchFilter {
   technicianId?: number;
@@ -358,6 +369,74 @@ export class TicketsGlpiRepository {
     return query;
   }
 
+  private static buildHistoryForcedisplayQuery(): Record<string, number> {
+    const query: Record<string, number> = {};
+    HISTORY_FORCEDISPLAY.forEach((field, index) => {
+      query[`forcedisplay[${index}]`] = field;
+    });
+    return query;
+  }
+
+  /** Búsqueda GLPI paginada exclusiva para Historial (no comparte list/metrics). */
+  private async searchHistoryTicketsPage(
+    sessionKey: string,
+    filter: ListTicketsFilter,
+    rangeStart: number,
+    rangeEnd: number,
+    fallbackTechnicianId?: number,
+  ): Promise<{ items: DomainTicket[]; total: number }> {
+    const response = await this.glpi.request<unknown>({
+      method: "GET",
+      path: `${GLPI_ENDPOINTS.SEARCH}/${GLPI_ENDPOINTS.TICKET}`,
+      sessionKey,
+      query: {
+        ...TicketsGlpiRepository.buildSearchCriteria(filter),
+        ...TicketsGlpiRepository.buildHistoryForcedisplayQuery(),
+        is_deleted: 0,
+        range: `${rangeStart}-${rangeEnd}`,
+        sort: GLPI_SEARCH_SORT_LAST_UPDATE,
+        order: "DESC",
+      },
+    });
+
+    const total = parseGlpiSearchTotal(response.data, response.headers["content-range"]);
+    const rows = parseGlpiSearchRows(response.data);
+    const items = rows
+      .map((row) =>
+        TicketsGlpiRepository.domainTicketFromSearchRow(row, fallbackTechnicianId),
+      )
+      .filter((ticket): ticket is DomainTicket => ticket !== null && isActiveTicket(ticket));
+
+    return { items, total };
+  }
+
+  /**
+   * Listado paginado del Historial vía una sola búsqueda GLPI por página.
+   */
+  async listHistoryPage(
+    sessionKey: string,
+    filter: ListTicketsFilter,
+    options: ListTicketsOptions = {},
+  ): Promise<ListTicketsResult> {
+    const includeActors = options.includeActors ?? true;
+    const start = (filter.page - 1) * filter.limit;
+    const end = start + filter.limit - 1;
+
+    const { items, total } = await this.searchHistoryTicketsPage(
+      sessionKey,
+      filter,
+      start,
+      end,
+      filter.technicianId,
+    );
+
+    const resultItems = includeActors
+      ? await this.attachTicketActors(sessionKey, items)
+      : items;
+
+    return { items: resultItems, total };
+  }
+
   /** Búsqueda GLPI aislada para Mi Sede y abiertos por sede (no alimenta otros cards). */
   private async searchScopedMetricsTicketsPage(
     sessionKey: string,
@@ -616,6 +695,12 @@ export class TicketsGlpiRepository {
       await this.applyTicketLocation(sessionKey, ticketId, input.locations_id);
     }
 
+    await this.touchTicketForHistorialIndex(
+      sessionKey,
+      ticketId,
+      input.status,
+      input.locations_id,
+    );
     await this.ensureTicketIndexedForActors(sessionKey, ticketId, input);
   }
 
@@ -841,7 +926,25 @@ export class TicketsGlpiRepository {
         actor.userId,
         actor.type,
         input.status,
+        input.locations_id,
       );
+    }
+  }
+
+  private async isTicketVisibleInActorSearch(
+    sessionKey: string,
+    ticketId: number,
+    userId: number,
+    actorType: number,
+  ): Promise<boolean> {
+    const actorField = TicketsGlpiRepository.resolveTicketActorSearchField(actorType);
+    if (actorField === null) return false;
+
+    try {
+      const fromSearch = await this.searchTicketIdsByActor(sessionKey, actorField, userId);
+      return fromSearch.includes(ticketId);
+    } catch {
+      return false;
     }
   }
 
@@ -851,6 +954,7 @@ export class TicketsGlpiRepository {
     userId: number,
     actorType: number,
     statusGlpi: number,
+    locationId?: number,
   ): Promise<void> {
     for (let attempt = 0; attempt < POST_CREATE_INDEX_ATTEMPTS; attempt += 1) {
       const links = await this.fetchTicketUsers(sessionKey, ticketId);
@@ -868,7 +972,13 @@ export class TicketsGlpiRepository {
       }
 
       const visibleIds = await this.listTicketIdsForUser(sessionKey, userId, actorType);
-      if (visibleIds.includes(ticketId)) {
+      const visibleInSearch = await this.isTicketVisibleInActorSearch(
+        sessionKey,
+        ticketId,
+        userId,
+        actorType,
+      );
+      if (visibleIds.includes(ticketId) || visibleInSearch) {
         return;
       }
 
@@ -877,21 +987,26 @@ export class TicketsGlpiRepository {
       }
     }
 
-    await this.touchTicketForReindex(sessionKey, ticketId, statusGlpi);
+    await this.touchTicketForHistorialIndex(sessionKey, ticketId, statusGlpi, locationId);
   }
 
-  private async touchTicketForReindex(
+  /** PUT combinado (status + sede) para alinear índices GLPI con guardar en la UI. */
+  private async touchTicketForHistorialIndex(
     sessionKey: string,
     ticketId: number,
     statusGlpi: number,
+    locationId?: number,
   ): Promise<void> {
+    const input: Record<string, unknown> = { id: ticketId, status: statusGlpi };
+    if (locationId !== undefined) {
+      input.locations_id = locationId;
+    }
+
     await this.glpi.request<unknown>({
       method: "PUT",
       path: `${GLPI_ENDPOINTS.TICKET}/${ticketId}`,
       sessionKey,
-      body: {
-        input: { id: ticketId, status: statusGlpi },
-      },
+      body: { input },
     });
   }
 
