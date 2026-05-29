@@ -69,6 +69,11 @@ async function bootstrap() {
     next();
   });
 
+  const configuredPort = config.get("server.port", { infer: true });
+  const host = config.get("server.host", { infer: true });
+  const iisNodePort = process.env.PORT?.trim();
+  const listenTarget = iisNodePort || configuredPort;
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle("asistIA API")
     .setDescription(
@@ -85,7 +90,7 @@ async function bootstrap() {
       },
       "bearer",
     )
-    .addServer(`http://localhost:${config.get("server.port", { infer: true })}`)
+    .addServer(`http://localhost:${configuredPort}`)
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -94,14 +99,18 @@ async function bootstrap() {
     jsonDocumentUrl: `${globalPrefix}/${apiVersion}/docs-json`,
   });
 
-  const port = config.get("server.port", { infer: true });
-  const host = config.get("server.host", { infer: true });
-
-  await app.listen(port, host);
+  if (typeof listenTarget === "string" && Number.isNaN(Number(listenTarget))) {
+    await app.listen(listenTarget);
+  } else {
+    await app.listen(Number(listenTarget), host);
+  }
 
   const logger = app.get(Logger);
+  const listenDescription = iisNodePort
+    ? `iisnode target ${listenTarget}`
+    : `http://${host}:${configuredPort}`;
   logger.log(
-    `asistIA API listening on http://${host}:${port}/${globalPrefix}/${apiVersion} (docs: /${globalPrefix}/${apiVersion}/docs)`,
+    `asistIA API listening on ${listenDescription}/${globalPrefix}/${apiVersion} (docs: /${globalPrefix}/${apiVersion}/docs)`,
   );
 
   // touch Reflector to keep it tree-shake safe
