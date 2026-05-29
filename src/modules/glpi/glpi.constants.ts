@@ -70,5 +70,6 @@ export const GLPI_TICKET_SEARCH_FIELDS = {
   DESCRIPTION: 21,
   DATE_CREATION: 15,
   DATE_DUE: 18,
+  DATE_MOD: 19,
 } as const;
 

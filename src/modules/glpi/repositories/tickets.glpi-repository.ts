@@ -77,8 +77,11 @@ const HISTORY_FORCEDISPLAY = [
   GLPI_TICKET_SEARCH_FIELDS.LOCATION,
   GLPI_TICKET_SEARCH_FIELDS.TYPE,
   GLPI_TICKET_SEARCH_FIELDS.DATE_CREATION,
+  GLPI_TICKET_SEARCH_FIELDS.DATE_MOD,
   GLPI_TICKET_SEARCH_FIELDS.TECHNICIAN,
   GLPI_TICKET_SEARCH_FIELDS.REQUESTER,
+  GLPI_TICKET_SEARCH_FIELDS.CATEGORY,
+  GLPI_TICKET_SEARCH_FIELDS.URGENCY,
   GLPI_TICKET_SEARCH_FIELDS.TITLE,
 ] as const;
 
@@ -552,6 +555,8 @@ export class TicketsGlpiRepository {
       row[String(GLPI_TICKET_SEARCH_FIELDS.TYPE)] ?? GLPI_TICKET_TYPE.INCIDENT,
     );
     const createdRaw = row[String(GLPI_TICKET_SEARCH_FIELDS.DATE_CREATION)];
+    const updatedRaw = row[String(GLPI_TICKET_SEARCH_FIELDS.DATE_MOD)];
+    const urgencyRaw = Number(row[String(GLPI_TICKET_SEARCH_FIELDS.URGENCY)] ?? 0);
     const technicianFromRow = TicketsGlpiRepository.parseSearchOptionalId(
       row[String(GLPI_TICKET_SEARCH_FIELDS.TECHNICIAN)],
     );
@@ -560,7 +565,7 @@ export class TicketsGlpiRepository {
       id,
       type: TicketMapper.mapType(typeRaw),
       status: TicketMapper.mapStatus(statusRaw),
-      urgency: "medium",
+      urgency: urgencyRaw > 0 ? TicketMapper.mapUrgency(urgencyRaw) : "medium",
       subject: String(row[String(GLPI_TICKET_SEARCH_FIELDS.TITLE)] ?? ""),
       description: null,
       categoryId: TicketsGlpiRepository.parseSearchOptionalId(
@@ -575,7 +580,8 @@ export class TicketsGlpiRepository {
       technicianId: fallbackTechnicianId ?? technicianFromRow,
       createdAt:
         typeof createdRaw === "string" && createdRaw.length > 0 ? createdRaw : null,
-      updatedAt: null,
+      updatedAt:
+        typeof updatedRaw === "string" && updatedRaw.length > 0 ? updatedRaw : null,
       dueDate: null,
       solvedAt: null,
       closedAt: null,
