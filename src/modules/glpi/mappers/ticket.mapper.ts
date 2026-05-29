@@ -43,17 +43,23 @@ export function isActiveTicket(ticket: DomainTicket): boolean {
   return !ticket.isDeleted;
 }
 
+/** GLPI puede devolver flags booleanos como 0/1, "0"/"1" o true/false. */
+export function parseGlpiDeletedFlag(value: unknown): boolean {
+  if (value === true) return true;
+  return Number(value) === 1;
+}
+
 export class TicketMapper {
   static toDomain(raw: GlpiTicketRaw, opts: { requesterId?: number | null; technicianId?: number | null } = {}): DomainTicket {
     return {
-      id: raw.id,
+      id: TicketMapper.toId(raw.id),
       type: TicketMapper.mapType(raw.type),
       status: TicketMapper.mapStatus(raw.status),
       urgency: TicketMapper.mapUrgency(raw.urgency),
       subject: raw.name,
       description: TicketMapper.stripHtml(raw.content ?? null),
-      categoryId: raw.itilcategories_id ?? null,
-      locationId: raw.locations_id ?? null,
+      categoryId: TicketMapper.toOptionalId(raw.itilcategories_id),
+      locationId: TicketMapper.toOptionalId(raw.locations_id),
       requesterId: opts.requesterId ?? null,
       technicianId: opts.technicianId ?? null,
       createdAt: raw.date ?? null,
@@ -61,7 +67,7 @@ export class TicketMapper {
       dueDate: raw.time_to_resolve ?? null,
       solvedAt: raw.solvedate ?? null,
       closedAt: raw.closedate ?? null,
-      isDeleted: raw.is_deleted === 1,
+      isDeleted: parseGlpiDeletedFlag(raw.is_deleted),
     };
   }
 
@@ -145,5 +151,16 @@ export class TicketMapper {
   private static stripHtml(value: string | null): string | null {
     if (!value) return null;
     return value.replace(/<br\s*\/?>(\n)?/gi, "\n").replace(/<[^>]+>/g, "").trim();
+  }
+
+  /** GLPI REST suele devolver IDs numéricos como string en JSON. */
+  private static toOptionalId(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") return null;
+    const id = Number(value);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  }
+
+  private static toId(value: unknown): number {
+    return TicketMapper.toOptionalId(value) ?? 0;
   }
 }

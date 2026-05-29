@@ -1,6 +1,9 @@
 node_modules/
 dist/
-.env
-.env.server
 *.log
 tsconfig.tsbuildinfo
+
+# Variables de entorno (solo plantillas .env.example van al repo)
+.env
+.env.*
+!.env.example

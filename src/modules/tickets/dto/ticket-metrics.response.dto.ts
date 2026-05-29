@@ -15,7 +15,7 @@ class TicketMetricSliceDto {
 }
 
 class MyTicketsMetricSliceDto {
-  @ApiProperty({ example: 4, description: "Tickets en curso (assigned, planned, waiting)" })
+  @ApiProperty({ example: 5, description: "Tickets abiertos asignados al técnico (incluye new)" })
   inProgress!: number;
 
   @ApiProperty({ example: 42 })

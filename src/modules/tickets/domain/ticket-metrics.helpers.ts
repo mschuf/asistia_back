@@ -67,7 +67,8 @@ export function computeMyTicketsMetrics(assigned: DomainTicket[]): MyTicketsMetr
   const monthTickets = active.filter((t) => isInCurrentMonth(t.createdAt));
   const openMonth = monthTickets.filter(isTicketOpen);
   return {
-    inProgress: active.filter(isTicketInProgress).length,
+    /** Alineado con incidentes/solicitudes: abiertos asignados (incluye `new`). */
+    inProgress: active.filter(isTicketOpen).length,
     openPercent: openPercent(openMonth.length, monthTickets.length),
     openThisMonth: openMonth.length,
     totalThisMonth: monthTickets.length,
@@ -101,4 +102,100 @@ export function computeSiteMetrics(
     openThisMonth: openMonth.length,
     totalThisMonth: monthTickets.length,
   };
+}
+
+/** Normaliza IDs de GLPI (p. ej. string en JSON) para comparaciones y mapas. */
+export function normalizeLocationId(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  const id = Number(value);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function mergeMetricsTicketSnapshot(existing: DomainTicket, incoming: DomainTicket): DomainTicket {
+  return {
+    ...incoming,
+    ...existing,
+    locationId: existing.locationId ?? incoming.locationId,
+    categoryId: existing.categoryId ?? incoming.categoryId,
+    requesterId: existing.requesterId ?? incoming.requesterId,
+    technicianId: existing.technicianId ?? incoming.technicianId,
+  };
+}
+
+export function dedupeTicketsById(tickets: DomainTicket[]): DomainTicket[] {
+  const byId = new Map<number, DomainTicket>();
+  for (const ticket of tickets) {
+    const previous = byId.get(ticket.id);
+    byId.set(ticket.id, previous ? mergeMetricsTicketSnapshot(previous, ticket) : ticket);
+  }
+  return [...byId.values()];
+}
+
+export function collectTechnicianIdsNeedingLocation(
+  ...pools: DomainTicket[][]
+): Set<number> {
+  const ids = new Set<number>();
+  for (const pool of pools) {
+    for (const ticket of pool) {
+      if (ticket.locationId == null && ticket.technicianId != null) {
+        ids.add(ticket.technicianId);
+      }
+    }
+  }
+  return ids;
+}
+
+/** Sede efectiva: la del ticket o, si falta, la del técnico asignado. */
+export function resolveTicketLocationId(
+  ticket: DomainTicket,
+  technicianLocations: ReadonlyMap<number, number | null>,
+): number | null {
+  const ticketLocation = normalizeLocationId(ticket.locationId);
+  if (ticketLocation != null) return ticketLocation;
+  if (ticket.technicianId == null) return null;
+  return normalizeLocationId(technicianLocations.get(ticket.technicianId) ?? null);
+}
+
+export function buildMySiteTicketPool(
+  siteTickets: DomainTicket[],
+  assignedTickets: DomainTicket[],
+  userLocationId: number,
+  technicianLocations: ReadonlyMap<number, number | null>,
+): DomainTicket[] {
+  const normalizedUserLocationId = normalizeLocationId(userLocationId);
+  if (normalizedUserLocationId == null) return [];
+
+  return dedupeTicketsById([...siteTickets, ...assignedTickets]).filter(
+    (ticket) =>
+      isActiveTicket(ticket) &&
+      resolveTicketLocationId(ticket, technicianLocations) === normalizedUserLocationId,
+  );
+}
+
+export interface OpenByLocationMetricRow {
+  locationId: number;
+  name: string;
+  open: number;
+}
+
+export function buildOpenByLocationMetrics(
+  tickets: DomainTicket[],
+  locationNameById: ReadonlyMap<number, string>,
+): OpenByLocationMetricRow[] {
+  const openByLocationMap = new Map<number, number>();
+
+  for (const ticket of tickets) {
+    if (!isActiveTicket(ticket) || !isTicketOpen(ticket)) continue;
+    const locationId = normalizeLocationId(ticket.locationId);
+    if (locationId == null) continue;
+    openByLocationMap.set(locationId, (openByLocationMap.get(locationId) ?? 0) + 1);
+  }
+
+  return [...openByLocationMap.entries()]
+    .map(([locationId, open]) => ({
+      locationId,
+      name: locationNameById.get(locationId) ?? `Sede #${locationId}`,
+      open,
+    }))
+    .sort((left, right) => right.open - left.open);
 }

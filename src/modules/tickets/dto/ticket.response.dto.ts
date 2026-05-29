@@ -4,7 +4,7 @@ class TicketActorDto {
   @ApiProperty({ example: 188, nullable: true })
   id!: number | null;
 
-  @ApiProperty({ example: "Juan P├®rez", nullable: true })
+  @ApiProperty({ example: "Juan Pérez", nullable: true })
   name!: string | null;
 
   @ApiProperty({ example: "jperez@empresa.com", nullable: true })
@@ -69,9 +69,16 @@ export class TicketResponseDto {
   updatedAt!: string | null;
 }
 
-export class CreateTicketResponseDto extends TicketResponseDto {
+/** Respuesta mínima de POST /tickets (sin enriquecimiento GLPI). */
+export class CreateTicketResponseDto {
+  @ApiProperty({ example: 10453 })
+  id!: number;
+
+  @ApiProperty({ example: "No puedo abrir Outlook" })
+  subject!: string;
+
   @ApiProperty({
-    description: "Mail dispatch outcome for the side-effect.",
+    description: "Indica si hay destinatarios para el correo de creación.",
     example: { sent: true, error: null },
   })
   mail!: { sent: boolean; error: string | null };

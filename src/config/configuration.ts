@@ -45,6 +45,10 @@ export interface AppConfig {
     defaultEntity: number;
     requestTimeoutMs: number;
     sessionTtlSeconds: number;
+    /** Parche legacy: eliminar auto-asignación de la cuenta API tras crear/asignar tickets. */
+    stripServiceAssignment: boolean;
+    /** ID GLPI del usuario asistIA (opcional; evita getFullSession al hacer strip). */
+    serviceUserId: number | null;
   };
   cache: {
     defaultTtlSeconds: number;
@@ -180,6 +184,13 @@ export function buildConfig(): AppConfig {
       defaultEntity: readNumber("GLPI_DEFAULT_ENTITY", 0),
       requestTimeoutMs: readNumber("GLPI_REQUEST_TIMEOUT_MS", 15000),
       sessionTtlSeconds: readNumber("GLPI_SESSION_TTL_SECONDS", 8 * 3600),
+      stripServiceAssignment: readBoolean("GLPI_STRIP_SERVICE_ASSIGNMENT", false),
+      serviceUserId: (() => {
+        const raw = readString("GLPI_SERVICE_USER_ID", "");
+        if (!raw) return null;
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      })(),
     },
     cache: {
       defaultTtlSeconds: readNumber("CACHE_TTL_DEFAULT_SECONDS", 600),

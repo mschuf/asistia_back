@@ -39,11 +39,18 @@ export class UserMapper {
       email,
       phone: toOptionalString(raw.phone),
       mobile: toOptionalString(raw.mobile),
-      locationId: raw.locations_id ?? null,
+      locationId: UserMapper.toOptionalId(raw.locations_id),
       primaryGroupId: raw.groups_id ?? null,
       entityId: raw.entities_id ?? null,
       isActive: raw.is_active !== 0 && raw.is_deleted !== 1,
     };
+  }
+
+  /** GLPI REST suele devolver IDs numéricos como string en JSON. */
+  private static toOptionalId(value: unknown): number | null {
+    if (value === null || value === undefined || value === "") return null;
+    const id = Number(value);
+    return Number.isFinite(id) && id > 0 ? id : null;
   }
 
   private static extractEmail(raw: GlpiUserRaw): string | null {

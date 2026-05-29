@@ -40,15 +40,22 @@ import type {
 } from "./dto/ticket.response.dto";
 import type { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
 import {
+  buildOpenByLocationMetrics,
   computeMyTicketsMetrics,
   computeSiteMetrics,
   computeTypeMetrics,
-  isTicketOpen,
+  normalizeLocationId,
   OPEN_STATUSES,
 } from "./domain/ticket-metrics.helpers";
 
-/** Límite v1 para pool de abiertos globales (sede + gráfico). TODO: búsqueda GLPI agregada. */
-const METRICS_OPEN_POOL_LIMIT = 500;
+/** Límite para tickets abiertos de la sede exacta (card Mi Sede). */
+const METRICS_SITE_LIMIT = 500;
+
+/** Límite para abiertos asignados al técnico (listado Abiertos por sede). */
+const METRICS_ASSIGNED_OPEN_LIMIT = 9999;
+
+/** Máximo de tickets por página en el listado (historial). */
+const TICKETS_LIST_MAX_PAGE_SIZE = 15;
 
 @Injectable()
 export class TicketsService {
@@ -89,67 +96,42 @@ export class TicketsService {
       TicketMapper.mapStatusToGlpi(status),
     );
 
-    const metricsListOptions = { includeActors: false } as const;
-
-    const [assignedTickets, openPoolResult, siteTickets, locations] = await this.asService(
-      async (key) => {
-        const assignedPromise = this.ticketsRepo
-          .listAssignedTicketIds(key, user.id)
-          .then((ids) => this.ticketsRepo.fetchTicketsByIds(key, ids));
-
-        const [assigned, openPool, siteResult, locs] = await Promise.all([
-          assignedPromise,
-          this.ticketsRepo.list(
-            key,
-            {
-              page: 1,
-              limit: METRICS_OPEN_POOL_LIMIT,
-              status: openStatusGlpi,
-            },
-            metricsListOptions,
-          ),
+    const [assignedTickets, locations, mySitePool, assignedOpenPool] =
+      await this.asService(async (key) => {
+        const mySitePromise =
           user.locationId != null
-            ? this.ticketsRepo.list(
+            ? this.ticketsRepo.listOpenTicketsForLocationMetrics(
                 key,
-                {
-                  page: 1,
-                  limit: METRICS_OPEN_POOL_LIMIT,
-                  locationId: user.locationId,
-                },
-                metricsListOptions,
+                user.locationId,
+                openStatusGlpi,
+                METRICS_SITE_LIMIT,
               )
-            : Promise.resolve({ items: [] as DomainTicket[], total: 0 }),
+            : Promise.resolve([] as DomainTicket[]);
+
+        const [assigned, locs, mySiteItems, assignedOpenItems] = await Promise.all([
+          this.ticketsRepo.listAssignedTicketsForMetrics(key, user.id),
           this.catalogService.listLocations(),
+          mySitePromise,
+          this.ticketsRepo.listOpenAssignedTicketsForMetrics(
+            key,
+            user.id,
+            openStatusGlpi,
+            METRICS_ASSIGNED_OPEN_LIMIT,
+          ),
         ]);
 
-        return [assigned, openPool.items, siteResult.items, locs] as const;
-      },
-    );
+        return [assigned, locs, mySiteItems, assignedOpenItems] as const;
+      });
 
     const myTickets = computeMyTicketsMetrics(assignedTickets);
     const myIncidents = computeTypeMetrics(assignedTickets, "incident");
     const myRequests = computeTypeMetrics(assignedTickets, "request");
-    const mySite =
-      user.locationId != null ? computeSiteMetrics(siteTickets) : null;
+    const mySite = user.locationId != null ? computeSiteMetrics(mySitePool) : null;
 
-    const locationNameById = new Map(locations.map((loc) => [loc.id, loc.name]));
-    const openByLocationMap = new Map<number, number>();
-
-    for (const ticket of openPoolResult.filter((t) => isActiveTicket(t) && isTicketOpen(t))) {
-      if (ticket.locationId == null) continue;
-      openByLocationMap.set(
-        ticket.locationId,
-        (openByLocationMap.get(ticket.locationId) ?? 0) + 1,
-      );
-    }
-
-    const openByLocation = [...openByLocationMap.entries()]
-      .map(([locationId, open]) => ({
-        locationId,
-        name: locationNameById.get(locationId) ?? `Sede #${locationId}`,
-        open,
-      }))
-      .sort((a, b) => b.open - a.open);
+    const locationNameById = new Map(
+      locations.map((loc) => [normalizeLocationId(loc.id) ?? loc.id, loc.name]),
+    );
+    const openByLocation = buildOpenByLocationMetrics(assignedOpenPool, locationNameById);
 
     return {
       myTickets,
@@ -161,10 +143,11 @@ export class TicketsService {
   }
 
   async list(user: AuthenticatedUser, query: ListTicketsQueryDto): Promise<TicketListResponseDto> {
+    const limit = Math.min(Math.max(query.limit ?? TICKETS_LIST_MAX_PAGE_SIZE, 1), TICKETS_LIST_MAX_PAGE_SIZE);
     const filter = {
       page: query.page ?? 1,
-      limit: query.limit ?? 25,
-      status: query.status ? [TicketMapper.mapStatusToGlpi(query.status)] : undefined,
+      limit,
+      status: TicketsService.resolveListStatusFilter(query),
       type: query.type ? TicketMapper.mapTypeToGlpi(query.type) : undefined,
       search: query.search,
       requesterId: user.role === "technician" ? undefined : user.id,
@@ -176,7 +159,7 @@ export class TicketsService {
 
     const result = await this.asService((key) => this.ticketsRepo.list(key, filter));
 
-    let items = result.items;
+    let items = result.items.filter(isActiveTicket);
     if (user.role !== "technician") {
       items = items.filter((ticket) => ticket.requesterId === user.id);
     }
@@ -211,13 +194,23 @@ export class TicketsService {
   }
 
   async create(user: AuthenticatedUser, dto: CreateTicketDto): Promise<CreateTicketResponseDto> {
-    const requesterId = await this.resolveRequesterId(user, dto.requesterId);
-    await this.assertCategoryExists(dto.categoryId);
-    if (dto.locationId) {
-      await this.assertLocationExists(dto.locationId);
-    }
-    if (dto.assignedTechnicianId) {
-      await this.assertTechnicianExists(dto.assignedTechnicianId);
+    const locationId = dto.locationId ?? normalizeLocationId(user.locationId) ?? undefined;
+    const technicianCheck = dto.assignedTechnicianId
+      ? this.assertTechnicianExists(dto.assignedTechnicianId)
+      : Promise.resolve();
+
+    const [categories, locations, requesterId] = await Promise.all([
+      this.catalogService.listCategories(),
+      locationId
+        ? this.catalogService.listLocations()
+        : Promise.resolve([] as DomainLocation[]),
+      this.resolveRequesterId(user, dto.requesterId),
+      technicianCheck,
+    ]);
+
+    this.assertCategoryInList(categories, dto.categoryId);
+    if (locationId) {
+      this.assertLocationInList(locations, locationId);
     }
 
     const urgency = UrgencyPolicy.defaultFor(dto.type);
@@ -233,33 +226,33 @@ export class TicketsService {
         status: statusGlpi,
         urgency: TicketMapper.mapUrgencyToGlpi(urgency),
         itilcategories_id: dto.categoryId,
-        locations_id: dto.locationId,
+        locations_id: locationId,
         entities_id: this.config.get("glpi.defaultEntity", { infer: true }),
         requesters_id: requesterId,
         technicians_id: dto.assignedTechnicianId,
       }),
     );
 
-    const enriched = await this.enrichTicket(created);
-
-    const [requesterUser, technicianUser] = await this.asService(async (key) => {
-      const requester = await this.usersRepo.findById(key, requesterId);
-      const technician = dto.assignedTechnicianId
-        ? await this.usersRepo.findById(key, dto.assignedTechnicianId)
-        : null;
-      return [requester, technician];
-    });
+    const mailUserIds = new Set<number>([requesterId]);
+    if (dto.assignedTechnicianId) {
+      mailUserIds.add(dto.assignedTechnicianId);
+    }
+    const usersById = await this.loadUsersByIds(mailUserIds);
 
     const notify: TicketCreatedRecipient[] = [];
     const requesterRecipient = await this.resolveMailRecipient(
-      requesterUser,
+      usersById.get(requesterId) ?? null,
       requesterId === user.id ? user.email : null,
     );
     if (requesterRecipient) {
       notify.push({ ...requesterRecipient, role: "requester" });
     }
 
-    const technicianRecipient = await this.resolveMailRecipient(technicianUser);
+    const technicianRecipient = await this.resolveMailRecipient(
+      dto.assignedTechnicianId
+        ? usersById.get(dto.assignedTechnicianId) ?? null
+        : null,
+    );
     if (
       technicianRecipient &&
       technicianRecipient.email.toLowerCase() !== requesterRecipient?.email.toLowerCase()
@@ -267,22 +260,34 @@ export class TicketsService {
       notify.push({ ...technicianRecipient, role: "technician" });
     }
 
+    const categoryName =
+      categories.find((category) => category.id === dto.categoryId)?.name ?? null;
+    const locationEntry = locationId
+      ? locations.find((location) => location.id === locationId)
+      : undefined;
+    const locationName = locationEntry
+      ? locationEntry.name || locationEntry.fullPath
+      : null;
+
     const payload: TicketCreatedEvent = {
       ticketId: created.id,
       type: TICKET_TYPE_LABELS[dto.type],
       subject: dto.subject,
       description: dto.description,
-      requesterName: enriched.requester.name ?? "Solicitante",
-      technicianName: enriched.technician?.name ?? null,
-      categoryName: enriched.category?.name ?? null,
-      locationName: enriched.location?.name ?? null,
+      requesterName: usersById.get(requesterId)?.fullName ?? user.name ?? "Solicitante",
+      technicianName: dto.assignedTechnicianId
+        ? usersById.get(dto.assignedTechnicianId)?.fullName ?? null
+        : null,
+      categoryName,
+      locationName,
       notify,
     };
 
     this.events.emit(MAIL_EVENTS.TICKET_CREATED, payload);
 
     return {
-      ...enriched,
+      id: created.id,
+      subject: created.subject,
       mail: { sent: notify.length > 0, error: null },
     };
   }
@@ -340,7 +345,20 @@ export class TicketsService {
     );
 
     const refreshed = await this.asService((key) => this.ticketsRepo.findById(key, id));
-    const enriched = await this.enrichTicket(refreshed ?? { ...ticket, status });
+    if (!refreshed) {
+      throw new BusinessException({
+        message: `Ticket ${id} could not be verified after status update`,
+        code: API_ERROR_CODE.GLPI_UNAVAILABLE,
+        status: HttpStatus.BAD_GATEWAY,
+      });
+    }
+    if (refreshed.status !== status) {
+      throw new BusinessException({
+        message: `GLPI did not apply status "${TICKET_STATUS_LABELS[status]}". Current status: ${TICKET_STATUS_LABELS[refreshed.status]}`,
+        code: API_ERROR_CODE.INVALID_TICKET_STATUS,
+      });
+    }
+    const enriched = await this.enrichTicket(refreshed);
 
     if (previousStatus !== status) {
       const requesterUser = ticket.requesterId
@@ -437,8 +455,7 @@ export class TicketsService {
     return target.id;
   }
 
-  private async assertCategoryExists(categoryId: number): Promise<void> {
-    const categories = await this.catalogService.listCategories();
+  private assertCategoryInList(categories: DomainCategory[], categoryId: number): void {
     if (!categories.some((category) => category.id === categoryId)) {
       throw new BusinessException({
         message: `Category ${categoryId} is not valid`,
@@ -447,8 +464,33 @@ export class TicketsService {
     }
   }
 
-  private async assertLocationExists(locationId: number): Promise<void> {
-    const locations = await this.catalogService.listLocations();
+  private static resolveListStatusFilter(query: ListTicketsQueryDto): number[] | undefined {
+    if (query.status) {
+      return [TicketMapper.mapStatusToGlpi(query.status)];
+    }
+
+    const rawStatuses = query.statuses
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    if (!rawStatuses?.length) {
+      return undefined;
+    }
+
+    const allowed = new Set(Object.values(TICKET_STATUS));
+    const parsed = rawStatuses.filter((value): value is TicketStatus =>
+      allowed.has(value as TicketStatus),
+    );
+
+    if (parsed.length === 0) {
+      return undefined;
+    }
+
+    return parsed.map((status) => TicketMapper.mapStatusToGlpi(status));
+  }
+
+  private assertLocationInList(locations: DomainLocation[], locationId: number): void {
     if (!locations.some((location) => location.id === locationId)) {
       throw new BusinessException({
         message: `Location ${locationId} is not valid`,
@@ -468,12 +510,22 @@ export class TicketsService {
   }
 
   private async enrichTicket(ticket: DomainTicket): Promise<TicketResponseDto> {
-    const [enriched] = await this.enrichTickets([ticket]);
-    return enriched;
+    const { items } = await this.enrichTicketsWithUsers([ticket]);
+    return items[0];
   }
 
   private async enrichTickets(tickets: DomainTicket[]): Promise<TicketResponseDto[]> {
-    if (tickets.length === 0) return [];
+    const { items } = await this.enrichTicketsWithUsers(tickets);
+    return items;
+  }
+
+  private async enrichTicketsWithUsers(tickets: DomainTicket[]): Promise<{
+    items: TicketResponseDto[];
+    usersById: Map<number, DomainUser>;
+  }> {
+    if (tickets.length === 0) {
+      return { items: [], usersById: new Map() };
+    }
 
     const userIds = new Set<number>();
     let needsCategories = false;
@@ -498,9 +550,12 @@ export class TicketsService {
         : Promise.resolve(new Map<number, DomainUser>()),
     ]);
 
-    return tickets.map((ticket) =>
-      this.mapTicketToResponse(ticket, usersById, categories, locations),
-    );
+    return {
+      items: tickets.map((ticket) =>
+        this.mapTicketToResponse(ticket, usersById, categories, locations),
+      ),
+      usersById,
+    };
   }
 
   private async loadUsersByIds(userIds: Set<number>): Promise<Map<number, DomainUser>> {
@@ -527,9 +582,13 @@ export class TicketsService {
     const category = ticket.categoryId
       ? categories.find((entry) => entry.id === ticket.categoryId) ?? null
       : null;
-    const location = ticket.locationId
-      ? locations.find((entry) => entry.id === ticket.locationId) ?? null
-      : null;
+    const ticketLocationId = normalizeLocationId(ticket.locationId);
+    const location =
+      ticketLocationId != null
+        ? locations.find(
+            (entry) => normalizeLocationId(entry.id) === ticketLocationId,
+          ) ?? null
+        : null;
 
     return {
       id: ticket.id,
@@ -539,7 +598,9 @@ export class TicketsService {
       subject: ticket.subject,
       description: ticket.description,
       category: category ? { id: category.id, name: category.name } : null,
-      location: location ? { id: location.id, name: location.name } : null,
+      location: location
+        ? { id: location.id, name: location.name || location.fullPath }
+        : null,
       requester: {
         id: requester?.id ?? ticket.requesterId,
         name: requester?.fullName ?? null,

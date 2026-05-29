@@ -15,6 +15,8 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
+import { RequestTimeoutMs } from "../../common/interceptors/request-timeout.decorator";
+import { METRICS_HTTP_TIMEOUT_MS } from "../../common/interceptors/timeout.interceptor";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { TicketsService } from "./tickets.service";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
@@ -48,6 +50,7 @@ export class TicketsController {
 
   @Get("metrics")
   @Roles("technician")
+  @RequestTimeoutMs(METRICS_HTTP_TIMEOUT_MS)
   @ApiOperation({ summary: "Aggregated metrics for technicians (TI dashboard)" })
   @ApiResponse({ status: 200, type: TicketMetricsResponseDto })
   @ResponseMessage("Ticket metrics retrieved")

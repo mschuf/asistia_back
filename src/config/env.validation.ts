@@ -117,6 +117,14 @@ class EnvSchema {
   GLPI_SESSION_TTL_SECONDS?: string;
 
   @IsOptional()
+  @IsBooleanString()
+  GLPI_STRIP_SERVICE_ASSIGNMENT?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  GLPI_SERVICE_USER_ID?: string;
+
+  @IsOptional()
   @IsNumberString()
   CACHE_TTL_DEFAULT_SECONDS?: string;
 

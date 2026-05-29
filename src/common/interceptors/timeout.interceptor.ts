@@ -6,17 +6,32 @@
   NestInterceptor,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Reflector } from "@nestjs/core";
 import { Observable, TimeoutError, catchError, throwError, timeout } from "rxjs";
 import type { AppConfig } from "../../config/configuration";
 import { BusinessException } from "../exceptions/business.exception";
 import { API_ERROR_CODE } from "../types/api-error-code";
+import { REQUEST_TIMEOUT_MS_KEY } from "./request-timeout.decorator";
+
+/** Timeout por defecto para endpoints pesados de métricas TI. */
+export const METRICS_HTTP_TIMEOUT_MS = 60_000;
 
 @Injectable()
 export class TimeoutInterceptor implements NestInterceptor {
-  constructor(private readonly config: ConfigService<AppConfig, true>) {}
+  constructor(
+    private readonly config: ConfigService<AppConfig, true>,
+    private readonly reflector: Reflector,
+  ) {}
 
-  intercept(_context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const timeoutMs = this.config.get("glpi.requestTimeoutMs", { infer: true });
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const handlerTimeout = this.reflector.getAllAndOverride<number | undefined>(
+      REQUEST_TIMEOUT_MS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    const timeoutMs =
+      typeof handlerTimeout === "number" && handlerTimeout > 0
+        ? handlerTimeout
+        : this.config.get("glpi.requestTimeoutMs", { infer: true });
     return next.handle().pipe(
       timeout(timeoutMs),
       catchError((err) => {
