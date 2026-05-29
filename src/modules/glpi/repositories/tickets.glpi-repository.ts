@@ -386,7 +386,7 @@ export class TicketsGlpiRepository {
     filter: ListTicketsFilter,
     rangeStart: number,
     rangeEnd: number,
-    fallbackTechnicianId?: number,
+    _fallbackTechnicianId?: number,
   ): Promise<{ items: DomainTicket[]; total: number }> {
     const response = await this.glpi.request<unknown>({
       method: "GET",
@@ -404,11 +404,21 @@ export class TicketsGlpiRepository {
 
     const total = parseGlpiSearchTotal(response.data, response.headers["content-range"]);
     const rows = parseGlpiSearchRows(response.data);
-    const items = rows
-      .map((row) =>
-        TicketsGlpiRepository.domainTicketFromSearchRow(row, fallbackTechnicianId),
-      )
-      .filter((ticket): ticket is DomainTicket => ticket !== null && isActiveTicket(ticket));
+    const ticketIds = rows
+      .map((row) => extractSearchRowId(row, GLPI_TICKET_SEARCH_FIELDS.ID))
+      .filter((id): id is number => id !== null);
+
+    if (ticketIds.length === 0) {
+      return { items: [], total };
+    }
+
+    const fetched = await this.fetchTicketsByIdsInternal(sessionKey, ticketIds);
+    const byId = new Map(fetched.map((ticket) => [ticket.id, ticket]));
+    const items = TicketsGlpiRepository.withoutTrashed(
+      ticketIds
+        .map((id) => byId.get(id))
+        .filter((ticket): ticket is DomainTicket => ticket !== undefined),
+    );
 
     return { items, total };
   }
