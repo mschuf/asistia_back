@@ -5,63 +5,101 @@
   HttpCode,
   HttpStatus,
   Post,
+  Req,
+  Res,
   UseGuards,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { ConfigService } from "@nestjs/config";
+import { ApiBearerAuth, ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import type { Request, Response } from "express";
 import { Public } from "../../common/decorators/public.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { CryptoService } from "../../common/crypto/crypto.service";
+import type { AppConfig } from "../../config/configuration";
 import { AuthService } from "./auth.service";
+import { clearAuthCookie, readAuthCookieName, setAuthCookie } from "./auth-cookie.helper";
 import { LoginDto } from "./dto/login.dto";
 import {
   AuthenticatedUserResponseDto,
   LoginResponseDto,
+  SessionResponseDto,
 } from "./dto/login-response.dto";
+import { PublicKeyResponseDto } from "./dto/public-key-response.dto";
 
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly cryptoService: CryptoService,
+    private readonly config: ConfigService<AppConfig, true>,
+  ) {}
+
+  @Get("public-key")
+  @Public()
+  @ApiOperation({ summary: "Get RSA public key for encrypting login credentials" })
+  @ApiResponse({ status: 200, type: PublicKeyResponseDto })
+  @ResponseMessage("Public key retrieved")
+  getPublicKey(): PublicKeyResponseDto {
+    return { publicKey: this.cryptoService.getPublicKeyPem() };
+  }
 
   @Post("login")
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "Sign in with LDAP credentials and obtain a JWT",
+    summary: "Sign in with LDAP credentials and obtain a session cookie",
     description:
-      "Valida el usuario contra LDAP/AD, resuelve el perfil en GLPI y devuelve un JWT. " +
-      "Las operaciones GLPI se ejecutan con la cuenta de servicio configurada.",
+      "Valida el usuario contra LDAP/AD con contraseña cifrada RSA-OAEP, resuelve el perfil en GLPI " +
+      "y establece un JWT en cookie HttpOnly. Las operaciones GLPI se ejecutan con la cuenta de servicio configurada.",
   })
   @ApiResponse({ status: 200, type: LoginResponseDto })
   @ResponseMessage("Authentication successful")
-  async login(@Body() dto: LoginDto): Promise<LoginResponseDto> {
-    const result = await this.authService.loginWithCredentials(dto.username, dto.password);
-    return AuthController.toResponse(result);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResponseDto> {
+    const result = await this.authService.loginWithEncryptedCredentials(
+      dto.username,
+      dto.encryptedPassword,
+    );
+    setAuthCookie(res, result.accessToken, this.config);
+    return AuthController.toLoginResponse(result);
   }
 
   @Get("me")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @ApiCookieAuth("session")
   @ApiOperation({ summary: "Get the currently authenticated user profile" })
-  @ApiResponse({ status: 200, type: AuthenticatedUserResponseDto })
+  @ApiResponse({ status: 200, type: SessionResponseDto })
   @ResponseMessage("Profile retrieved")
-  me(@CurrentUser() user: AuthenticatedUser): AuthenticatedUserResponseDto {
-    return AuthController.toUserDto(user);
+  me(@CurrentUser() user: AuthenticatedUser, @Req() req: Request): SessionResponseDto {
+    return {
+      user: AuthController.toUserDto(user),
+      expiresAt: AuthController.resolveExpiresAt(req, this.config),
+    };
   }
 
   @Post("logout")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @ApiCookieAuth("session")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: "Logout (stateless)",
-    description: "El cliente debe descartar el JWT localmente.",
+    summary: "Logout",
+    description: "Elimina la cookie de sesión HttpOnly.",
   })
   @ResponseMessage("Logged out")
-  async logout(@CurrentUser() user: AuthenticatedUser): Promise<{ revoked: boolean }> {
+  async logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ revoked: boolean }> {
     await this.authService.logout(user);
+    clearAuthCookie(res, this.config);
     return { revoked: true };
   }
 
@@ -78,15 +116,36 @@ export class AuthController {
     };
   }
 
-  private static toResponse(result: {
-    accessToken: string;
+  private static toLoginResponse(result: {
     expiresIn: string;
     user: AuthenticatedUser;
   }): LoginResponseDto {
     return {
-      accessToken: result.accessToken,
       expiresIn: result.expiresIn,
       user: AuthController.toUserDto(result.user),
     };
+  }
+
+  private static resolveExpiresAt(req: Request, config: ConfigService<AppConfig, true>): number {
+    const cookieName = readAuthCookieName(config);
+    const token = req.cookies?.[cookieName];
+    if (typeof token !== "string" || !token) {
+      return Date.now();
+    }
+
+    try {
+      const payloadPart = token.split(".")[1];
+      if (!payloadPart) return Date.now();
+      const payload = JSON.parse(
+        Buffer.from(payloadPart, "base64url").toString("utf8"),
+      ) as { exp?: number };
+      if (typeof payload.exp === "number") {
+        return payload.exp * 1000;
+      }
+    } catch {
+      return Date.now();
+    }
+
+    return Date.now();
   }
 }

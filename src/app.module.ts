@@ -9,6 +9,7 @@ import { validateEnv } from "./config/env.validation";
 import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
 import { ResponseInterceptor } from "./common/interceptors/response.interceptor";
 import { TimeoutInterceptor } from "./common/interceptors/timeout.interceptor";
+import { CryptoModule } from "./common/crypto/crypto.module";
 import { JwtAuthGuard } from "./common/guards/auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { CacheModule } from "./modules/cache/cache.module";
@@ -55,6 +56,7 @@ import { AiModule } from "./modules/ai/ai.module";
                 "req.headers['session-token']",
                 "req.headers['app-token']",
                 "req.body.password",
+                "req.body.encryptedPassword",
                 "req.body.accessToken",
                 "res.headers['set-cookie']",
               ],
@@ -80,6 +82,7 @@ import { AiModule } from "./modules/ai/ai.module";
       },
     }),
     EventEmitterModule.forRoot({ wildcard: false, maxListeners: 20 }),
+    CryptoModule,
     CacheModule,
     GlpiModule,
     MailModule,

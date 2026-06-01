@@ -27,12 +27,20 @@ export class AuthenticatedUserResponseDto {
 }
 
 export class LoginResponseDto {
-  @ApiProperty({ description: "JWT to send in the Authorization header" })
-  accessToken!: string;
-
   @ApiProperty({ example: "8h" })
   expiresIn!: string;
 
   @ApiProperty({ type: () => AuthenticatedUserResponseDto })
   user!: AuthenticatedUserResponseDto;
+}
+
+export class SessionResponseDto {
+  @ApiProperty({ type: () => AuthenticatedUserResponseDto })
+  user!: AuthenticatedUserResponseDto;
+
+  @ApiProperty({
+    description: "Session expiry timestamp in milliseconds (Unix epoch)",
+    example: 1710000000000,
+  })
+  expiresAt!: number;
 }

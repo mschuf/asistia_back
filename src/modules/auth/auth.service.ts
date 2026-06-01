@@ -11,6 +11,7 @@ import type { IdentityResolution } from "./strategies/identity-provider.interfac
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { GlpiException } from "../../common/exceptions/glpi.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
+import { CryptoService } from "../../common/crypto/crypto.service";
 import type {
   AuthenticatedUser,
   JwtPayload,
@@ -25,11 +26,37 @@ export class AuthService {
   constructor(
     private readonly config: ConfigService<AppConfig, true>,
     private readonly jwt: JwtService,
+    private readonly crypto: CryptoService,
     private readonly ldap: LdapProvider,
     private readonly bootstrap: GlpiBootstrapService,
     private readonly usersRepo: UsersGlpiRepository,
     private readonly catalogRepo: CatalogGlpiRepository,
   ) {}
+
+  async loginWithEncryptedCredentials(
+    username: string,
+    encryptedPassword: string,
+  ): Promise<{
+    accessToken: string;
+    expiresIn: string;
+    user: AuthenticatedUser;
+  }> {
+    let password: string;
+    try {
+      password = this.crypto.decrypt(encryptedPassword);
+    } catch (error) {
+      this.logger.warn(
+        `[AUTH] Failed to decrypt credentials for '${username}': ${(error as Error).message}`,
+      );
+      throw new BusinessException({
+        message: "Invalid credentials",
+        code: API_ERROR_CODE.AUTH_INVALID_CREDENTIALS,
+        status: HttpStatus.UNAUTHORIZED,
+      });
+    }
+
+    return this.loginWithCredentials(username, password);
+  }
 
   async loginWithCredentials(username: string, password: string): Promise<{
     accessToken: string;

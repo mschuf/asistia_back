@@ -24,6 +24,16 @@ export interface AppConfig {
     ssoDomainStrip: boolean;
     /** Solo desarrollo: login GLPI si no hay header SSO ni body.username. */
     devSsoUsername: string;
+    rsa: {
+      privateKey: string;
+      publicKey: string;
+    };
+    cookie: {
+      name: string;
+      secure: boolean;
+      sameSite: "lax" | "strict" | "none";
+      maxAgeMs: number;
+    };
     ldap: {
       url: string;
       domain: string;
@@ -91,6 +101,15 @@ function readBoolean(name: string, fallback: boolean): boolean {
   const value = process.env[name];
   if (value === undefined || value === "") return fallback;
   return ["1", "true", "yes", "si", "on"].includes(value.toLowerCase());
+}
+
+function readSameSite(
+  name: string,
+  fallback: AppConfig["auth"]["cookie"]["sameSite"],
+): AppConfig["auth"]["cookie"]["sameSite"] {
+  const value = readString(name, fallback).toLowerCase();
+  if (value === "strict" || value === "none" || value === "lax") return value;
+  return fallback;
 }
 
 function readList(name: string, fallback: string[] = []): string[] {
@@ -164,6 +183,16 @@ export function buildConfig(): AppConfig {
       ssoDomainStrip: readBoolean("SSO_DOMAIN_STRIP", true),
       devSsoUsername:
         nodeEnv !== "production" ? readString("DEV_SSO_USERNAME", "") : "",
+      rsa: {
+        privateKey: readString("AUTH_RSA_PRIVATE_KEY", ""),
+        publicKey: readString("AUTH_RSA_PUBLIC_KEY", ""),
+      },
+      cookie: {
+        name: readString("AUTH_COOKIE_NAME", "asistia_access_token"),
+        secure: readBoolean("AUTH_COOKIE_SECURE", nodeEnv === "production"),
+        sameSite: readSameSite("AUTH_COOKIE_SAME_SITE", "lax"),
+        maxAgeMs: readNumber("AUTH_COOKIE_MAX_AGE", 0),
+      },
       ldap: {
         url: readString("LDAP_URL", ""),
         domain: readString("LDAP_DOMAIN", ""),

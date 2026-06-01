@@ -7,8 +7,11 @@ export class LoginDto {
   @IsNotEmpty()
   username!: string;
 
-  @ApiProperty({ description: "User password", example: "contraseña" })
+  @ApiProperty({
+    description: "RSA-OAEP encrypted password (base64)",
+    example: "base64-ciphertext...",
+  })
   @IsString()
   @IsNotEmpty()
-  password!: string;
+  encryptedPassword!: string;
 }

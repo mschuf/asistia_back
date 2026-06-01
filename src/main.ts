@@ -4,6 +4,7 @@ import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { Logger } from "nestjs-pino";
+import cookieParser from "cookie-parser";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import type { AppConfig } from "./config/configuration";
@@ -14,6 +15,7 @@ async function bootstrap() {
   });
 
   app.useLogger(app.get(Logger));
+  app.use(cookieParser());
 
   const config = app.get<ConfigService<AppConfig, true>>(ConfigService);
   const nodeEnv = config.get("server.nodeEnv", { infer: true });
@@ -86,10 +88,16 @@ async function bootstrap() {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
-        description: "JWT obtenido en POST /api/v1/auth/login",
+        description: "JWT legacy (prefer session cookie from POST /auth/login)",
       },
       "bearer",
     )
+    .addCookieAuth("asistia_access_token", {
+      type: "apiKey",
+      in: "cookie",
+      name: "asistia_access_token",
+      description: "HttpOnly session cookie set by POST /auth/login",
+    }, "session")
     .addServer(`http://localhost:${configuredPort}`)
     .build();
 
