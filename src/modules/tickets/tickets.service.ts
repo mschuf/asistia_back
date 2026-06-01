@@ -17,6 +17,8 @@ import {
 } from "./domain/ticket-status";
 import { TICKET_TYPE_LABELS } from "./domain/ticket-type";
 import { UrgencyPolicy } from "./domain/urgency.policy";
+import { appendResolutionNote } from "./domain/ticket-resolution.helpers";
+import { RESOLUTION_NOTE_MIN_LENGTH } from "./dto/update-ticket-status.dto";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -369,6 +371,7 @@ export class TicketsService {
     user: AuthenticatedUser,
     id: number,
     status: TicketStatus,
+    resolutionNote?: string,
   ): Promise<TicketResponseDto> {
     const ticket = await this.asService((key) => this.ticketsRepo.findById(key, id));
     if (!ticket) {
@@ -394,10 +397,31 @@ export class TicketsService {
       });
     }
 
+    const technicianResolving = user.role === "technician" && status === TICKET_STATUS.SOLVED;
+    if (technicianResolving) {
+      const trimmedNote = resolutionNote?.trim() ?? "";
+      if (trimmedNote.length < RESOLUTION_NOTE_MIN_LENGTH) {
+        throw new BusinessException({
+          message: `Al marcar como resuelto debe indicar lo realizado (mínimo ${RESOLUTION_NOTE_MIN_LENGTH} caracteres).`,
+          code: API_ERROR_CODE.VALIDATION,
+          status: HttpStatus.BAD_REQUEST,
+        });
+      }
+    }
+
     const previousStatus = ticket.status;
-    await this.asService((key) =>
-      this.ticketsRepo.updateStatus(key, id, TicketMapper.mapStatusToGlpi(status)),
-    );
+    const statusGlpi = TicketMapper.mapStatusToGlpi(status);
+
+    if (technicianResolving) {
+      const note = resolutionNote!.trim();
+      await this.asService(async (key) => {
+        const rawContent = await this.ticketsRepo.getRawContent(key, id);
+        const updatedContent = appendResolutionNote(rawContent, note);
+        await this.ticketsRepo.updateStatus(key, id, statusGlpi, updatedContent);
+      });
+    } else {
+      await this.asService((key) => this.ticketsRepo.updateStatus(key, id, statusGlpi));
+    }
 
     const refreshed = await this.asService((key) => this.ticketsRepo.findById(key, id));
     if (!refreshed) {

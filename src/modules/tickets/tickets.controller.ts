@@ -102,7 +102,7 @@ export class TicketsController {
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateTicketStatusDto,
   ): Promise<TicketResponseDto> {
-    return this.ticketsService.updateStatus(user, id, dto.status);
+    return this.ticketsService.updateStatus(user, id, dto.status, dto.resolutionNote);
   }
 
   @Post(":id/assign")

@@ -148,9 +148,19 @@ export class TicketMapper {
     }
   }
 
+  private static decodeHtmlEntities(value: string): string {
+    return value
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#0?39;/gi, "'")
+      .replace(/&amp;/gi, "&");
+  }
+
   private static stripHtml(value: string | null): string | null {
     if (!value) return null;
-    return value.replace(/<br\s*\/?>(\n)?/gi, "\n").replace(/<[^>]+>/g, "").trim();
+    const decoded = TicketMapper.decodeHtmlEntities(value);
+    return decoded.replace(/<br\s*\/?>(\n)?/gi, "\n").replace(/<[^>]+>/g, "").trim();
   }
 
   /** GLPI REST suele devolver IDs numéricos como string en JSON. */

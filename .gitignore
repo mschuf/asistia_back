@@ -7,3 +7,4 @@ tsconfig.tsbuildinfo
 .env
 .env.*
 !.env.example
+AUTH_FUNCIONAMIENTO_ACTUAL.md

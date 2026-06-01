@@ -175,7 +175,7 @@ export function buildConfig(): AppConfig {
     },
     jwt: {
       secret: readString("JWT_SECRET", "change-me-in-production-please-32-chars-min"),
-      expiresIn: readString("JWT_EXPIRES_IN", "8h"),
+      expiresIn: readString("JWT_EXPIRES_IN", "31d"),
     },
     auth: {
       provider: (readString("AUTH_PROVIDER", "ldap") as AuthProvider),

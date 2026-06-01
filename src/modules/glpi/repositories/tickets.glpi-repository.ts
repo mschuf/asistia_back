@@ -720,14 +720,32 @@ export class TicketsGlpiRepository {
     await this.ensureTicketIndexedForActors(sessionKey, ticketId, input);
   }
 
-  async updateStatus(sessionKey: string, ticketId: number, statusGlpi: number): Promise<void> {
+  async getRawContent(sessionKey: string, ticketId: number): Promise<string | null> {
+    const response = await this.glpi.request<GlpiTicketRaw>({
+      method: "GET",
+      path: `${GLPI_ENDPOINTS.TICKET}/${ticketId}`,
+      sessionKey,
+    });
+    const content = response.data.content;
+    if (content === null || content === undefined) return null;
+    return String(content);
+  }
+
+  async updateStatus(
+    sessionKey: string,
+    ticketId: number,
+    statusGlpi: number,
+    content?: string,
+  ): Promise<void> {
+    const input: Record<string, unknown> = { id: ticketId, status: statusGlpi };
+    if (content !== undefined) {
+      input.content = content;
+    }
     await this.glpi.request<unknown>({
       method: "PUT",
       path: `${GLPI_ENDPOINTS.TICKET}/${ticketId}`,
       sessionKey,
-      body: {
-        input: { id: ticketId, status: statusGlpi },
-      },
+      body: { input },
     });
   }
 
