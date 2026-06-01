@@ -299,7 +299,6 @@ export class TicketsService {
     const notify: TicketCreatedRecipient[] = [];
     const requesterRecipient = await this.resolveMailRecipient(
       usersById.get(requesterId) ?? null,
-      requesterId === user.id ? user.email : null,
     );
     if (requesterRecipient) {
       notify.push({ ...requesterRecipient, role: "requester" });
@@ -331,7 +330,7 @@ export class TicketsService {
       type: TICKET_TYPE_LABELS[dto.type],
       subject: dto.subject,
       description: dto.description,
-      requesterName: usersById.get(requesterId)?.fullName ?? user.name ?? "Solicitante",
+      requesterName: usersById.get(requesterId)?.fullName ?? "Solicitante",
       technicianName: dto.assignedTechnicianId
         ? usersById.get(dto.assignedTechnicianId)?.fullName ?? null
         : null,
@@ -452,7 +451,7 @@ export class TicketsService {
         subject: ticket.subject,
         previousStatus: TICKET_STATUS_LABELS[previousStatus],
         newStatus: TICKET_STATUS_LABELS[status],
-        changedBy: user.name,
+        changedBy: await this.resolveActorDisplayName(user.id),
         recipients,
       };
       this.events.emit(MAIL_EVENTS.TICKET_STATUS_CHANGED, payload);
@@ -502,7 +501,7 @@ export class TicketsService {
         ticketId,
         subject: ticket.subject,
         technicianName: technicianUser.fullName,
-        assignedBy: user.name,
+        assignedBy: await this.resolveActorDisplayName(user.id),
         recipients: [{ name: technicianUser.fullName, email: technicianUser.email }],
       };
       this.events.emit(MAIL_EVENTS.TICKET_ASSIGNED, payload);
@@ -532,6 +531,11 @@ export class TicketsService {
       });
     }
     return target.id;
+  }
+
+  private async resolveActorDisplayName(userId: number): Promise<string> {
+    const actor = await this.asService((key) => this.usersRepo.findById(key, userId));
+    return actor?.fullName ?? `Usuario ${userId}`;
   }
 
   private assertCategoryInList(categories: DomainCategory[], categoryId: number): void {

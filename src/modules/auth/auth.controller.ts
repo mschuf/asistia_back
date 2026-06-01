@@ -16,7 +16,7 @@ import { Public } from "../../common/decorators/public.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
-import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import type { AuthenticatedUser, SessionUser } from "../../common/types/authenticated-user";
 import { CryptoService } from "../../common/crypto/crypto.service";
 import type { AppConfig } from "../../config/configuration";
 import { AuthService } from "./auth.service";
@@ -77,9 +77,13 @@ export class AuthController {
   @ApiOperation({ summary: "Get the currently authenticated user profile" })
   @ApiResponse({ status: 200, type: SessionResponseDto })
   @ResponseMessage("Profile retrieved")
-  me(@CurrentUser() user: AuthenticatedUser, @Req() req: Request): SessionResponseDto {
+  async me(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<SessionResponseDto> {
+    const profile = await this.authService.resolveProfile(user);
     return {
-      user: AuthController.toUserDto(user),
+      user: AuthController.toUserDto(profile),
       expiresAt: AuthController.resolveExpiresAt(req, this.config),
     };
   }
@@ -103,7 +107,7 @@ export class AuthController {
     return { revoked: true };
   }
 
-  private static toUserDto(user: AuthenticatedUser): AuthenticatedUserResponseDto {
+  private static toUserDto(user: SessionUser): AuthenticatedUserResponseDto {
     return {
       id: user.id,
       login: user.login,
@@ -118,7 +122,7 @@ export class AuthController {
 
   private static toLoginResponse(result: {
     expiresIn: string;
-    user: AuthenticatedUser;
+    user: SessionUser;
   }): LoginResponseDto {
     return {
       expiresIn: result.expiresIn,

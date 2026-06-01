@@ -15,6 +15,8 @@ import { CryptoService } from "../../common/crypto/crypto.service";
 import type {
   AuthenticatedUser,
   JwtPayload,
+  SessionUser,
+  UserProfile,
   UserRole,
 } from "../../common/types/authenticated-user";
 import type { AppConfig } from "../../config/configuration";
@@ -39,7 +41,7 @@ export class AuthService {
   ): Promise<{
     accessToken: string;
     expiresIn: string;
-    user: AuthenticatedUser;
+    user: SessionUser;
   }> {
     let password: string;
     try {
@@ -61,7 +63,7 @@ export class AuthService {
   async loginWithCredentials(username: string, password: string): Promise<{
     accessToken: string;
     expiresIn: string;
-    user: AuthenticatedUser;
+    user: SessionUser;
   }> {
     this.logger.debug(`[AUTH] loginWithCredentials called for username='${username}'`);
     let resolution: IdentityResolution | null;
@@ -95,7 +97,7 @@ export class AuthService {
   private async completeLogin(resolution: IdentityResolution): Promise<{
     accessToken: string;
     expiresIn: string;
-    user: AuthenticatedUser;
+    user: SessionUser;
   }> {
     this.logger.debug(`[AUTH] completeLogin for '${resolution.login}'`);
 
@@ -115,22 +117,55 @@ export class AuthService {
       `[AUTH] groupIds=${JSON.stringify(groupIds)} resolvedRole='${role}' entityId=${glpiUser.entityId ?? "null"} entityName='${entityName ?? ""}'`,
     );
 
-    const authenticated: AuthenticatedUser = {
+    const principal: AuthenticatedUser = {
       id: glpiUser.id,
+      role,
+      locationId: glpiUser.locationId,
+    };
+    const profile: UserProfile = {
       login: glpiUser.login,
       name: glpiUser.fullName,
       email: glpiUser.email ?? resolution.email ?? null,
-      role,
       groupIds,
-      locationId: glpiUser.locationId,
       entityId: glpiUser.entityId,
       entityName,
     };
+    const user: SessionUser = { ...principal, ...profile };
 
-    const accessToken = await this.signToken(authenticated);
+    const accessToken = await this.signToken(principal);
     const expiresIn = this.config.get("jwt.expiresIn", { infer: true });
 
-    return { accessToken, expiresIn, user: authenticated };
+    return { accessToken, expiresIn, user };
+  }
+
+  async resolveProfile(user: AuthenticatedUser): Promise<SessionUser> {
+    const domainUser = await this.bootstrap.withCatalogBootstrapSession((key) =>
+      this.usersRepo.findById(key, user.id),
+    );
+    if (!domainUser) {
+      throw new BusinessException({
+        message: `User ${user.id} not found in GLPI`,
+        code: API_ERROR_CODE.AUTH_USER_NOT_FOUND,
+        status: HttpStatus.UNAUTHORIZED,
+      });
+    }
+
+    const [groupIds, entityName] = await Promise.all([
+      this.resolveGroupIds(domainUser.id),
+      this.resolveEntityName(domainUser.entityId),
+    ]);
+
+    return {
+      id: user.id,
+      role: user.role,
+      locationId: user.locationId,
+      login: domainUser.login,
+      name: domainUser.fullName,
+      email: domainUser.email,
+      groupIds,
+      entityId: domainUser.entityId,
+      entityName,
+    };
   }
 
   private async resolveEntityName(entityId: number | null): Promise<string | null> {
@@ -213,14 +248,8 @@ export class AuthService {
   private async signToken(user: AuthenticatedUser): Promise<string> {
     const payload: JwtPayload = {
       sub: user.id,
-      login: user.login,
-      name: user.name,
-      email: user.email,
       role: user.role,
-      groupIds: user.groupIds,
       locationId: user.locationId,
-      entityId: user.entityId,
-      entityName: user.entityName,
     };
     return this.jwt.signAsync(payload);
   }

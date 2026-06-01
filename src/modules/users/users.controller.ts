@@ -8,6 +8,7 @@ import { ResponseMessage } from "../../common/interceptors/response-message.deco
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { AuthService } from "../auth/auth.service";
 import { UsersService } from "./users.service";
 import { UserResponseDto } from "./dto/user.response.dto";
 import { MeResponseDto } from "./dto/me.response.dto";
@@ -19,23 +20,27 @@ import { UserListResponseDto } from "./dto/user-list.response.dto";
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("users")
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Get("me")
   @ApiOperation({ summary: "Get the currently authenticated user profile" })
   @ApiResponse({ status: 200, type: MeResponseDto })
   @ResponseMessage("Profile retrieved")
-  me(@CurrentUser() user: AuthenticatedUser): MeResponseDto {
+  async me(@CurrentUser() user: AuthenticatedUser): Promise<MeResponseDto> {
+    const profile = await this.authService.resolveProfile(user);
     return {
       id: user.id,
-      login: user.login,
-      name: user.name,
-      email: user.email,
+      login: profile.login,
+      name: profile.name,
+      email: profile.email,
       role: user.role,
-      groupIds: user.groupIds,
+      groupIds: profile.groupIds,
       locationId: user.locationId,
-      entityId: user.entityId,
-      entityName: user.entityName,
+      entityId: profile.entityId,
+      entityName: profile.entityName,
     };
   }
 

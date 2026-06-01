@@ -2,26 +2,25 @@
 
 export interface AuthenticatedUser {
   id: number;
+  role: UserRole;
+  locationId: number | null;
+}
+
+export interface UserProfile {
   login: string;
   name: string;
   email: string | null;
-  role: UserRole;
   groupIds: number[];
-  locationId: number | null;
   entityId: number | null;
   entityName: string | null;
 }
 
 export interface JwtPayload {
   sub: number;
-  login: string;
-  name: string;
-  email: string | null;
   role: UserRole;
-  groupIds: number[];
   locationId: number | null;
-  entityId: number | null;
-  entityName: string | null;
   iat?: number;
   exp?: number;
 }
+
+export type SessionUser = AuthenticatedUser & UserProfile;

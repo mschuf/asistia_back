@@ -146,6 +146,15 @@ Importante:
 - Si frontend y backend estan en sitios diferentes debe tener `SameSite=None`.
 - `HttpOnly` debe estar presente.
 
+### 3.1 Verificar payload mínimo del JWT
+
+Con la cookie de sesión creada, decodificar el payload del token (sin verificar firma) y revisar claims.
+
+Resultado esperado:
+
+- Deben existir `sub`, `role`, `locationId`, `iat` y `exp`.
+- No deben existir `login`, `name`, `email`, `groupIds`, `entityId` ni `entityName`.
+
 ### 4. Verificar que no hay datos de sesion en localStorage
 
 En DevTools:
@@ -226,6 +235,7 @@ Resultado esperado:
 - `localStorage` no contiene `asistia_token`, `asistia_user` ni `asistia_expires_at`.
 - `GET /auth/me` restaura la sesion al recargar.
 - Las requests protegidas usan cookie, no Bearer token desde JavaScript.
+- El JWT contiene solo `sub`, `role` y `locationId` (además de `iat`/`exp`).
 - `POST /auth/logout` elimina la cookie.
 - `CORS_ORIGIN` contiene el origen exacto del frontend.
 - `VITE_API_URL` apunta al backend publicado.
