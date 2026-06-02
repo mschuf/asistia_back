@@ -27,6 +27,7 @@ La API queda en `http://localhost:1001/api/v1` y Swagger en `/api/v1/docs`.
 
 ## Documentación
 
+- [Endpoints API ↔ GLPI](./docs/API-GLPI.md)
 - [Arquitectura](./docs/architecture.md)
 - [Variables de entorno](./docs/environment.md)
 - [Buenas prácticas](./BACK_BEST_PRACTICES.md)

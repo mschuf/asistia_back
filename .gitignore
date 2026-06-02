@@ -8,3 +8,8 @@ tsconfig.tsbuildinfo
 .env.*
 !.env.example
 AUTH_FUNCIONAMIENTO_ACTUAL.md
+docs/API-GLPI.md
+docs/BUSQUEDA-HISTORIAL-ABIERTOS.md
+docs/GLPI-API-OFICIAL.md
+docs/VISTA-HISTORIAL-API.md
+docs/VISTA-HISTORIAL-MYSQL.md
