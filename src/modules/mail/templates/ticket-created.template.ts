@@ -17,12 +17,12 @@ function buildDetailsRows(input: TicketCreatedTemplateInput): string {
     `<tr><td style="padding:4px 8px;"><strong>Asunto</strong></td><td style="padding:4px 8px;">${escapeHtml(input.subject)}</td></tr>`,
     `<tr><td style="padding:4px 8px;"><strong>Tipo</strong></td><td style="padding:4px 8px;">${escapeHtml(input.type)}</td></tr>`,
     `<tr><td style="padding:4px 8px;"><strong>Solicitante</strong></td><td style="padding:4px 8px;">${escapeHtml(input.requesterName)}</td></tr>`,
-    `<tr><td style="padding:4px 8px;"><strong>T├®cnico</strong></td><td style="padding:4px 8px;">${escapeHtml(input.technicianName ?? "Sin asignar")}</td></tr>`,
+    `<tr><td style="padding:4px 8px;"><strong>Técnico</strong></td><td style="padding:4px 8px;">${escapeHtml(input.technicianName ?? "Sin asignar")}</td></tr>`,
     input.categoryName
-      ? `<tr><td style="padding:4px 8px;"><strong>Categor├¡a</strong></td><td style="padding:4px 8px;">${escapeHtml(input.categoryName)}</td></tr>`
+      ? `<tr><td style="padding:4px 8px;"><strong>Categoría</strong></td><td style="padding:4px 8px;">${escapeHtml(input.categoryName)}</td></tr>`
       : "",
     input.locationName
-      ? `<tr><td style="padding:4px 8px;"><strong>Ubicaci├│n</strong></td><td style="padding:4px 8px;">${escapeHtml(input.locationName)}</td></tr>`
+      ? `<tr><td style="padding:4px 8px;"><strong>Ubicación</strong></td><td style="padding:4px 8px;">${escapeHtml(input.locationName)}</td></tr>`
       : "",
   ].join("");
 }
@@ -32,9 +32,9 @@ function buildDetailsText(input: TicketCreatedTemplateInput): string[] {
     `Asunto: ${input.subject}`,
     `Tipo: ${input.type}`,
     `Solicitante: ${input.requesterName}`,
-    `T├®cnico: ${input.technicianName ?? "Sin asignar"}`,
-    input.categoryName ? `Categor├¡a: ${input.categoryName}` : null,
-    input.locationName ? `Ubicaci├│n: ${input.locationName}` : null,
+    `Técnico: ${input.technicianName ?? "Sin asignar"}`,
+    input.categoryName ? `Categoría: ${input.categoryName}` : null,
+    input.locationName ? `Ubicación: ${input.locationName}` : null,
   ].filter((line): line is string => line !== null);
 }
 
