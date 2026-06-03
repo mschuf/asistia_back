@@ -7,8 +7,10 @@
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -18,7 +20,7 @@ import { ResponseMessage } from "../../common/interceptors/response-message.deco
 import { RequestTimeoutMs } from "../../common/interceptors/request-timeout.decorator";
 import { METRICS_HTTP_TIMEOUT_MS } from "../../common/interceptors/timeout.interceptor";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
-import { TicketsService } from "./tickets.service";
+import { TicketsService, type HistoryListMeta } from "./tickets.service";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { UpdateTicketStatusDto } from "./dto/update-ticket-status.dto";
 import { AssignTechnicianDto } from "./dto/assign-technician.dto";
@@ -67,8 +69,12 @@ export class TicketsController {
   async history(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListTicketsQueryDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<TicketListResponseDto> {
-    return this.ticketsService.listHistory(user, query);
+    const meta: HistoryListMeta = { source: "glpi-api" };
+    const result = await this.ticketsService.listHistory(user, query, meta);
+    res.setHeader("X-History-Source", meta.source);
+    return result;
   }
 
   @Get(":id")

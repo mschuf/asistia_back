@@ -1,7 +1,10 @@
-﻿import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+﻿import { HttpStatus, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
+import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { TicketsGlpiRepository } from "../glpi/repositories/tickets.glpi-repository";
+import { TicketsHistorySqlRepository } from "../glpi/repositories/tickets-history.sql-repository";
+import { TicketsMetricsSqlRepository } from "../glpi/repositories/tickets-metrics.sql-repository";
 import { UsersGlpiRepository } from "../glpi/repositories/users.glpi-repository";
 import { GlpiBootstrapService } from "../glpi/glpi-bootstrap.service";
 import { CatalogService } from "../catalog/catalog.service";
@@ -65,12 +68,18 @@ const DEFAULT_HISTORY_STATUSES: TicketStatus[] = [
   TICKET_STATUS.PLANNED,
 ];
 
+export type HistoryListSource = "mysql" | "glpi-api" | "glpi-fallback";
+
+export interface HistoryListMeta {
+  source: HistoryListSource;
+}
+
 @Injectable()
 export class TicketsService {
-  private readonly logger = new Logger(TicketsService.name);
-
   constructor(
     private readonly ticketsRepo: TicketsGlpiRepository,
+    private readonly historySqlRepo: TicketsHistorySqlRepository,
+    private readonly metricsSqlRepo: TicketsMetricsSqlRepository,
     private readonly usersRepo: UsersGlpiRepository,
     private readonly usersService: UsersService,
     private readonly bootstrap: GlpiBootstrapService,
@@ -78,7 +87,11 @@ export class TicketsService {
     private readonly events: EventEmitter2,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly ldap: LdapProvider,
-  ) {}
+    @InjectPinoLogger(TicketsService.name)
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(TicketsService.name);
+  }
 
   /**
    * Ejecuta una operaci├│n contra GLPI usando la cuenta de servicio
@@ -100,6 +113,51 @@ export class TicketsService {
       });
     }
 
+    const metricsSource = this.config.get("glpi.metricsSource", { infer: true });
+    if (metricsSource === "sql") {
+      try {
+        const result = await this.metricsSqlRepo.getMetricsForTechnician({
+          technicianId: user.id,
+          locationId: normalizeLocationId(user.locationId),
+        });
+        this.logger.info(
+          {
+            metricsSource: "mysql",
+            userId: user.id,
+            locationId: user.locationId ?? null,
+          },
+          "[metrics] source=mysql",
+        );
+        return result;
+      } catch (error) {
+        this.logger.warn(
+          {
+            metricsSource: "glpi-fallback",
+            reason: "sql_error",
+            userId: user.id,
+            err: error,
+          },
+          `[metrics] source=glpi-fallback message=${(error as Error).message}`,
+        );
+        return this.getMetricsFromGlpi(user);
+      }
+    }
+
+    const result = await this.getMetricsFromGlpi(user);
+    this.logger.info(
+      {
+        metricsSource: "glpi-api",
+        configured: metricsSource,
+        userId: user.id,
+      },
+      "[metrics] source=glpi-api",
+    );
+    return result;
+  }
+
+  private async getMetricsFromGlpi(
+    user: AuthenticatedUser,
+  ): Promise<TicketMetricsResponseDto> {
     const openStatusGlpi = OPEN_STATUSES.map((status) =>
       TicketMapper.mapStatusToGlpi(status),
     );
@@ -153,6 +211,7 @@ export class TicketsService {
   async listHistory(
     user: AuthenticatedUser,
     query: ListTicketsQueryDto,
+    meta?: HistoryListMeta,
   ): Promise<TicketListResponseDto> {
     const limit = Math.min(
       Math.max(query.limit ?? TICKETS_LIST_MAX_PAGE_SIZE, 1),
@@ -180,6 +239,52 @@ export class TicketsService {
       locationId: query.locationId ?? undefined,
     };
 
+    const historySource = this.config.get("glpi.historySource", { infer: true });
+    let sqlFallback = false;
+    if (historySource === "sql") {
+      try {
+        let sqlResult = await this.historySqlRepo.listHistoryPageAsResponse(filter);
+        if (user.role !== "technician") {
+          sqlResult = {
+            ...sqlResult,
+            items: sqlResult.items.filter((ticket) => ticket.requester.id === user.id),
+          };
+        }
+        this.logger.info(
+          {
+            historySource: "mysql",
+            userId: user.id,
+            role: user.role,
+            page: filter.page,
+            limit: filter.limit,
+            total: sqlResult.total,
+            items: sqlResult.items.length,
+          },
+          "[history] source=mysql",
+        );
+        if (meta) meta.source = "mysql";
+        return {
+          items: sqlResult.items,
+          total: sqlResult.total,
+          page: filter.page,
+          limit: filter.limit,
+        };
+      } catch (error) {
+        sqlFallback = true;
+        if (meta) meta.source = "glpi-fallback";
+        this.logger.warn(
+          {
+            historySource: "glpi-fallback",
+            reason: "sql_error",
+            userId: user.id,
+            page: filter.page,
+            err: error,
+          },
+          `[history] source=glpi-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
     const result = await this.asService((key) =>
       this.ticketsRepo.listHistoryPage(key, filter),
     );
@@ -190,6 +295,23 @@ export class TicketsService {
     }
 
     const enriched = await this.enrichTickets(items);
+
+    if (meta) meta.source = "glpi-api";
+    this.logger.info(
+      {
+        historySource: "glpi-api",
+        sqlFallback,
+        configured: historySource,
+        userId: user.id,
+        role: user.role,
+        page: filter.page,
+        limit: filter.limit,
+        total: result.total,
+        items: enriched.length,
+        enriched: true,
+      },
+      "[history] source=glpi-api",
+    );
 
     return {
       items: enriched,

@@ -2,11 +2,12 @@
 import { AuthModule } from "../auth/auth.module";
 import { CatalogModule } from "../catalog/catalog.module";
 import { UsersModule } from "../users/users.module";
+import { MysqlModule } from "../mysql/mysql.module";
 import { TicketsController } from "./tickets.controller";
 import { TicketsService } from "./tickets.service";
 
 @Module({
-  imports: [AuthModule, CatalogModule, UsersModule],
+  imports: [AuthModule, CatalogModule, UsersModule, MysqlModule],
   controllers: [TicketsController],
   providers: [TicketsService],
   exports: [TicketsService],

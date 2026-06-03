@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import nodemailer, { Transporter } from "nodemailer";
 import type { AppConfig } from "../../config/configuration";
 import type { MailRecipient } from "./mail.events";
+import { enrichSmtpErrorMessage } from "./smtp-error.utils";
 
 export interface SendMailInput {
   subject: string;
@@ -54,7 +55,9 @@ export class MailService {
         return { sent: true, error: null };
       } catch (error) {
         lastError = error as Error;
-        this.logger.warn(`Mail attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+        this.transporter = null;
+        const hint = enrichSmtpErrorMessage(lastError.message);
+        this.logger.warn(`Mail attempt ${attempt}/${maxRetries} failed: ${hint}`);
         if (attempt < maxRetries) {
           await this.sleep(1000 * 2 ** (attempt - 1));
         }
@@ -62,9 +65,9 @@ export class MailService {
     }
 
     this.logger.error(
-      `Mail dispatch failed after ${maxRetries} attempts: ${lastError?.message ?? "unknown"}`,
+      `Mail dispatch failed after ${maxRetries} attempts: ${enrichSmtpErrorMessage(lastError?.message ?? "unknown")}`,
     );
-    return { sent: false, error: lastError?.message ?? "unknown" };
+    return { sent: false, error: enrichSmtpErrorMessage(lastError?.message ?? "unknown") };
   }
 
   async verify(): Promise<boolean> {
@@ -76,8 +79,9 @@ export class MailService {
     } catch (error) {
       const user = this.config.get("smtp.user", { infer: true });
       const password = this.config.get("smtp.password", { infer: true });
+      this.transporter = null;
       this.logger.warn(
-        `SMTP verify failed: ${(error as Error).message} ` +
+        `SMTP verify failed: ${enrichSmtpErrorMessage((error as Error).message)} ` +
           `(user=${user || "<empty>"}, passLen=${password.length})`,
       );
       return false;

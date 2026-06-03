@@ -8,6 +8,8 @@ import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Public } from "../../common/decorators/public.decorator";
 import { GlpiHealthIndicator } from "./indicators/glpi.indicator";
 import { SmtpHealthIndicator } from "./indicators/smtp.indicator";
+import { MysqlHealthIndicator } from "../mysql/mysql.health.indicator";
+import { PostgresHealthIndicator } from "../postgres/postgres.health.indicator";
 
 @ApiTags("health")
 @Controller("health")
@@ -17,6 +19,8 @@ export class HealthController {
     private readonly memory: MemoryHealthIndicator,
     private readonly glpi: GlpiHealthIndicator,
     private readonly smtp: SmtpHealthIndicator,
+    private readonly mysql: MysqlHealthIndicator,
+    private readonly postgres: PostgresHealthIndicator,
   ) {}
 
   @Get()
@@ -29,6 +33,8 @@ export class HealthController {
       () => this.memory.checkRSS("memory_rss", 512 * 1024 * 1024),
       () => this.glpi.isHealthy(),
       () => this.smtp.isHealthy(),
+      () => this.mysql.isHealthy(),
+      () => this.postgres.isHealthy(),
     ]);
   }
 }

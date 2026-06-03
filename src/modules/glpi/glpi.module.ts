@@ -8,6 +8,8 @@ import { GlpiBootstrapService } from "./glpi-bootstrap.service";
 import { UsersGlpiRepository } from "./repositories/users.glpi-repository";
 import { CatalogGlpiRepository } from "./repositories/catalog.glpi-repository";
 import { TicketsGlpiRepository } from "./repositories/tickets.glpi-repository";
+import { TicketsHistorySqlRepository } from "./repositories/tickets-history.sql-repository";
+import { TicketsMetricsSqlRepository } from "./repositories/tickets-metrics.sql-repository";
 
 @Global()
 @Module({
@@ -27,6 +29,8 @@ import { TicketsGlpiRepository } from "./repositories/tickets.glpi-repository";
     UsersGlpiRepository,
     CatalogGlpiRepository,
     TicketsGlpiRepository,
+    TicketsHistorySqlRepository,
+    TicketsMetricsSqlRepository,
   ],
   exports: [
     GlpiClient,
@@ -35,6 +39,8 @@ import { TicketsGlpiRepository } from "./repositories/tickets.glpi-repository";
     UsersGlpiRepository,
     CatalogGlpiRepository,
     TicketsGlpiRepository,
+    TicketsHistorySqlRepository,
+    TicketsMetricsSqlRepository,
   ],
 })
 export class GlpiModule {}

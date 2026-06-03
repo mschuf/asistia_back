@@ -59,6 +59,27 @@ export interface AppConfig {
     stripServiceAssignment: boolean;
     /** ID GLPI del usuario asistIA (opcional; evita getFullSession al hacer strip). */
     serviceUserId: number | null;
+    historySource: "api" | "sql";
+    metricsSource: "api" | "sql";
+  };
+  mysql: {
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+    password: string;
+    connectionLimit: number;
+    connectTimeoutMs: number;
+  };
+  postgres: {
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+    password: string;
+    connectionLimit: number;
+    connectTimeoutMs: number;
+    ssl: boolean;
   };
   cache: {
     defaultTtlSeconds: number;
@@ -75,6 +96,9 @@ export interface AppConfig {
     fromName: string;
     rejectUnauthorized: boolean;
   };
+  mail: {
+    supportTo: string;
+  };
   attachments: {
     maxBytes: number;
     allowedMime: string[];
@@ -86,6 +110,23 @@ function readString(name: string, fallback?: string): string {
   if (value === undefined || value === "") {
     if (fallback !== undefined) return fallback;
     return "";
+  }
+  return value;
+}
+
+function readTrimmedString(name: string, fallback?: string): string {
+  return readString(name, fallback).trim();
+}
+
+/** Trims and removes optional surrounding quotes (common in .env). */
+function readSecretString(name: string, fallback = ""): string {
+  let value = readTrimmedString(name, fallback);
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  ) {
+    value = value.slice(1, -1);
   }
   return value;
 }
@@ -121,6 +162,15 @@ function readList(name: string, fallback: string[] = []): string[] {
     .filter(Boolean);
 }
 
+function readGlpiReadSource(
+  name: string,
+  fallback: "api" | "sql",
+): "api" | "sql" {
+  const raw = readString(name, fallback).trim();
+  const value = raw.split(/\s+/)[0]?.toLowerCase() ?? fallback;
+  return value === "sql" ? "sql" : "api";
+}
+
 /** Accepts `http://host/soporte` or `http://host/soporte/apirest.php`. */
 function normalizeGlpiBaseUrl(raw: string): string {
   const trimmed = raw.trim().replace(/\/+$/, "");
@@ -142,15 +192,17 @@ export function buildConfig(): AppConfig {
   const dbgBootstrapLogin = readString("GLPI_BOOTSTRAP_LOGIN", "");
   const dbgBootstrapPassword = readString("GLPI_BOOTSTRAP_PASSWORD", "");
   const dbgBootstrapUserToken = readString("GLPI_BOOTSTRAP_USER_TOKEN", "");
-  const dbgSmtpHost = readString("SMTP_HOST", "");
-  const dbgSmtpUser = readString("SMTP_USER", "");
-  const dbgSmtpPassword = readString("SMTP_PASSWORD", "");
+  const dbgSmtpHost = readTrimmedString("SMTP_HOST", "");
+  const dbgSmtpUser = readTrimmedString("SMTP_USER", "");
+  const dbgSmtpPassword = readSecretString("SMTP_PASSWORD", "");
   // eslint-disable-next-line no-console
   console.log(
     `[config] AUTH_PROVIDER=${readString("AUTH_PROVIDER", "")} ` +
       `GLPI_BOOTSTRAP_LOGIN='${dbgBootstrapLogin}' ` +
       `GLPI_BOOTSTRAP_PASSWORD=${dbgBootstrapPassword ? `set(${dbgBootstrapPassword.length})` : "<empty>"} ` +
-      `GLPI_BOOTSTRAP_USER_TOKEN=${maskToken(dbgBootstrapUserToken)}`,
+      `GLPI_BOOTSTRAP_USER_TOKEN=${maskToken(dbgBootstrapUserToken)} ` +
+      `GLPI_HISTORY_SOURCE=${readGlpiReadSource("GLPI_HISTORY_SOURCE", "api")} ` +
+      `GLPI_METRICS_SOURCE=${readGlpiReadSource("GLPI_METRICS_SOURCE", "api")}`,
   );
   if (dbgSmtpHost) {
     // eslint-disable-next-line no-console
@@ -159,6 +211,14 @@ export function buildConfig(): AppConfig {
         `secure=${readString("SMTP_SECURE", "tls")} user='${dbgSmtpUser}' ` +
         `password=${dbgSmtpPassword ? `set(${dbgSmtpPassword.length})` : "<empty>"}`,
     );
+    if (!dbgSmtpUser) {
+      // eslint-disable-next-line no-console
+      console.warn("[config] SMTP_HOST is set but SMTP_USER is empty");
+    }
+    if (!dbgSmtpPassword && readBoolean("SMTP_AUTH", true)) {
+      // eslint-disable-next-line no-console
+      console.warn("[config] SMTP_HOST is set but SMTP_PASSWORD is empty (auth will fail)");
+    }
   }
 
   return {
@@ -220,21 +280,48 @@ export function buildConfig(): AppConfig {
         const parsed = Number(raw);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
       })(),
+      historySource: readGlpiReadSource("GLPI_HISTORY_SOURCE", "api"),
+      metricsSource: readGlpiReadSource("GLPI_METRICS_SOURCE", "api"),
+    },
+    mysql: {
+      host: readString("MYSQL_HOST", ""),
+      port: readNumber("MYSQL_PORT", 3306),
+      database: readString("MYSQL_DATABASE", ""),
+      user: readString("MYSQL_USER", ""),
+      password: readString("MYSQL_PASSWORD", ""),
+      connectionLimit: readNumber("MYSQL_CONNECTION_LIMIT", 5),
+      connectTimeoutMs: readNumber("MYSQL_CONNECT_TIMEOUT_MS", 5000),
+    },
+    postgres: {
+      host: readString("POSTGRES_HOST", ""),
+      port: readNumber("POSTGRES_PORT", 5432),
+      database: readString("POSTGRES_DATABASE", ""),
+      user: readString("POSTGRES_USER", ""),
+      password: readString("POSTGRES_PASSWORD", ""),
+      connectionLimit: readNumber("POSTGRES_CONNECTION_LIMIT", 5),
+      connectTimeoutMs: readNumber("POSTGRES_CONNECT_TIMEOUT_MS", 5000),
+      ssl: readBoolean("POSTGRES_SSL", false),
     },
     cache: {
       defaultTtlSeconds: readNumber("CACHE_TTL_DEFAULT_SECONDS", 600),
       catalogTtlSeconds: readNumber("CACHE_TTL_CATALOG_SECONDS", 3600),
     },
     smtp: {
-      host: readString("SMTP_HOST", ""),
+      host: readTrimmedString("SMTP_HOST", ""),
       port: readNumber("SMTP_PORT", 587),
       secure: (readString("SMTP_SECURE", "tls").toLowerCase() as AppConfig["smtp"]["secure"]),
       auth: readBoolean("SMTP_AUTH", true),
-      user: readString("SMTP_USER", ""),
-      password: readString("SMTP_PASSWORD", ""),
-      from: readString("SMTP_FROM", readString("SMTP_USER", "")),
-      fromName: readString("SMTP_FROM_NAME", "asistIA"),
+      user: readTrimmedString("SMTP_USER", ""),
+      password: readSecretString("SMTP_PASSWORD", ""),
+      from: readTrimmedString("SMTP_FROM", readTrimmedString("SMTP_USER", "")),
+      fromName: readTrimmedString("SMTP_FROM_NAME", "asistIA"),
       rejectUnauthorized: readBoolean("SMTP_REJECT_UNAUTHORIZED", true),
+    },
+    mail: {
+      supportTo: readTrimmedString(
+        "MAIL_SUPPORT_TO",
+        readTrimmedString("SMTP_FROM", readTrimmedString("SMTP_USER", "")),
+      ),
     },
     attachments: {
       maxBytes: readNumber("ATTACHMENTS_MAX_BYTES", 5 * 1024 * 1024),

@@ -125,6 +125,70 @@ class EnvSchema {
   GLPI_SERVICE_USER_ID?: string;
 
   @IsOptional()
+  @IsIn(["api", "sql"])
+  GLPI_HISTORY_SOURCE?: string;
+
+  @IsOptional()
+  @IsIn(["api", "sql"])
+  GLPI_METRICS_SOURCE?: string;
+
+  @IsOptional()
+  @IsString()
+  MYSQL_HOST?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  MYSQL_PORT?: string;
+
+  @IsOptional()
+  @IsString()
+  MYSQL_DATABASE?: string;
+
+  @IsOptional()
+  @IsString()
+  MYSQL_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  MYSQL_PASSWORD?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  MYSQL_CONNECTION_LIMIT?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  MYSQL_CONNECT_TIMEOUT_MS?: string;
+
+  @IsOptional()
+  @IsString()
+  POSTGRES_HOST?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  POSTGRES_PORT?: string;
+
+  @IsOptional()
+  @IsString()
+  POSTGRES_DATABASE?: string;
+
+  @IsOptional()
+  @IsString()
+  POSTGRES_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  POSTGRES_PASSWORD?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  POSTGRES_CONNECTION_LIMIT?: string;
+
+  @IsOptional()
+  @IsBooleanString()
+  POSTGRES_SSL?: string;
+
+  @IsOptional()
   @IsNumberString()
   CACHE_TTL_DEFAULT_SECONDS?: string;
 
@@ -167,6 +231,10 @@ class EnvSchema {
   @IsOptional()
   @IsBooleanString()
   SMTP_REJECT_UNAUTHORIZED?: string;
+
+  @IsOptional()
+  @IsString()
+  MAIL_SUPPORT_TO?: string;
 
   @IsOptional()
   @IsNumberString()

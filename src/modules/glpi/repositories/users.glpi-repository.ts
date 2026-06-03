@@ -4,6 +4,7 @@ import { GlpiClient } from "../glpi.client";
 import { GLPI_ENDPOINTS } from "../glpi.constants";
 import { UserMapper, type DomainUser } from "../mappers/user.mapper";
 import {
+  emailsMatch,
   matchesUserSearch,
   parseContentRangeTotal,
   sortUsersByName,
@@ -69,6 +70,36 @@ export class UsersGlpiRepository {
       const candidate = defaultEntry ?? entries[0];
       const email = candidate?.email?.trim();
       return email && email.includes("@") ? email : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async findByEmail(sessionKey: string, email: string): Promise<DomainUser | null> {
+    const trimmed = email.trim();
+    if (!trimmed.includes("@")) {
+      return null;
+    }
+
+    try {
+      const response = await this.glpi.request<GlpiUserEmailRaw[]>({
+        method: "GET",
+        path: GLPI_ENDPOINTS.USER_EMAIL,
+        sessionKey,
+        query: {
+          "searchText[email]": trimmed,
+          range: "0-49",
+        },
+      });
+
+      const entries = Array.isArray(response.data) ? response.data : [];
+      const match = entries.find((entry) => entry.email && emailsMatch(entry.email, trimmed));
+      const userId = Number(match?.users_id ?? 0);
+      if (!Number.isFinite(userId) || userId <= 0) {
+        return null;
+      }
+
+      return this.findById(sessionKey, userId);
     } catch {
       return null;
     }

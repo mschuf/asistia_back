@@ -8,7 +8,7 @@ import { InMemoryCacheService } from "../cache/cache.service";
 import { CACHE_KEYS } from "../cache/cache.keys";
 import { isTiGroupName } from "../glpi/role.utils";
 import type { DomainUser } from "../glpi/mappers/user.mapper";
-import { matchesUserSearch } from "../glpi/user-search.utils";
+import { emailsMatch, matchesUserSearch } from "../glpi/user-search.utils";
 import type { AppConfig } from "../../config/configuration";
 import {
   DEFAULT_USERS_PAGE_LIMIT,
@@ -104,6 +104,35 @@ export class UsersService {
   async findById(id: number): Promise<DomainUser | null> {
     return this.bootstrap.withCatalogBootstrapSession((key) =>
       this.repo.findById(key, id),
+    );
+  }
+
+  async findByLogin(login: string): Promise<DomainUser | null> {
+    const trimmed = login.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return this.bootstrap.withCatalogBootstrapSession((key) =>
+      this.repo.findByLogin(key, trimmed),
+    );
+  }
+
+  async findByEmail(email: string): Promise<DomainUser | null> {
+    const trimmed = email.trim();
+    if (!trimmed.includes("@")) {
+      return null;
+    }
+
+    const cached = await this.getCachedActiveUsers();
+    const fromCache = cached.find(
+      (user) => user.email && emailsMatch(user.email, trimmed),
+    );
+    if (fromCache) {
+      return fromCache;
+    }
+
+    return this.bootstrap.withCatalogBootstrapSession((key) =>
+      this.repo.findByEmail(key, trimmed),
     );
   }
 

@@ -122,6 +122,65 @@ export class LdapProvider implements IdentityProvider {
     }
   }
 
+  async lookupUserByEmail(
+    email: string,
+  ): Promise<{ login: string; name: string; email: string } | null> {
+    const url = this.config.get("auth.ldap.url", { infer: true });
+    const domain = this.config.get("auth.ldap.domain", { infer: true });
+    const baseDn = this.config.get("auth.ldap.baseDn", { infer: true });
+    const adminUser = this.config.get("auth.ldap.adminUser", { infer: true });
+    const adminPassword = this.config.get("auth.ldap.adminPassword", { infer: true });
+    const trimmed = email.trim();
+
+    if (!url || !domain || !adminUser || !adminPassword || !baseDn || !trimmed.includes("@")) {
+      return null;
+    }
+
+    const client = new Client({
+      url,
+      tlsOptions: url.startsWith("ldaps://") ? { rejectUnauthorized: false } : undefined,
+    });
+
+    try {
+      await client.bind(`${adminUser}@${domain}`, adminPassword);
+      const search = await client.search(baseDn, {
+        scope: "sub",
+        filter: `(mail=${LdapProvider.escapeLdapFilterValue(trimmed)})`,
+        attributes: ["sAMAccountName", "mail", "displayName", "cn"],
+      });
+      const entry = search.searchEntries[0];
+      if (!entry) {
+        return null;
+      }
+
+      const resolvedEmail =
+        typeof entry.mail === "string" && entry.mail.includes("@") ? entry.mail : trimmed;
+      const login = String(entry.sAMAccountName ?? "").trim();
+      const name =
+        (typeof entry.displayName === "string" && entry.displayName.trim()) ||
+        (typeof entry.cn === "string" && entry.cn.trim()) ||
+        login ||
+        resolvedEmail;
+
+      if (!login) {
+        return null;
+      }
+
+      return { login, name, email: resolvedEmail };
+    } catch (error) {
+      this.logger.warn(
+        `[LDAP] lookupUserByEmail failed for '${trimmed}': ${(error as Error).message}`,
+      );
+      return null;
+    } finally {
+      try {
+        await client.unbind();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   async lookupEmailByLogin(login: string): Promise<string | null> {
     const url = this.config.get("auth.ldap.url", { infer: true });
     const domain = this.config.get("auth.ldap.domain", { infer: true });
@@ -159,6 +218,13 @@ export class LdapProvider implements IdentityProvider {
         /* ignore */
       }
     }
+  }
+
+  private static escapeLdapFilterValue(value: string): string {
+    return value.replace(/[\0()*\\]/g, (char) => {
+      const hex = char.charCodeAt(0).toString(16).padStart(2, "0");
+      return `\\${hex}`;
+    });
   }
 
   private async lookupDirectoryEntry(

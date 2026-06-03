@@ -4,7 +4,16 @@ import {
   type DomainTicketStatus,
   type DomainTicketType,
 } from "../../glpi/mappers/ticket.mapper";
+import { GLPI_TICKET_STATUS } from "../../glpi/glpi.constants";
 import { TICKET_STATUS } from "./ticket-status";
+
+/** Estados GLPI equivalentes a {@link OPEN_STATUSES} (métricas SQL / API). */
+export const OPEN_STATUS_GLPI = [
+  GLPI_TICKET_STATUS.NEW,
+  GLPI_TICKET_STATUS.ASSIGNED,
+  GLPI_TICKET_STATUS.PLANNED,
+  GLPI_TICKET_STATUS.WAITING,
+] as const;
 
 export const OPEN_STATUSES: DomainTicketStatus[] = [
   TICKET_STATUS.NEW,

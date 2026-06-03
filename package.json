@@ -7,6 +7,8 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
+    "postgres:preflight": "node scripts/postgres-preflight.js",
+    "smtp:preflight": "node scripts/smtp-preflight.js",
     "test": "jest"
   },
   "dependencies": {
@@ -30,10 +32,12 @@
     "dotenv": "^17.4.2",
     "form-data": "^4.0.5",
     "ldapts": "^8.1.8",
+    "mysql2": "^3.22.4",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^8.0.7",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pg": "^8.21.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.1.3",
@@ -50,6 +54,7 @@
     "@types/node": "^22.10.1",
     "@types/nodemailer": "^8.0.0",
     "@types/passport-jwt": "^4.0.1",
+    "@types/pg": "^8.20.0",
     "typescript": "^5.8.3"
   }
 }
