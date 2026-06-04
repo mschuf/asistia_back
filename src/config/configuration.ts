@@ -63,6 +63,14 @@ export interface AppConfig {
     metricsSource: "api" | "sql";
     /** Fuente para escribir el cambio de estado (botones de acción del historial). */
     statusSource: "api" | "sql";
+    /** Fuente para crear tickets nuevos. */
+    createSource: "api" | "sql";
+    /** Fuente para asignar técnico a ticket. */
+    assignSource: "api" | "sql";
+    /** Fuente para listado de técnicos en `/users/technicians`. */
+    techniciansSource: "api" | "sql";
+    /** Fuente para listado general de usuarios en `/users`. */
+    usersSource: "api" | "sql";
   };
   mysql: {
     host: string;
@@ -205,7 +213,11 @@ export function buildConfig(): AppConfig {
       `GLPI_BOOTSTRAP_USER_TOKEN=${maskToken(dbgBootstrapUserToken)} ` +
       `GLPI_HISTORY_SOURCE=${readGlpiReadSource("GLPI_HISTORY_SOURCE", "api")} ` +
       `GLPI_METRICS_SOURCE=${readGlpiReadSource("GLPI_METRICS_SOURCE", "api")} ` +
-      `GLPI_STATUS_SOURCE=${readGlpiReadSource("GLPI_STATUS_SOURCE", "api")}`,
+      `GLPI_STATUS_SOURCE=${readGlpiReadSource("GLPI_STATUS_SOURCE", "api")} ` +
+      `GLPI_CREATE_SOURCE=${readGlpiReadSource("GLPI_CREATE_SOURCE", "sql")} ` +
+      `GLPI_ASSIGN_SOURCE=${readGlpiReadSource("GLPI_ASSIGN_SOURCE", "sql")} ` +
+      `GLPI_TECHNICIANS_SOURCE=${readGlpiReadSource("GLPI_TECHNICIANS_SOURCE", "sql")} ` +
+      `GLPI_USERS_SOURCE=${readGlpiReadSource("GLPI_USERS_SOURCE", "sql")}`,
   );
   if (dbgSmtpHost) {
     // eslint-disable-next-line no-console
@@ -286,6 +298,10 @@ export function buildConfig(): AppConfig {
       historySource: readGlpiReadSource("GLPI_HISTORY_SOURCE", "api"),
       metricsSource: readGlpiReadSource("GLPI_METRICS_SOURCE", "api"),
       statusSource: readGlpiReadSource("GLPI_STATUS_SOURCE", "api"),
+      createSource: readGlpiReadSource("GLPI_CREATE_SOURCE", "sql"),
+      assignSource: readGlpiReadSource("GLPI_ASSIGN_SOURCE", "sql"),
+      techniciansSource: readGlpiReadSource("GLPI_TECHNICIANS_SOURCE", "sql"),
+      usersSource: readGlpiReadSource("GLPI_USERS_SOURCE", "sql"),
     },
     mysql: {
       host: readString("MYSQL_HOST", ""),

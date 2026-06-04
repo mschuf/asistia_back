@@ -1,7 +1,9 @@
 ﻿import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import type { PaginatedResult } from "../../common/dto/pagination.dto";
 import { UsersGlpiRepository } from "../glpi/repositories/users.glpi-repository";
+import { UsersTechniciansSqlRepository } from "../glpi/repositories/users-technicians.sql-repository";
 import { CatalogService } from "../catalog/catalog.service";
 import { GlpiBootstrapService } from "../glpi/glpi-bootstrap.service";
 import { InMemoryCacheService } from "../cache/cache.service";
@@ -19,10 +21,13 @@ import {
 export class UsersService {
   constructor(
     private readonly repo: UsersGlpiRepository,
+    private readonly techniciansSqlRepo: UsersTechniciansSqlRepository,
     private readonly catalog: CatalogService,
     private readonly bootstrap: GlpiBootstrapService,
     private readonly cache: InMemoryCacheService,
     private readonly config: ConfigService<AppConfig, true>,
+    @InjectPinoLogger(UsersService.name)
+    private readonly logger: PinoLogger,
   ) {}
 
   async listAll(): Promise<DomainUser[]> {
@@ -51,10 +56,46 @@ export class UsersService {
     const ttl = this.config.get("cache.defaultTtlSeconds", { infer: true });
     return this.cache.wrap(
       CACHE_KEYS.USERS_ALL,
-      () =>
-        this.bootstrap.withCatalogBootstrapSession((key) =>
+      async () => {
+        const usersSource = this.config.get("glpi.usersSource", { infer: true });
+        if (usersSource === "sql") {
+          try {
+            const sqlItems = await this.techniciansSqlRepo.listActiveUsers();
+            this.logger.info(
+              {
+                usersListSource: "sql",
+                configured: usersSource,
+                total: sqlItems.length,
+              },
+              "[users] source=sql",
+            );
+            return sqlItems;
+          } catch (error) {
+            this.logger.warn(
+              {
+                usersListSource: "api-fallback",
+                configured: usersSource,
+                reason: "sql_error",
+                err: error,
+              },
+              `[users] source=api-fallback message=${(error as Error).message}`,
+            );
+          }
+        }
+
+        const apiItems = await this.bootstrap.withCatalogBootstrapSession((key) =>
           this.repo.fetchAllActiveUsers(key),
-        ),
+        );
+        this.logger.info(
+          {
+            usersListSource: "api",
+            configured: usersSource,
+            total: apiItems.length,
+          },
+          "[users] source=api",
+        );
+        return apiItems;
+      },
       ttl,
     );
   }
@@ -82,13 +123,47 @@ export class UsersService {
     return this.cache.wrap(
       CACHE_KEYS.USERS_TECHNICIANS,
       async () => {
-        const [activeUsers, tiGroupIds] = await Promise.all([
-          this.getCachedActiveUsers(),
-          this.getCachedTiGroupIds(),
-        ]);
-        return this.bootstrap.withCatalogBootstrapSession((key) =>
+        const tiGroupIds = await this.getCachedTiGroupIds();
+        const techniciansSource = this.config.get("glpi.techniciansSource", { infer: true });
+
+        if (techniciansSource === "sql") {
+          try {
+            const sqlItems = await this.techniciansSqlRepo.listEligibleTechnicians(tiGroupIds);
+            this.logger.info(
+              {
+                usersTechniciansSource: "sql",
+                configured: techniciansSource,
+                total: sqlItems.length,
+              },
+              "[users/technicians] source=sql",
+            );
+            return sqlItems;
+          } catch (error) {
+            this.logger.warn(
+              {
+                usersTechniciansSource: "api-fallback",
+                configured: techniciansSource,
+                reason: "sql_error",
+                err: error,
+              },
+              `[users/technicians] source=api-fallback message=${(error as Error).message}`,
+            );
+          }
+        }
+
+        const activeUsers = await this.getCachedActiveUsers();
+        const apiItems = await this.bootstrap.withCatalogBootstrapSession((key) =>
           this.repo.resolveEligibleTechniciansFromUsers(key, tiGroupIds, activeUsers),
         );
+        this.logger.info(
+          {
+            usersTechniciansSource: "api",
+            configured: techniciansSource,
+            total: apiItems.length,
+          },
+          "[users/technicians] source=api",
+        );
+        return apiItems;
       },
       ttl,
     );

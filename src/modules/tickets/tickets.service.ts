@@ -6,6 +6,7 @@ import { TicketsGlpiRepository } from "../glpi/repositories/tickets.glpi-reposit
 import { TicketsHistorySqlRepository } from "../glpi/repositories/tickets-history.sql-repository";
 import { TicketsMetricsSqlRepository } from "../glpi/repositories/tickets-metrics.sql-repository";
 import { TicketsStatusSqlRepository } from "../glpi/repositories/tickets-status.sql-repository";
+import { TicketsCreateSqlRepository } from "../glpi/repositories/tickets-create.sql-repository";
 import { UsersGlpiRepository } from "../glpi/repositories/users.glpi-repository";
 import { GlpiBootstrapService } from "../glpi/glpi-bootstrap.service";
 import { CatalogService } from "../catalog/catalog.service";
@@ -77,6 +78,8 @@ export interface HistoryListMeta {
 }
 
 type StatusUpdateSource = "mysql" | "glpi-api";
+type TicketCreateSource = "mysql" | "glpi-api";
+type TicketAssignSource = "mysql" | "glpi-api";
 
 @Injectable()
 export class TicketsService {
@@ -85,6 +88,7 @@ export class TicketsService {
     private readonly historySqlRepo: TicketsHistorySqlRepository,
     private readonly metricsSqlRepo: TicketsMetricsSqlRepository,
     private readonly statusSqlRepo: TicketsStatusSqlRepository,
+    private readonly createSqlRepo: TicketsCreateSqlRepository,
     private readonly usersRepo: UsersGlpiRepository,
     private readonly usersService: UsersService,
     private readonly bootstrap: GlpiBootstrapService,
@@ -461,19 +465,27 @@ export class TicketsService {
       dto.assignedTechnicianId ? TICKET_STATUS.ASSIGNED : TICKET_STATUS.NEW,
     );
 
-    const created = await this.asService((key) =>
-      this.ticketsRepo.create(key, {
-        name: dto.subject,
-        content: dto.description,
-        type: TicketMapper.mapTypeToGlpi(dto.type),
-        status: statusGlpi,
-        urgency: TicketMapper.mapUrgencyToGlpi(urgency),
-        itilcategories_id: dto.categoryId,
-        locations_id: locationId,
-        entities_id: this.config.get("glpi.defaultEntity", { infer: true }),
-        requesters_id: requesterId,
-        technicians_id: dto.assignedTechnicianId,
-      }),
+    const { ticket: created, source: createSource } = await this.applyCreateTicket({
+      name: dto.subject,
+      content: dto.description,
+      type: TicketMapper.mapTypeToGlpi(dto.type),
+      status: statusGlpi,
+      urgency: TicketMapper.mapUrgencyToGlpi(urgency),
+      itilcategories_id: dto.categoryId,
+      locations_id: locationId,
+      entities_id: this.config.get("glpi.defaultEntity", { infer: true }),
+      requesters_id: requesterId,
+      technicians_id: dto.assignedTechnicianId,
+    });
+
+    this.logger.info(
+      {
+        createSource,
+        ticketId: created.id,
+        requesterId,
+        technicianId: dto.assignedTechnicianId ?? null,
+      },
+      "[create] ticket created",
     );
 
     const mailUserIds = new Set<number>([requesterId]);
@@ -734,22 +746,10 @@ export class TicketsService {
       });
     }
 
-    await this.asService((key) =>
-      this.ticketsRepo.assignTechnician(key, ticketId, technicianId),
-    );
-    if (ticket.status === "new") {
-      await this.asService((key) =>
-        this.ticketsRepo.updateStatus(
-          key,
-          ticketId,
-          TicketMapper.mapStatusToGlpi(TICKET_STATUS.ASSIGNED),
-        ),
-      );
-    }
+    const assignSource = await this.applyAssignTechnician(ticketId, technicianId);
+    this.logger.info({ assignSource, ticketId, technicianId }, "[assign] technician assigned");
 
-    const refreshed = await this.asService((key) =>
-      this.ticketsRepo.findById(key, ticketId),
-    );
+    const refreshed = await this.findTicketById(ticketId);
     const enriched = await this.enrichTicket(refreshed ?? ticket);
 
     const technicianUser = await this.asService((key) =>
@@ -767,6 +767,64 @@ export class TicketsService {
     }
 
     return enriched;
+  }
+
+  private async applyCreateTicket(input: {
+    name: string;
+    content: string;
+    type: number;
+    status: number;
+    urgency: number;
+    itilcategories_id: number;
+    locations_id?: number;
+    entities_id: number;
+    requesters_id: number;
+    technicians_id?: number;
+  }): Promise<{ ticket: DomainTicket; source: TicketCreateSource }> {
+    const createSource = this.config.get("glpi.createSource", { infer: true });
+
+    if (createSource === "sql") {
+      try {
+        const created = await this.createSqlRepo.create(input);
+        return { ticket: created, source: "mysql" };
+      } catch (error) {
+        this.logger.warn(
+          { createSource: "glpi-fallback", reason: "sql_error", err: error },
+          `[create] source=glpi-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
+    const created = await this.asService((key) => this.ticketsRepo.create(key, input));
+    return { ticket: created, source: "glpi-api" };
+  }
+
+  private async applyAssignTechnician(
+    ticketId: number,
+    technicianId: number,
+  ): Promise<TicketAssignSource> {
+    const assignSource = this.config.get("glpi.assignSource", { infer: true });
+
+    if (assignSource === "sql") {
+      try {
+        const updated = await this.createSqlRepo.assignTechnician(ticketId, technicianId);
+        if (updated) {
+          return "mysql";
+        }
+        this.logger.warn(
+          { assignSource: "glpi-fallback", reason: "sql_no_rows", ticketId, technicianId },
+          "[assign] source=glpi-fallback reason=sql_no_rows",
+        );
+      } catch (error) {
+        this.logger.warn(
+          { assignSource: "glpi-fallback", reason: "sql_error", ticketId, err: error },
+          `[assign] source=glpi-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
+    await this.asService((key) => this.ticketsRepo.assignTechnician(key, ticketId, technicianId));
+    return "glpi-api";
   }
 
   private async resolveRequesterId(
