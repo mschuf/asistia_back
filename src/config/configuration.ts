@@ -108,6 +108,8 @@ export interface AppConfig {
   };
   mail: {
     supportTo: string;
+    /** POST /mail/send (herramienta de prueba; desactivado por defecto). */
+    testEndpointEnabled: boolean;
   };
   attachments: {
     maxBytes: number;
@@ -342,6 +344,7 @@ export function buildConfig(): AppConfig {
         "MAIL_SUPPORT_TO",
         readTrimmedString("SMTP_FROM", readTrimmedString("SMTP_USER", "")),
       ),
+      testEndpointEnabled: readBoolean("MAIL_TEST_ENDPOINT_ENABLED", false),
     },
     attachments: {
       maxBytes: readNumber("ATTACHMENTS_MAX_BYTES", 5 * 1024 * 1024),
