@@ -1,5 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
-import type { Pool, RowDataPacket } from "mysql2/promise";
+import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import type { QueryOptions, QueryValues } from "mysql2";
 import { MYSQL_POOL } from "./mysql.constants";
 
@@ -14,6 +14,13 @@ export class MysqlService implements OnModuleDestroy {
     const options: QueryOptions = { sql, namedPlaceholders: true };
     const [rows] = await this.pool.query<T[]>(options, params);
     return rows;
+  }
+
+  /** Ejecuta una sentencia de escritura (INSERT/UPDATE/DELETE) y devuelve el header con `affectedRows`. */
+  async execute(sql: string, params?: QueryValues): Promise<ResultSetHeader> {
+    const options: QueryOptions = { sql, namedPlaceholders: true };
+    const [result] = await this.pool.query<ResultSetHeader>(options, params);
+    return result;
   }
 
   async ping(): Promise<void> {

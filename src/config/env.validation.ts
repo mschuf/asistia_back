@@ -133,6 +133,10 @@ class EnvSchema {
   GLPI_METRICS_SOURCE?: string;
 
   @IsOptional()
+  @IsIn(["api", "sql"])
+  GLPI_STATUS_SOURCE?: string;
+
+  @IsOptional()
   @IsString()
   MYSQL_HOST?: string;
 

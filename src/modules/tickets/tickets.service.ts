@@ -5,6 +5,7 @@ import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { TicketsGlpiRepository } from "../glpi/repositories/tickets.glpi-repository";
 import { TicketsHistorySqlRepository } from "../glpi/repositories/tickets-history.sql-repository";
 import { TicketsMetricsSqlRepository } from "../glpi/repositories/tickets-metrics.sql-repository";
+import { TicketsStatusSqlRepository } from "../glpi/repositories/tickets-status.sql-repository";
 import { UsersGlpiRepository } from "../glpi/repositories/users.glpi-repository";
 import { GlpiBootstrapService } from "../glpi/glpi-bootstrap.service";
 import { CatalogService } from "../catalog/catalog.service";
@@ -42,6 +43,7 @@ import type {
   CreateTicketResponseDto,
   TicketListResponseDto,
   TicketResponseDto,
+  UpdateTicketStatusResponseDto,
 } from "./dto/ticket.response.dto";
 import type { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
 import {
@@ -74,12 +76,15 @@ export interface HistoryListMeta {
   source: HistoryListSource;
 }
 
+type StatusUpdateSource = "mysql" | "glpi-api";
+
 @Injectable()
 export class TicketsService {
   constructor(
     private readonly ticketsRepo: TicketsGlpiRepository,
     private readonly historySqlRepo: TicketsHistorySqlRepository,
     private readonly metricsSqlRepo: TicketsMetricsSqlRepository,
+    private readonly statusSqlRepo: TicketsStatusSqlRepository,
     private readonly usersRepo: UsersGlpiRepository,
     private readonly usersService: UsersService,
     private readonly bootstrap: GlpiBootstrapService,
@@ -102,6 +107,65 @@ export class TicketsService {
    */
   private asService<T>(fn: (sessionKey: string) => Promise<T>): Promise<T> {
     return this.bootstrap.withCatalogBootstrapSession(fn);
+  }
+
+  private preferSqlTicketLookup(): boolean {
+    const historySource = this.config.get("glpi.historySource", { infer: true });
+    const statusSource = this.config.get("glpi.statusSource", { infer: true });
+    return historySource === "sql" || statusSource === "sql";
+  }
+
+  private async tryFindTicketFromSql(id: number): Promise<DomainTicket | null> {
+    try {
+      const fromSql = await this.historySqlRepo.findById(id);
+      if (fromSql) {
+        this.logger.info({ ticketId: id, source: "mysql" }, "[ticket] findById source=mysql");
+      }
+      return fromSql;
+    } catch (error) {
+      this.logger.warn(
+        { ticketId: id, reason: "sql_error", err: error },
+        `[ticket] findById sql failed message=${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Carga un ticket por ID. Con historial o estado en SQL, consulta primero
+   * `v_asistia_ticket_history`; si no hay fila, hace fallback a la API de GLPI.
+   */
+  private async findTicketById(id: number): Promise<DomainTicket | null> {
+    if (this.preferSqlTicketLookup()) {
+      const fromSql = await this.tryFindTicketFromSql(id);
+      if (fromSql) {
+        return fromSql;
+      }
+    }
+
+    const fromGlpi = await this.asService((key) => this.ticketsRepo.findById(key, id));
+    if (fromGlpi) {
+      return fromGlpi;
+    }
+
+    if (!this.preferSqlTicketLookup()) {
+      return null;
+    }
+
+    return null;
+  }
+
+  /** Carga previa a `updateStatus`: con `GLPI_STATUS_SOURCE=sql` prioriza MySQL. */
+  private async findTicketForStatusUpdate(id: number): Promise<DomainTicket | null> {
+    const statusSource = this.config.get("glpi.statusSource", { infer: true });
+    if (statusSource === "sql") {
+      const fromSql = await this.tryFindTicketFromSql(id);
+      if (fromSql) {
+        return fromSql;
+      }
+      return this.asService((key) => this.ticketsRepo.findById(key, id));
+    }
+    return this.findTicketById(id);
   }
 
   async getMetrics(user: AuthenticatedUser): Promise<TicketMetricsResponseDto> {
@@ -354,7 +418,7 @@ export class TicketsService {
   }
 
   async findById(user: AuthenticatedUser, id: number): Promise<TicketResponseDto> {
-    const ticket = await this.asService((key) => this.ticketsRepo.findById(key, id));
+    const ticket = await this.findTicketById(id);
     if (!ticket) {
       throw new BusinessException({
         message: `Ticket ${id} not found`,
@@ -493,8 +557,8 @@ export class TicketsService {
     id: number,
     status: TicketStatus,
     resolutionNote?: string,
-  ): Promise<TicketResponseDto> {
-    const ticket = await this.asService((key) => this.ticketsRepo.findById(key, id));
+  ): Promise<UpdateTicketStatusResponseDto> {
+    const ticket = await this.findTicketForStatusUpdate(id);
     if (!ticket) {
       throw new BusinessException({
         message: `Ticket ${id} not found`,
@@ -532,54 +596,127 @@ export class TicketsService {
 
     const previousStatus = ticket.status;
     const statusGlpi = TicketMapper.mapStatusToGlpi(status);
+    const resolutionNoteToAppend = technicianResolving ? resolutionNote!.trim() : null;
 
-    if (technicianResolving) {
-      const note = resolutionNote!.trim();
-      await this.asService(async (key) => {
-        const rawContent = await this.ticketsRepo.getRawContent(key, id);
-        const updatedContent = appendResolutionNote(rawContent, note);
-        await this.ticketsRepo.updateStatus(key, id, statusGlpi, updatedContent);
-      });
-    } else {
-      await this.asService((key) => this.ticketsRepo.updateStatus(key, id, statusGlpi));
-    }
+    const statusUpdateSource = await this.applyStatusUpdate(id, statusGlpi, resolutionNoteToAppend);
 
-    const refreshed = await this.asService((key) => this.ticketsRepo.findById(key, id));
-    if (!refreshed) {
-      throw new BusinessException({
-        message: `Ticket ${id} could not be verified after status update`,
-        code: API_ERROR_CODE.GLPI_UNAVAILABLE,
-        status: HttpStatus.BAD_GATEWAY,
-      });
-    }
+    const refreshed = await this.verifyStatusUpdate(id, ticket, statusUpdateSource);
     if (refreshed.status !== status) {
       throw new BusinessException({
         message: `GLPI did not apply status "${TICKET_STATUS_LABELS[status]}". Current status: ${TICKET_STATUS_LABELS[refreshed.status]}`,
         code: API_ERROR_CODE.INVALID_TICKET_STATUS,
       });
     }
-    const enriched = await this.enrichTicket(refreshed);
 
     if (previousStatus !== status) {
-      const requesterUser = ticket.requesterId
-        ? await this.asService((key) => this.usersRepo.findById(key, ticket.requesterId!))
-        : null;
-      const recipients: MailRecipient[] = [];
-      if (requesterUser?.email) {
-        recipients.push({ name: requesterUser.fullName, email: requesterUser.email });
-      }
-      const payload: TicketStatusChangedEvent = {
-        ticketId: id,
-        subject: ticket.subject,
-        previousStatus: TICKET_STATUS_LABELS[previousStatus],
-        newStatus: TICKET_STATUS_LABELS[status],
-        changedBy: await this.resolveActorDisplayName(user.id),
-        recipients,
-      };
-      this.events.emit(MAIL_EVENTS.TICKET_STATUS_CHANGED, payload);
+      void (async () => {
+        const [requesterUser, changedBy] = await Promise.all([
+          ticket.requesterId
+            ? this.asService((key) => this.usersRepo.findById(key, ticket.requesterId!))
+            : Promise.resolve(null),
+          this.resolveActorDisplayName(user.id),
+        ]);
+        const recipients: MailRecipient[] = [];
+        if (requesterUser?.email) {
+          recipients.push({ name: requesterUser.fullName, email: requesterUser.email });
+        }
+        const payload: TicketStatusChangedEvent = {
+          ticketId: id,
+          subject: ticket.subject,
+          previousStatus: TICKET_STATUS_LABELS[previousStatus],
+          newStatus: TICKET_STATUS_LABELS[status],
+          changedBy,
+          recipients,
+        };
+        this.events.emit(MAIL_EVENTS.TICKET_STATUS_CHANGED, payload);
+      })();
     }
 
-    return enriched;
+    return {
+      id,
+      status: refreshed.status,
+    };
+  }
+
+  /**
+   * Aplica el cambio de estado según `GLPI_STATUS_SOURCE`.
+   * Con `sql` escribe primero en MySQL (rápido); si falla, fallback a la API REST.
+   * La verificación posterior usa el mismo origen efectivo.
+   */
+  private async applyStatusUpdate(
+    ticketId: number,
+    statusGlpi: number,
+    resolutionNote: string | null,
+  ): Promise<StatusUpdateSource> {
+    const statusSource = this.config.get("glpi.statusSource", { infer: true });
+
+    if (statusSource === "sql") {
+      try {
+        let content: string | undefined;
+        if (resolutionNote) {
+          const rawContent = await this.statusSqlRepo.getRawContent(ticketId);
+          content = appendResolutionNote(rawContent, resolutionNote);
+        }
+        const updated = await this.statusSqlRepo.updateStatus(ticketId, statusGlpi, content);
+        if (!updated) {
+          this.logger.warn(
+            { statusSource: "glpi-fallback", reason: "sql_no_rows", ticketId, statusGlpi },
+            "[status] source=glpi-fallback reason=sql_no_rows",
+          );
+        } else {
+          this.logger.info(
+            { statusSource: "mysql", ticketId, statusGlpi },
+            "[status] source=mysql",
+          );
+          return "mysql";
+        }
+      } catch (error) {
+        this.logger.warn(
+          { statusSource: "glpi-fallback", reason: "sql_error", ticketId, err: error },
+          `[status] source=glpi-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
+    if (resolutionNote) {
+      await this.asService(async (key) => {
+        const rawContent = await this.ticketsRepo.getRawContent(key, ticketId);
+        const updatedContent = appendResolutionNote(rawContent, resolutionNote);
+        await this.ticketsRepo.updateStatus(key, ticketId, statusGlpi, updatedContent);
+      });
+    } else {
+      await this.asService((key) => this.ticketsRepo.updateStatus(key, ticketId, statusGlpi));
+    }
+    return "glpi-api";
+  }
+
+  private async verifyStatusUpdate(
+    ticketId: number,
+    previousTicket: DomainTicket,
+    source: StatusUpdateSource,
+  ): Promise<DomainTicket> {
+    const statusSource = this.config.get("glpi.statusSource", { infer: true });
+    if (statusSource === "sql" && source === "mysql") {
+      const refreshedStatus = await this.statusSqlRepo.getStatus(ticketId);
+      if (!refreshedStatus) {
+        throw new BusinessException({
+          message: `Ticket ${ticketId} could not be verified after status update`,
+          code: API_ERROR_CODE.GLPI_UNAVAILABLE,
+          status: HttpStatus.BAD_GATEWAY,
+        });
+      }
+      return { ...previousTicket, status: refreshedStatus };
+    }
+
+    const refreshed = await this.asService((key) => this.ticketsRepo.findById(key, ticketId));
+    if (!refreshed) {
+      throw new BusinessException({
+        message: `Ticket ${ticketId} could not be verified after status update`,
+        code: API_ERROR_CODE.GLPI_UNAVAILABLE,
+        status: HttpStatus.BAD_GATEWAY,
+      });
+    }
+    return refreshed;
   }
 
   async assignTechnician(

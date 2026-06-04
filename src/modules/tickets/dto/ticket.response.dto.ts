@@ -69,6 +69,17 @@ export class TicketResponseDto {
   updatedAt!: string | null;
 }
 
+/** Respuesta mínima de PATCH /tickets/:id/status. */
+export class UpdateTicketStatusResponseDto {
+  @ApiProperty({ example: 10453 })
+  id!: number;
+
+  @ApiProperty({
+    enum: ["new", "assigned", "planned", "waiting", "solved", "closed"],
+  })
+  status!: string;
+}
+
 /** Respuesta mínima de POST /tickets (sin enriquecimiento GLPI). */
 export class CreateTicketResponseDto {
   @ApiProperty({ example: 10453 })

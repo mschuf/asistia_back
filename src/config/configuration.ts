@@ -61,6 +61,8 @@ export interface AppConfig {
     serviceUserId: number | null;
     historySource: "api" | "sql";
     metricsSource: "api" | "sql";
+    /** Fuente para escribir el cambio de estado (botones de acción del historial). */
+    statusSource: "api" | "sql";
   };
   mysql: {
     host: string;
@@ -202,7 +204,8 @@ export function buildConfig(): AppConfig {
       `GLPI_BOOTSTRAP_PASSWORD=${dbgBootstrapPassword ? `set(${dbgBootstrapPassword.length})` : "<empty>"} ` +
       `GLPI_BOOTSTRAP_USER_TOKEN=${maskToken(dbgBootstrapUserToken)} ` +
       `GLPI_HISTORY_SOURCE=${readGlpiReadSource("GLPI_HISTORY_SOURCE", "api")} ` +
-      `GLPI_METRICS_SOURCE=${readGlpiReadSource("GLPI_METRICS_SOURCE", "api")}`,
+      `GLPI_METRICS_SOURCE=${readGlpiReadSource("GLPI_METRICS_SOURCE", "api")} ` +
+      `GLPI_STATUS_SOURCE=${readGlpiReadSource("GLPI_STATUS_SOURCE", "api")}`,
   );
   if (dbgSmtpHost) {
     // eslint-disable-next-line no-console
@@ -282,6 +285,7 @@ export function buildConfig(): AppConfig {
       })(),
       historySource: readGlpiReadSource("GLPI_HISTORY_SOURCE", "api"),
       metricsSource: readGlpiReadSource("GLPI_METRICS_SOURCE", "api"),
+      statusSource: readGlpiReadSource("GLPI_STATUS_SOURCE", "api"),
     },
     mysql: {
       host: readString("MYSQL_HOST", ""),

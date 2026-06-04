@@ -8,6 +8,7 @@ import type { TicketResponseDto } from "../../tickets/dto/ticket.response.dto";
 import type { TicketStatus } from "../../tickets/domain/ticket-status";
 import type { TicketType } from "../../tickets/domain/ticket-type";
 import type {
+  DomainTicket,
   DomainTicketStatus,
   DomainTicketType,
   DomainTicketUrgency,
@@ -124,6 +125,18 @@ export class TicketsHistorySqlRepository {
     };
   }
 
+  async findById(ticketId: number): Promise<DomainTicket | null> {
+    const rows = await this.mysql.query<HistoryRow>(
+      `SELECT ${HISTORY_SELECT_COLUMNS}
+       FROM v_asistia_ticket_history
+       WHERE ticket_id = :ticketId AND is_deleted = 0
+       LIMIT 1`,
+      { ticketId } as QueryValues,
+    );
+    const row = rows[0];
+    return row ? this.toDomainTicket(row) : null;
+  }
+
   private buildWhereClause(filter: ListTicketsFilter): {
     whereSql: string;
     params: Record<string, unknown>;
@@ -187,6 +200,27 @@ export class TicketsHistorySqlRepository {
   private normalizeStatusFilter(statuses?: number[]): number[] {
     if (!statuses?.length) return [];
     return [...new Set(statuses.filter((value) => Number.isInteger(value) && value > 0))];
+  }
+
+  private toDomainTicket(row: HistoryRow): DomainTicket {
+    return {
+      id: Number(row.ticket_id),
+      type: this.parseType(row),
+      status: this.parseStatus(row),
+      urgency: this.parseUrgency(row),
+      subject: row.subject ?? "",
+      description: this.stripHtml(row.description_raw),
+      categoryId: this.toOptionalId(row.category_id),
+      locationId: this.toOptionalId(row.location_id),
+      requesterId: this.toOptionalId(row.requester_id),
+      technicianId: this.toOptionalId(row.technician_id),
+      createdAt: row.created_at ?? null,
+      updatedAt: row.updated_at ?? null,
+      dueDate: null,
+      solvedAt: null,
+      closedAt: null,
+      isDeleted: false,
+    };
   }
 
   private toTicketResponseDto(row: HistoryRow): TicketResponseDto {

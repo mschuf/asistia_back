@@ -29,6 +29,7 @@ import {
   CreateTicketResponseDto,
   TicketListResponseDto,
   TicketResponseDto,
+  UpdateTicketStatusResponseDto,
 } from "./dto/ticket.response.dto";
 import { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
 
@@ -101,13 +102,13 @@ export class TicketsController {
 
   @Patch(":id/status")
   @ApiOperation({ summary: "Update the status of a ticket" })
-  @ApiResponse({ status: 200, type: TicketResponseDto })
+  @ApiResponse({ status: 200, type: UpdateTicketStatusResponseDto })
   @ResponseMessage("Ticket status updated")
   async updateStatus(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateTicketStatusDto,
-  ): Promise<TicketResponseDto> {
+  ): Promise<UpdateTicketStatusResponseDto> {
     return this.ticketsService.updateStatus(user, id, dto.status, dto.resolutionNote);
   }
 

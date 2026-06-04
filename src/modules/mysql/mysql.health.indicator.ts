@@ -20,7 +20,8 @@ export class MysqlHealthIndicator extends HealthIndicator {
   async isHealthy(key = "mysql"): Promise<HealthIndicatorResult> {
     const historySql = this.config.get("glpi.historySource", { infer: true }) === "sql";
     const metricsSql = this.config.get("glpi.metricsSource", { infer: true }) === "sql";
-    if (!historySql && !metricsSql) {
+    const statusSql = this.config.get("glpi.statusSource", { infer: true }) === "sql";
+    if (!historySql && !metricsSql && !statusSql) {
       return this.getStatus(key, true, { enabled: false });
     }
 
@@ -31,7 +32,7 @@ export class MysqlHealthIndicator extends HealthIndicator {
     if (!hasConfig) {
       const result = this.getStatus(key, false, {
         reason:
-          "MYSQL_HOST/MYSQL_DATABASE/MYSQL_USER are required when GLPI_HISTORY_SOURCE=sql or GLPI_METRICS_SOURCE=sql",
+          "MYSQL_HOST/MYSQL_DATABASE/MYSQL_USER are required when GLPI_HISTORY_SOURCE, GLPI_METRICS_SOURCE or GLPI_STATUS_SOURCE is sql",
       });
       throw new HealthCheckError(`${key} unavailable`, result);
     }
