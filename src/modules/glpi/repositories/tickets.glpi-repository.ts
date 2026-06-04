@@ -804,14 +804,16 @@ export class TicketsGlpiRepository {
     if (normalizedLocationId == null) return [];
 
     const cappedLimit = Math.max(1, Math.min(limit, LOCATION_SEARCH_MAX));
-    return this.paginateScopedMetricsTickets(
+    const pool = await this.paginateScopedMetricsTickets(
       sessionKey,
       {
         locationId: normalizedLocationId,
         locationExact: true,
-        status: openStatusGlpi,
       },
       cappedLimit,
+    );
+    return pool.filter((ticket) =>
+      openStatusGlpi.includes(TicketMapper.mapStatusToGlpi(ticket.status)),
     );
   }
 
@@ -825,11 +827,16 @@ export class TicketsGlpiRepository {
     openStatusGlpi: number[],
     limit: number,
   ): Promise<DomainTicket[]> {
-    return this.paginateScopedMetricsTickets(
+    const pool = await this.paginateScopedMetricsTickets(
       sessionKey,
-      { technicianId, status: openStatusGlpi },
+      { technicianId },
       limit,
       technicianId,
+    );
+    return pool.filter(
+      (ticket) =>
+        ticket.technicianId === technicianId &&
+        openStatusGlpi.includes(TicketMapper.mapStatusToGlpi(ticket.status)),
     );
   }
 

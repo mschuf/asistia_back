@@ -6,9 +6,28 @@ import { MysqlService } from "../../mysql/mysql.service";
 import { OPEN_STATUS_GLPI, openPercent } from "../../tickets/domain/ticket-metrics.helpers";
 import type { TicketMetricsResponseDto } from "../../tickets/dto/ticket-metrics.response.dto";
 
-const VIEW = "v_asistia_ticket_history";
-const METRICS_SITE_LIMIT = 500;
+const METRICS_SITE_LIMIT = 50000;
 const OPEN_STATUS_IN = OPEN_STATUS_GLPI.join(", ");
+const BASE_TICKET_HISTORY_SQL = `
+  SELECT
+    t.id AS ticket_id,
+    t.is_deleted,
+    t.type AS type_glpi,
+    t.status AS status_glpi,
+    t.locations_id AS location_id,
+    t.date AS created_at,
+    tech.users_id AS technician_id
+  FROM glpi_tickets t
+  LEFT JOIN glpi_tickets_users tech
+    ON tech.tickets_id = t.id
+   AND tech.type = 2
+   AND tech.id = (
+    SELECT MIN(tu_min.id)
+    FROM glpi_tickets_users tu_min
+    WHERE tu_min.tickets_id = t.id
+      AND tu_min.type = 2
+  )
+`;
 
 interface AssignedAggregateRow extends RowDataPacket {
   in_progress: number | string | null;
@@ -145,7 +164,7 @@ export class TicketsMetricsSqlRepository {
              THEN 1 ELSE 0
            END
          ) AS total_this_month
-       FROM ${VIEW}
+       FROM (${BASE_TICKET_HISTORY_SQL}) th
        WHERE is_deleted = 0
          AND technician_id = :technicianId
          ${typeClause}`,
@@ -182,7 +201,7 @@ export class TicketsMetricsSqlRepository {
          ) AS total_this_month
        FROM (
          SELECT status_glpi, created_at
-         FROM ${VIEW}
+         FROM (${BASE_TICKET_HISTORY_SQL}) th
          WHERE is_deleted = 0
            AND location_id = :locationId
            AND status_glpi IN (${OPEN_STATUS_IN})
@@ -207,7 +226,7 @@ export class TicketsMetricsSqlRepository {
   private async listOpenByLocation(technicianId: number): Promise<OpenByLocationRow[]> {
     return this.mysql.query<OpenByLocationRow>(
       `SELECT location_id, COUNT(*) AS open_count
-       FROM ${VIEW}
+       FROM (${BASE_TICKET_HISTORY_SQL}) th
        WHERE is_deleted = 0
          AND technician_id = :technicianId
          AND status_glpi IN (${OPEN_STATUS_IN})
@@ -222,8 +241,7 @@ export class TicketsMetricsSqlRepository {
     return this.mysql.query<LocationNameRow>(
       `SELECT id,
               COALESCE(NULLIF(TRIM(completename), ''), name) AS name
-       FROM glpi_locations
-       WHERE is_deleted = 0`,
+       FROM glpi_locations`,
     );
   }
 }
