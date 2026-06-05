@@ -319,7 +319,7 @@ export class TicketsService {
       requesterId: user.role === "technician" ? undefined : user.id,
       technicianId:
         user.role === "technician"
-          ? query.technicianId ?? user.id
+          ? query.technicianId ?? undefined
           : undefined,
       locationId: query.locationId ?? undefined,
     };
