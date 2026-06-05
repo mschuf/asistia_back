@@ -23,14 +23,36 @@ import {
   buildTicketAssignedText,
 } from "./templates/ticket-assigned.template";
 
+export interface TicketCreatedMailDispatchResult {
+  sent: boolean;
+  error: string | null;
+  userMailSent: boolean;
+  supportMailSent: boolean;
+}
+
 @Injectable()
 export class MailListener {
   private readonly logger = new Logger(MailListener.name);
 
   constructor(private readonly mail: MailService) {}
 
-  @OnEvent(MAIL_EVENTS.TICKET_CREATED, { async: true, promisify: true })
-  async onTicketCreated(event: TicketCreatedEvent): Promise<void> {
+  async dispatchTicketCreated(
+    event: TicketCreatedEvent,
+  ): Promise<TicketCreatedMailDispatchResult> {
+    if (event.notify.length === 0) {
+      return {
+        sent: false,
+        error: "no_recipients",
+        userMailSent: false,
+        supportMailSent: false,
+      };
+    }
+
+    let userMailSent = false;
+    let supportMailSent = false;
+    let lastError: string | null = null;
+    let allSent = true;
+
     for (const recipient of event.notify) {
       const result = await this.mail.send({
         subject: buildTicketCreatedSubject(event, recipient.role),
@@ -38,12 +60,33 @@ export class MailListener {
         text: buildTicketCreatedText(event, recipient.role),
         recipients: [recipient],
       });
-      if (!result.sent && result.error) {
+
+      if (recipient.role === "requester") {
+        userMailSent = result.sent;
+      } else if (recipient.role === "technician") {
+        supportMailSent = result.sent;
+      }
+
+      if (!result.sent) {
+        allSent = false;
+        lastError = result.error ?? "mail_send_failed";
         this.logger.error(
-          `Ticket ${event.ticketId} created mail failed for ${recipient.role}: ${result.error}`,
+          `Ticket ${event.ticketId} created mail failed for ${recipient.role}: ${lastError}`,
         );
       }
     }
+
+    return {
+      sent: allSent,
+      error: allSent ? null : lastError,
+      userMailSent,
+      supportMailSent,
+    };
+  }
+
+  @OnEvent(MAIL_EVENTS.TICKET_CREATED, { async: true, promisify: true })
+  async onTicketCreated(event: TicketCreatedEvent): Promise<void> {
+    await this.dispatchTicketCreated(event);
   }
 
   @OnEvent(MAIL_EVENTS.TICKET_STATUS_CHANGED, { async: true, promisify: true })

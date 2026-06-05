@@ -1,100 +1,61 @@
 import { HttpStatus, Injectable } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
-import type { AppConfig } from "../../config/configuration";
 import { LdapProvider } from "../auth/strategies/ldap.provider";
 import { CatalogService } from "../catalog/catalog.service";
+import { normalizeLocationId } from "../tickets/domain/ticket-metrics.helpers";
+import { TicketsService } from "../tickets/tickets.service";
 import { UsersService } from "../users/users.service";
 import type { SendMailDto } from "./dto/send-mail.dto";
-import type { SendMailResponseDto } from "./dto/send-mail.response.dto";
-import { MailService } from "./mail.service";
-import {
-  buildSupportNotificationHtml,
-  buildSupportNotificationSubject,
-  buildSupportNotificationText,
-  buildUserConfirmationHtml,
-  buildUserConfirmationSubject,
-  buildUserConfirmationText,
-  type MailRequestTemplateInput,
-} from "./templates/mail-request.template";
+import { MailListener } from "./mail.listener";
 
 interface ResolvedRequester {
   userId: number | null;
   name: string;
   email: string;
   source: "glpi" | "ldap";
+  locationId: number | null;
 }
 
 @Injectable()
 export class MailDispatchService {
   constructor(
-    private readonly mail: MailService,
+    private readonly tickets: TicketsService,
     private readonly users: UsersService,
     private readonly ldap: LdapProvider,
     private readonly catalog: CatalogService,
-    private readonly config: ConfigService<AppConfig, true>,
+    private readonly mailListener: MailListener,
   ) {}
 
-  async send(dto: SendMailDto): Promise<SendMailResponseDto> {
+  async send(dto: SendMailDto): Promise<void> {
     const requester = await this.resolveRequester(dto.email);
     const category = await this.resolveCategory(dto.categoryId);
-    const templateInput: MailRequestTemplateInput = {
+
+    const created = await this.tickets.createFromInbound({
+      requesterId: requester.userId,
       requesterName: requester.name,
       requesterEmail: requester.email,
-      requesterUserId: requester.userId,
+      categoryId: category.id,
       categoryName: category.name,
-      description: dto.description.trim(),
-    };
-
-    const userResult = await this.mail.send({
-      subject: buildUserConfirmationSubject(templateInput),
-      html: buildUserConfirmationHtml(templateInput),
-      text: buildUserConfirmationText(templateInput),
-      recipients: [{ name: requester.name, email: requester.email }],
+      description: dto.description,
+      locationId: requester.locationId ?? undefined,
+      type: dto.type,
     });
 
-    const supportEmail = this.config.get("mail.supportTo", { infer: true }).trim();
-    let supportMailSent = false;
-    let supportError: string | null = null;
-
-    if (supportEmail) {
-      const supportResult = await this.mail.send({
-        subject: buildSupportNotificationSubject(templateInput),
-        html: buildSupportNotificationHtml(templateInput),
-        text: buildSupportNotificationText(templateInput),
-        recipients: [{ name: "Soporte TI", email: supportEmail }],
-      });
-
-      supportMailSent = supportResult.sent;
-      supportError = supportResult.error;
-    }
-
-    const sent = userResult.sent || supportMailSent;
-    const userError = userResult.error;
-    const combinedError = [userError, supportError].filter(Boolean).join(" | ") || null;
-
-    if (!sent && combinedError) {
+    const mailResult = await this.mailListener.dispatchTicketCreated(created.mailEvent);
+    if (!mailResult.sent) {
       throw new BusinessException({
-        message: combinedError,
+        message: mailResult.error ?? "Mail dispatch failed",
         code: API_ERROR_CODE.MAIL_SEND_FAILED,
         status: HttpStatus.BAD_GATEWAY,
+        details: {
+          ticketId: created.id,
+          error: mailResult.error,
+          userMailSent: mailResult.userMailSent,
+          supportMailSent: mailResult.supportMailSent,
+        },
       });
     }
-
-    return {
-      sent,
-      error: combinedError,
-      requester: {
-        userId: requester.userId,
-        name: requester.name,
-        email: requester.email,
-        source: requester.source,
-      },
-      category,
-      userMailSent: userResult.sent,
-      supportMailSent,
-    };
   }
 
   private async resolveRequester(email: string): Promise<ResolvedRequester> {
@@ -107,6 +68,7 @@ export class MailDispatchService {
         name: glpiUser.fullName ?? "Usuario",
         email: resolvedEmail,
         source: "glpi",
+        locationId: normalizeLocationId(glpiUser.locationId),
       };
     }
 
@@ -125,6 +87,7 @@ export class MailDispatchService {
       name: enriched?.fullName ?? ldapUser.name,
       email: ldapUser.email,
       source: "ldap",
+      locationId: normalizeLocationId(enriched?.locationId),
     };
   }
 

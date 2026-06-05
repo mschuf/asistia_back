@@ -14,7 +14,7 @@ export interface CreateTicketSqlInput {
   itilcategories_id: number;
   locations_id?: number;
   entities_id: number;
-  requesters_id: number;
+  requesters_id?: number;
   technicians_id?: number;
 }
 
@@ -29,12 +29,14 @@ export class TicketsCreateSqlRepository {
   async create(input: CreateTicketSqlInput): Promise<DomainTicket> {
     const ticketId = await this.mysql.withTransaction(async (connection) => {
       const createdTicketId = await this.insertTicket(connection, input);
-      await this.insertTicketUser(
-        connection,
-        createdTicketId,
-        input.requesters_id,
-        GLPI_TICKET_USER_TYPE.REQUESTER,
-      );
+      if (input.requesters_id !== undefined) {
+        await this.insertTicketUser(
+          connection,
+          createdTicketId,
+          input.requesters_id,
+          GLPI_TICKET_USER_TYPE.REQUESTER,
+        );
+      }
       if (input.technicians_id) {
         await this.upsertTicketUser(
           connection,
@@ -201,7 +203,7 @@ export class TicketsCreateSqlRepository {
       description: description ? description : null,
       categoryId: input.itilcategories_id,
       locationId: input.locations_id ?? null,
-      requesterId: input.requesters_id,
+      requesterId: input.requesters_id ?? null,
       technicianId: input.technicians_id ?? null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

@@ -1,13 +1,16 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   IsEmail,
+  IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsPositive,
   IsString,
   MinLength,
 } from "class-validator";
+import { TICKET_TYPE, type TicketType } from "../../tickets/domain/ticket-type";
 
 export class SendMailDto {
   @ApiProperty({ example: "usuario@empresa.com" })
@@ -28,4 +31,9 @@ export class SendMailDto {
   @IsInt()
   @IsPositive()
   categoryId!: number;
+
+  @ApiPropertyOptional({ enum: Object.values(TICKET_TYPE), example: "request" })
+  @IsOptional()
+  @IsEnum(Object.values(TICKET_TYPE) as readonly string[])
+  type?: TicketType;
 }

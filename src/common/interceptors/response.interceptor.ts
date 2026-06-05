@@ -8,6 +8,7 @@ import { Reflector } from "@nestjs/core";
 import { Observable, map } from "rxjs";
 
 export const RESPONSE_MESSAGE_KEY = "responseMessage";
+export const SKIP_RESPONSE_ENVELOPE_KEY = "skipResponseEnvelope";
 
 export interface EnvelopeSuccess<T> {
   success: true;
@@ -35,9 +36,16 @@ export class ResponseInterceptor<T>
       RESPONSE_MESSAGE_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const skipEnvelope = this.reflector.getAllAndOverride<boolean>(
+      SKIP_RESPONSE_ENVELOPE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     return next.handle().pipe(
       map((payload: T) => {
+        if (skipEnvelope) {
+          return undefined as unknown as T;
+        }
         const maybe = payload as unknown as MaybeWrapped<T>;
         if (maybe && typeof maybe === "object" && maybe.__raw === true) {
           return payload;

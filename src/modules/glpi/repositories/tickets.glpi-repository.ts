@@ -45,7 +45,7 @@ export interface CreateTicketInput {
   itilcategories_id: number;
   locations_id?: number;
   entities_id: number;
-  requesters_id: number;
+  requesters_id?: number;
   technicians_id?: number;
 }
 
@@ -656,8 +656,10 @@ export class TicketsGlpiRepository {
       urgency: input.urgency,
       itilcategories_id: input.itilcategories_id,
       entities_id: input.entities_id,
-      _users_id_requester: input.requesters_id,
     };
+    if (input.requesters_id !== undefined) {
+      glpiInput._users_id_requester = input.requesters_id;
+    }
     if (input.locations_id !== undefined) {
       glpiInput.locations_id = input.locations_id;
     }
@@ -695,7 +697,9 @@ export class TicketsGlpiRepository {
     ticketId: number,
     input: CreateTicketInput,
   ): Promise<void> {
-    await this.ensureRequesterLink(sessionKey, ticketId, input.requesters_id);
+    if (input.requesters_id !== undefined) {
+      await this.ensureRequesterLink(sessionKey, ticketId, input.requesters_id);
+    }
     if (input.technicians_id !== undefined) {
       await this.ensureTechnicianLink(sessionKey, ticketId, input.technicians_id);
     }
@@ -936,6 +940,8 @@ export class TicketsGlpiRepository {
     intendedStatusGlpi?: number,
   ): Promise<void> {
     if (!this.config.get("glpi.stripServiceAssignment", { infer: true })) return;
+    const serviceUserId = await this.getSessionUserId(sessionKey);
+    if (serviceUserId && expectedTechnicianId === serviceUserId) return;
     await this.stripServiceAccountActor(
       sessionKey,
       ticketId,
@@ -953,9 +959,10 @@ export class TicketsGlpiRepository {
     ticketId: number,
     input: CreateTicketInput,
   ): Promise<void> {
-    const actors: Array<{ userId: number; type: number }> = [
-      { userId: input.requesters_id, type: GLPI_TICKET_USER_TYPE.REQUESTER },
-    ];
+    const actors: Array<{ userId: number; type: number }> = [];
+    if (input.requesters_id !== undefined) {
+      actors.push({ userId: input.requesters_id, type: GLPI_TICKET_USER_TYPE.REQUESTER });
+    }
     if (input.technicians_id !== undefined) {
       actors.push({ userId: input.technicians_id, type: GLPI_TICKET_USER_TYPE.ASSIGNED });
     }
@@ -1503,7 +1510,7 @@ export class TicketsGlpiRepository {
       description: description ? description : null,
       categoryId: input.itilcategories_id,
       locationId: input.locations_id ?? null,
-      requesterId: input.requesters_id,
+      requesterId: input.requesters_id ?? null,
       technicianId: input.technicians_id ?? null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

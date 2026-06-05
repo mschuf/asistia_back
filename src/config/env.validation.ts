@@ -242,6 +242,14 @@ class EnvSchema {
 
   @IsOptional()
   @IsNumberString()
+  MAIL_INBOUND_DEFAULT_TECHNICIAN_ID?: string;
+
+  @IsOptional()
+  @IsIn(["incident", "request"])
+  MAIL_INBOUND_DEFAULT_TICKET_TYPE?: string;
+
+  @IsOptional()
+  @IsNumberString()
   ATTACHMENTS_MAX_BYTES?: string;
 
   @IsOptional()

@@ -20,7 +20,7 @@ import {
   canTransitionTo,
   type TicketStatus,
 } from "./domain/ticket-status";
-import { TICKET_TYPE_LABELS } from "./domain/ticket-type";
+import { TICKET_TYPE, TICKET_TYPE_LABELS, type TicketType } from "./domain/ticket-type";
 import { UrgencyPolicy } from "./domain/urgency.policy";
 import { appendResolutionNote } from "./domain/ticket-resolution.helpers";
 import { RESOLUTION_NOTE_MIN_LENGTH } from "./dto/update-ticket-status.dto";
@@ -80,6 +80,24 @@ export interface HistoryListMeta {
 type StatusUpdateSource = "mysql" | "glpi-api";
 type TicketCreateSource = "mysql" | "glpi-api";
 type TicketAssignSource = "mysql" | "glpi-api";
+
+interface InboundTicketInput {
+  requesterId: number | null;
+  requesterName: string;
+  requesterEmail: string;
+  categoryId: number;
+  categoryName: string;
+  description: string;
+  locationId?: number;
+  type?: TicketType;
+}
+
+export interface InboundTicketResponse {
+  id: number;
+  subject: string;
+  type: TicketType;
+  mailEvent: TicketCreatedEvent;
+}
 
 @Injectable()
 export class TicketsService {
@@ -488,32 +506,6 @@ export class TicketsService {
       "[create] ticket created",
     );
 
-    const mailUserIds = new Set<number>([requesterId]);
-    if (dto.assignedTechnicianId) {
-      mailUserIds.add(dto.assignedTechnicianId);
-    }
-    const usersById = await this.loadUsersByIds(mailUserIds);
-
-    const notify: TicketCreatedRecipient[] = [];
-    const requesterRecipient = await this.resolveMailRecipient(
-      usersById.get(requesterId) ?? null,
-    );
-    if (requesterRecipient) {
-      notify.push({ ...requesterRecipient, role: "requester" });
-    }
-
-    const technicianRecipient = await this.resolveMailRecipient(
-      dto.assignedTechnicianId
-        ? usersById.get(dto.assignedTechnicianId) ?? null
-        : null,
-    );
-    if (
-      technicianRecipient &&
-      technicianRecipient.email.toLowerCase() !== requesterRecipient?.email.toLowerCase()
-    ) {
-      notify.push({ ...technicianRecipient, role: "technician" });
-    }
-
     const categoryName =
       categories.find((category) => category.id === dto.categoryId)?.name ?? null;
     const locationEntry = locationId
@@ -523,26 +515,83 @@ export class TicketsService {
       ? locationEntry.name || locationEntry.fullPath
       : null;
 
-    const payload: TicketCreatedEvent = {
+    const mailEvent = await this.buildTicketCreatedEvent({
       ticketId: created.id,
-      type: TICKET_TYPE_LABELS[dto.type],
+      ticketType: dto.type,
       subject: dto.subject,
       description: dto.description,
-      requesterName: usersById.get(requesterId)?.fullName ?? "Solicitante",
-      technicianName: dto.assignedTechnicianId
-        ? usersById.get(dto.assignedTechnicianId)?.fullName ?? null
-        : null,
+      requesterId,
+      requesterNameFallback: "Solicitante",
+      requesterEmailFallback: null,
+      technicianId: dto.assignedTechnicianId,
       categoryName,
       locationName,
-      notify,
-    };
-
-    this.events.emit(MAIL_EVENTS.TICKET_CREATED, payload);
+    });
+    this.events.emit(MAIL_EVENTS.TICKET_CREATED, mailEvent);
 
     return {
       id: created.id,
       subject: created.subject,
-      mail: { sent: notify.length > 0, error: null },
+      mail: { sent: mailEvent.notify.length > 0, error: null },
+    };
+  }
+
+  async createFromInbound(input: InboundTicketInput): Promise<InboundTicketResponse> {
+    const technicianId = this.config.get("mail.inboundDefaultTechnicianId", { infer: true });
+    const ticketType: TicketType =
+      input.type ??
+      this.config.get("mail.inboundDefaultTicketType", { infer: true }) ??
+      TICKET_TYPE.REQUEST;
+    const normalizedLocationId = normalizeLocationId(input.locationId) ?? undefined;
+    const trimmedDescription = input.description.trim();
+    const subject = input.categoryName;
+    const serviceUserId = this.config.get("glpi.serviceUserId", { infer: true });
+
+    await this.assertInboundTechnicianExists(technicianId, serviceUserId);
+
+    const urgency = UrgencyPolicy.defaultFor(ticketType);
+    const { ticket: created, source: createSource } = await this.applyCreateTicket({
+      name: subject,
+      content: trimmedDescription,
+      type: TicketMapper.mapTypeToGlpi(ticketType),
+      status: TicketMapper.mapStatusToGlpi(TICKET_STATUS.ASSIGNED),
+      urgency: TicketMapper.mapUrgencyToGlpi(urgency),
+      itilcategories_id: input.categoryId,
+      locations_id: normalizedLocationId,
+      entities_id: this.config.get("glpi.defaultEntity", { infer: true }),
+      requesters_id: input.requesterId ?? undefined,
+      technicians_id: technicianId,
+    });
+
+    this.logger.info(
+      {
+        createSource,
+        ticketId: created.id,
+        requesterId: input.requesterId,
+        technicianId,
+        inbound: true,
+      },
+      "[create] inbound ticket created",
+    );
+
+    const mailEvent = await this.buildTicketCreatedEvent({
+      ticketId: created.id,
+      ticketType,
+      subject,
+      description: trimmedDescription,
+      requesterId: input.requesterId,
+      requesterNameFallback: input.requesterName,
+      requesterEmailFallback: input.requesterEmail,
+      technicianId,
+      categoryName: input.categoryName,
+      locationName: null,
+    });
+
+    return {
+      id: created.id,
+      subject,
+      type: ticketType,
+      mailEvent,
     };
   }
 
@@ -778,7 +827,7 @@ export class TicketsService {
     itilcategories_id: number;
     locations_id?: number;
     entities_id: number;
-    requesters_id: number;
+    requesters_id?: number;
     technicians_id?: number;
   }): Promise<{ ticket: DomainTicket; source: TicketCreateSource }> {
     const createSource = this.config.get("glpi.createSource", { infer: true });
@@ -907,6 +956,81 @@ export class TicketsService {
         code: API_ERROR_CODE.INVALID_TECHNICIAN,
       });
     }
+  }
+
+  private async assertInboundTechnicianExists(
+    technicianId: number,
+    serviceUserId: number | null,
+  ): Promise<void> {
+    if (serviceUserId !== null && technicianId === serviceUserId) {
+      const technician = await this.asService((key) => this.usersRepo.findById(key, technicianId));
+      if (!technician) {
+        throw new BusinessException({
+          message: `Technician ${technicianId} is not valid`,
+          code: API_ERROR_CODE.INVALID_TECHNICIAN,
+        });
+      }
+      return;
+    }
+
+    await this.assertTechnicianExists(technicianId);
+  }
+
+  private async buildTicketCreatedEvent(input: {
+    ticketId: number;
+    ticketType: TicketType;
+    subject: string;
+    description: string;
+    requesterId: number | null;
+    requesterNameFallback: string;
+    requesterEmailFallback: string | null;
+    technicianId?: number;
+    categoryName: string | null;
+    locationName: string | null;
+  }): Promise<TicketCreatedEvent> {
+    const mailUserIds = new Set<number>();
+    if (input.requesterId) {
+      mailUserIds.add(input.requesterId);
+    }
+    if (input.technicianId) {
+      mailUserIds.add(input.technicianId);
+    }
+    const usersById = await this.loadUsersByIds(mailUserIds);
+
+    const notify: TicketCreatedRecipient[] = [];
+    const requesterRecipient = await this.resolveMailRecipient(
+      input.requesterId ? usersById.get(input.requesterId) ?? null : null,
+      input.requesterEmailFallback,
+    );
+    if (requesterRecipient) {
+      notify.push({ ...requesterRecipient, role: "requester" });
+    }
+
+    const technicianRecipient = await this.resolveMailRecipient(
+      input.technicianId ? usersById.get(input.technicianId) ?? null : null,
+    );
+    if (
+      technicianRecipient &&
+      technicianRecipient.email.toLowerCase() !== requesterRecipient?.email.toLowerCase()
+    ) {
+      notify.push({ ...technicianRecipient, role: "technician" });
+    }
+
+    return {
+      ticketId: input.ticketId,
+      type: TICKET_TYPE_LABELS[input.ticketType],
+      subject: input.subject,
+      description: input.description,
+      requesterName:
+        (input.requesterId ? usersById.get(input.requesterId)?.fullName : null) ??
+        input.requesterNameFallback,
+      technicianName: input.technicianId
+        ? usersById.get(input.technicianId)?.fullName ?? null
+        : null,
+      categoryName: input.categoryName,
+      locationName: input.locationName,
+      notify,
+    };
   }
 
   private async enrichTicket(ticket: DomainTicket): Promise<TicketResponseDto> {

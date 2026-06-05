@@ -110,6 +110,10 @@ export interface AppConfig {
     supportTo: string;
     /** POST /mail/send (herramienta de prueba; desactivado por defecto). */
     testEndpointEnabled: boolean;
+    /** Técnico por defecto para tickets inbound via /mail/send. */
+    inboundDefaultTechnicianId: number;
+    /** Tipo por defecto para tickets inbound via /mail/send. */
+    inboundDefaultTicketType: "incident" | "request";
   };
   attachments: {
     maxBytes: number;
@@ -345,6 +349,11 @@ export function buildConfig(): AppConfig {
         readTrimmedString("SMTP_FROM", readTrimmedString("SMTP_USER", "")),
       ),
       testEndpointEnabled: readBoolean("MAIL_TEST_ENDPOINT_ENABLED", false),
+      inboundDefaultTechnicianId: readNumber("MAIL_INBOUND_DEFAULT_TECHNICIAN_ID", 1368),
+      inboundDefaultTicketType:
+        readString("MAIL_INBOUND_DEFAULT_TICKET_TYPE", "request").toLowerCase() === "incident"
+          ? "incident"
+          : "request",
     },
     attachments: {
       maxBytes: readNumber("ATTACHMENTS_MAX_BYTES", 5 * 1024 * 1024),
