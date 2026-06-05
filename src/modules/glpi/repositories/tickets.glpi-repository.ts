@@ -60,7 +60,7 @@ const POST_CREATE_INDEX_DELAY_MS = 400;
 /** Paginación de search GLPI exclusiva para métricas TI (no comparte `list()`). */
 const METRICS_SEARCH_PAGE_SIZE = 500;
 const METRICS_ASSIGNED_MAX = 9999;
-/** Columnas explícitas para búsquedas de métricas acotadas (Mi Sede / abiertos por sede). */
+/** Columnas explícitas para búsquedas de métricas acotadas (Mi Sede / Indicadores). */
 const SCOPED_METRICS_FORCEDISPLAY = [
   GLPI_TICKET_SEARCH_FIELDS.ID,
   GLPI_TICKET_SEARCH_FIELDS.STATUS,
@@ -450,7 +450,7 @@ export class TicketsGlpiRepository {
     return { items: resultItems, total };
   }
 
-  /** Búsqueda GLPI aislada para Mi Sede y abiertos por sede (no alimenta otros cards). */
+  /** Búsqueda GLPI aislada para Mi Sede e Indicadores (no alimenta otros cards). */
   private async searchScopedMetricsTicketsPage(
     sessionKey: string,
     filter: ScopedMetricsSearchFilter,
@@ -822,25 +822,21 @@ export class TicketsGlpiRepository {
   }
 
   /**
-   * Tickets abiertos asignados al técnico (listado Abiertos por sede).
+   * Tickets abiertos globales (Indicadores: total por sede, sin filtro por técnico).
    * Consulta aislada: no altera el pool de Mis Tickets / Incidentes / Solicitudes.
    */
-  async listOpenAssignedTicketsForMetrics(
+  async listAllOpenTicketsForLocationMetrics(
     sessionKey: string,
-    technicianId: number,
     openStatusGlpi: number[],
     limit: number,
   ): Promise<DomainTicket[]> {
     const pool = await this.paginateScopedMetricsTickets(
       sessionKey,
-      { technicianId },
+      { status: openStatusGlpi },
       limit,
-      technicianId,
     );
-    return pool.filter(
-      (ticket) =>
-        ticket.technicianId === technicianId &&
-        openStatusGlpi.includes(TicketMapper.mapStatusToGlpi(ticket.status)),
+    return pool.filter((ticket) =>
+      openStatusGlpi.includes(TicketMapper.mapStatusToGlpi(ticket.status)),
     );
   }
 

@@ -59,8 +59,8 @@ import {
 /** Límite para tickets abiertos de la sede exacta (card Mi Sede). */
 const METRICS_SITE_LIMIT = 500;
 
-/** Límite para abiertos asignados al técnico (listado Abiertos por sede). */
-const METRICS_ASSIGNED_OPEN_LIMIT = 9999;
+/** Límite para tickets abiertos globales (Indicadores por sede). */
+const METRICS_GLOBAL_OPEN_LIMIT = 9999;
 
 /** Máximo de tickets por página en el listado (historial). */
 const TICKETS_LIST_MAX_PAGE_SIZE = 15;
@@ -248,7 +248,7 @@ export class TicketsService {
       TicketMapper.mapStatusToGlpi(status),
     );
 
-    const [assignedTickets, locations, mySitePool, assignedOpenPool] =
+    const [assignedTickets, locations, mySitePool, globalOpenPool] =
       await this.asService(async (key) => {
         const mySitePromise =
           user.locationId != null
@@ -260,19 +260,18 @@ export class TicketsService {
               )
             : Promise.resolve([] as DomainTicket[]);
 
-        const [assigned, locs, mySiteItems, assignedOpenItems] = await Promise.all([
+        const [assigned, locs, mySiteItems, globalOpenItems] = await Promise.all([
           this.ticketsRepo.listAssignedTicketsForMetrics(key, user.id),
           this.catalogService.listLocations(),
           mySitePromise,
-          this.ticketsRepo.listOpenAssignedTicketsForMetrics(
+          this.ticketsRepo.listAllOpenTicketsForLocationMetrics(
             key,
-            user.id,
             openStatusGlpi,
-            METRICS_ASSIGNED_OPEN_LIMIT,
+            METRICS_GLOBAL_OPEN_LIMIT,
           ),
         ]);
 
-        return [assigned, locs, mySiteItems, assignedOpenItems] as const;
+        return [assigned, locs, mySiteItems, globalOpenItems] as const;
       });
 
     const myTickets = computeMyTicketsMetrics(assignedTickets);
@@ -283,7 +282,7 @@ export class TicketsService {
     const locationNameById = new Map(
       locations.map((loc) => [normalizeLocationId(loc.id) ?? loc.id, loc.name]),
     );
-    const openByLocation = buildOpenByLocationMetrics(assignedOpenPool, locationNameById);
+    const openByLocation = buildOpenByLocationMetrics(globalOpenPool, locationNameById);
 
     return {
       myTickets,

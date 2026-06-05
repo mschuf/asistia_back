@@ -41,14 +41,10 @@ interface SiteAggregateRow extends RowDataPacket {
   total_this_month: number | string | null;
 }
 
-interface OpenByLocationRow extends RowDataPacket {
+interface GlobalOpenByLocationRow extends RowDataPacket {
   location_id: number;
-  open_count: number | string;
-}
-
-interface LocationNameRow extends RowDataPacket {
-  id: number;
   name: string | null;
+  open_count: number | string;
 }
 
 export interface MetricsForTechnicianInput {
@@ -64,33 +60,24 @@ export class TicketsMetricsSqlRepository {
     input: MetricsForTechnicianInput,
   ): Promise<TicketMetricsResponseDto> {
     const technicianId = input.technicianId;
-    const [myTickets, myIncidents, myRequests, mySite, openByLocationRows, locationNames] =
-      await Promise.all([
-        this.aggregateMyTickets(technicianId),
-        this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.INCIDENT),
-        this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.REQUEST),
-        input.locationId != null
-          ? this.aggregateSiteSlice(input.locationId)
-          : Promise.resolve(null),
-        this.listOpenByLocation(technicianId),
-        this.listLocationNames(),
-      ]);
+    const [myTickets, myIncidents, myRequests, mySite, openByLocationRows] = await Promise.all([
+      this.aggregateMyTickets(technicianId),
+      this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.INCIDENT),
+      this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.REQUEST),
+      input.locationId != null
+        ? this.aggregateSiteSlice(input.locationId)
+        : Promise.resolve(null),
+      this.listGlobalOpenByLocation(),
+    ]);
 
-    const locationNameById = new Map(
-      locationNames.map((row) => [Number(row.id), row.name?.trim() || `Sede #${row.id}`]),
-    );
-
-    const openByLocation = openByLocationRows
-      .map((row) => {
-        const locationId = Number(row.location_id);
-        const open = Number(row.open_count) || 0;
-        return {
-          locationId,
-          name: locationNameById.get(locationId) ?? `Sede #${locationId}`,
-          open,
-        };
-      })
-      .sort((left, right) => right.open - left.open);
+    const openByLocation = openByLocationRows.map((row) => {
+      const locationId = Number(row.location_id);
+      return {
+        locationId,
+        name: row.name?.trim() || `Sede #${locationId}`,
+        open: Number(row.open_count) || 0,
+      };
+    });
 
     return {
       myTickets,
@@ -223,25 +210,26 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
-  private async listOpenByLocation(technicianId: number): Promise<OpenByLocationRow[]> {
-    return this.mysql.query<OpenByLocationRow>(
-      `SELECT location_id, COUNT(*) AS open_count
-       FROM (${BASE_TICKET_HISTORY_SQL}) th
-       WHERE is_deleted = 0
-         AND technician_id = :technicianId
-         AND status_glpi IN (${OPEN_STATUS_IN})
-         AND location_id IS NOT NULL
-         AND location_id > 0
-       GROUP BY location_id`,
-      { technicianId } as QueryValues,
-    );
-  }
-
-  private async listLocationNames(): Promise<LocationNameRow[]> {
-    return this.mysql.query<LocationNameRow>(
-      `SELECT id,
-              COALESCE(NULLIF(TRIM(completename), ''), name) AS name
-       FROM glpi_locations`,
+  /** Total global de tickets abiertos por sede (Indicadores; sin filtro por técnico). */
+  private async listGlobalOpenByLocation(): Promise<GlobalOpenByLocationRow[]> {
+    return this.mysql.query<GlobalOpenByLocationRow>(
+      `SELECT
+         loc.id AS location_id,
+         COALESCE(NULLIF(TRIM(loc.completename), ''), loc.name) AS name,
+         COALESCE(open_counts.open_count, 0) AS open_count
+       FROM glpi_locations loc
+       LEFT JOIN (
+         SELECT
+           t.locations_id AS location_id,
+           COUNT(*) AS open_count
+         FROM glpi_tickets t
+         WHERE t.is_deleted = 0
+           AND t.status IN (${OPEN_STATUS_IN})
+           AND t.locations_id IS NOT NULL
+           AND t.locations_id > 0
+         GROUP BY t.locations_id
+       ) open_counts ON open_counts.location_id = loc.id
+       ORDER BY open_count DESC, name ASC`,
     );
   }
 }

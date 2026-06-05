@@ -187,6 +187,7 @@ export interface OpenByLocationMetricRow {
   open: number;
 }
 
+/** Total global de abiertos por sede; incluye todas las sedes del catálogo con 0 si aplica. */
 export function buildOpenByLocationMetrics(
   tickets: DomainTicket[],
   locationNameById: ReadonlyMap<number, string>,
@@ -200,11 +201,14 @@ export function buildOpenByLocationMetrics(
     openByLocationMap.set(locationId, (openByLocationMap.get(locationId) ?? 0) + 1);
   }
 
-  return [...openByLocationMap.entries()]
-    .map(([locationId, open]) => ({
+  return [...locationNameById.entries()]
+    .map(([locationId, name]) => ({
       locationId,
-      name: locationNameById.get(locationId) ?? `Sede #${locationId}`,
-      open,
+      name,
+      open: openByLocationMap.get(locationId) ?? 0,
     }))
-    .sort((left, right) => right.open - left.open);
+    .sort(
+      (left, right) =>
+        right.open - left.open || left.name.localeCompare(right.name, "es"),
+    );
 }
