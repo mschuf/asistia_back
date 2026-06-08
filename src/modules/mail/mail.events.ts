@@ -2,6 +2,7 @@
   TICKET_CREATED: "mail.ticket.created",
   TICKET_STATUS_CHANGED: "mail.ticket.status_changed",
   TICKET_ASSIGNED: "mail.ticket.assigned",
+  TICKET_REASSIGNED: "mail.ticket.reassigned",
 } as const;
 
 export interface MailRecipient {
@@ -41,5 +42,14 @@ export interface TicketAssignedEvent {
   subject: string;
   technicianName: string;
   assignedBy: string;
+  recipients: MailRecipient[];
+}
+
+export interface TicketReassignedEvent {
+  ticketId: number;
+  subject: string;
+  previousTechnicianName: string;
+  newTechnicianName: string;
+  reassignedBy: string;
   recipients: MailRecipient[];
 }

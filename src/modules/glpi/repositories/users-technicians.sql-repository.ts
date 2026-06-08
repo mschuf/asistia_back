@@ -50,6 +50,20 @@ export class UsersTechniciansSqlRepository {
   }
 
   async listEligibleTechnicians(tiGroupIds: number[]): Promise<DomainUser[]> {
+    return this.queryEligibleTechnicians(tiGroupIds);
+  }
+
+  async listEligibleTechniciansForLocation(
+    tiGroupIds: number[],
+    locationId?: number | null,
+  ): Promise<DomainUser[]> {
+    return this.queryEligibleTechnicians(tiGroupIds, locationId);
+  }
+
+  private async queryEligibleTechnicians(
+    tiGroupIds: number[],
+    locationId?: number | null,
+  ): Promise<DomainUser[]> {
     const groupPlaceholders = tiGroupIds.map((_, index) => `:group_${index}`).join(", ");
     const profileLikeClauses = OPERATIONAL_IT_PROFILE_KEYWORDS.map(
       (_, index) => `LOWER(COALESCE(p.name, '')) LIKE :profile_${index}`,
@@ -59,6 +73,16 @@ export class UsersTechniciansSqlRepository {
       tiGroupIds.length > 0
         ? `(u.groups_id IN (${groupPlaceholders}) OR gu.groups_id IN (${groupPlaceholders}))`
         : "1 = 0";
+
+    const normalizedLocationId =
+      locationId != null && Number.isFinite(Number(locationId)) && Number(locationId) > 0
+        ? Number(locationId)
+        : null;
+    const locationFilter = normalizedLocationId != null ? "AND u.locations_id = :locationId" : "";
+    const params = this.buildParams(tiGroupIds) as QueryValues;
+    if (normalizedLocationId != null) {
+      (params as Record<string, number>).locationId = normalizedLocationId;
+    }
 
     const rows = await this.mysql.query<SqlUserRow>(
       `SELECT DISTINCT
@@ -85,8 +109,9 @@ export class UsersTechniciansSqlRepository {
          ON p.id = pu.profiles_id
        WHERE u.is_active = 1
          AND COALESCE(u.is_deleted, 0) = 0
-         AND (${groupWhere} OR (${profileLikeClauses}))`,
-      this.buildParams(tiGroupIds) as QueryValues,
+         AND (${groupWhere} OR (${profileLikeClauses}))
+         ${locationFilter}`,
+      params,
     );
 
     return sortUsersByName(rows.map((row) => this.toDomainUser(row)));

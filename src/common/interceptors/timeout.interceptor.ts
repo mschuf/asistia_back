@@ -13,8 +13,11 @@ import { BusinessException } from "../exceptions/business.exception";
 import { API_ERROR_CODE } from "../types/api-error-code";
 import { REQUEST_TIMEOUT_MS_KEY } from "./request-timeout.decorator";
 
-/** Timeout por defecto para endpoints pesados de métricas TI. */
+/** Timeout por defecto para endpoints pesados de indicadores TI. */
 export const METRICS_HTTP_TIMEOUT_MS = 60_000;
+
+/** Crear ticket puede usar SQL + fallback GLPI API; necesita margen sobre el timeout GLPI. */
+export const TICKET_CREATE_HTTP_TIMEOUT_MS = 60_000;
 
 @Injectable()
 export class TimeoutInterceptor implements NestInterceptor {

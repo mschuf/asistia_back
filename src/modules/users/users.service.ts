@@ -11,6 +11,8 @@ import { CACHE_KEYS } from "../cache/cache.keys";
 import { isTiGroupName } from "../glpi/role.utils";
 import type { DomainUser } from "../glpi/mappers/user.mapper";
 import { emailsMatch, matchesUserSearch } from "../glpi/user-search.utils";
+import { pickLastActiveTechnicianByName } from "../tickets/domain/ticket-auto-assign.helpers";
+import { normalizeLocationId } from "../tickets/domain/ticket-metrics.helpers";
 import type { AppConfig } from "../../config/configuration";
 import {
   DEFAULT_USERS_PAGE_LIMIT,
@@ -104,7 +106,7 @@ export class UsersService {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? DEFAULT_USERS_PAGE_LIMIT;
     const search = query?.search?.trim();
-    const allTechnicians = await this.getCachedTechnicians();
+    const allTechnicians = (await this.getCachedTechnicians()).filter((user) => user.isActive);
     const filtered = search
       ? allTechnicians.filter((user) => matchesUserSearch(user, search))
       : allTechnicians;
@@ -214,5 +216,28 @@ export class UsersService {
   async isEligibleTechnician(userId: number): Promise<boolean> {
     const technicians = await this.getCachedTechnicians();
     return technicians.some((user) => user.id === userId);
+  }
+
+  async resolveLastTechnicianForLocation(locationId: number | null): Promise<DomainUser | null> {
+    const normalizedLocationId = normalizeLocationId(locationId);
+    const tiGroupIds = await this.getCachedTiGroupIds();
+
+    try {
+      const technicians = await this.techniciansSqlRepo.listEligibleTechniciansForLocation(
+        tiGroupIds,
+        normalizedLocationId,
+      );
+      return pickLastActiveTechnicianByName(technicians, normalizedLocationId);
+    } catch (error) {
+      this.logger.warn(
+        {
+          autoAssignSource: "sql",
+          locationId: normalizedLocationId,
+          err: error,
+        },
+        `[users/auto-assign] sql failed message=${(error as Error).message}`,
+      );
+      return null;
+    }
   }
 }

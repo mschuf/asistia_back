@@ -35,6 +35,7 @@ import {
   type TicketAssignedEvent,
   type TicketCreatedEvent,
   type TicketCreatedRecipient,
+  type TicketReassignedEvent,
   type TicketStatusChangedEvent,
 } from "../mail/mail.events";
 import { UsersService } from "../users/users.service";
@@ -80,6 +81,13 @@ export interface HistoryListMeta {
 type StatusUpdateSource = "mysql" | "glpi-api";
 type TicketCreateSource = "mysql" | "glpi-api";
 type TicketAssignSource = "mysql" | "glpi-api";
+type TicketLocationSource = "mysql" | "glpi-api";
+type TicketAutoAssignStrategy = "manual" | "site-last" | "global-last" | "fallback-asistia";
+
+interface ResolvedTicketAssignment {
+  technicianId: number | undefined;
+  strategy: TicketAutoAssignStrategy;
+}
 
 interface InboundTicketInput {
   requesterId: number | null;
@@ -317,90 +325,39 @@ export class TicketsService {
       type: query.type ? TicketMapper.mapTypeToGlpi(query.type) : undefined,
       search: query.search,
       requesterId: user.role === "technician" ? undefined : user.id,
-      technicianId:
-        user.role === "technician"
-          ? query.technicianId ?? undefined
-          : undefined,
+      technicianId: query.assignedToMe
+        ? user.id
+        : query.technicianId ?? undefined,
       locationId: query.locationId ?? undefined,
     };
 
     const historySource = this.config.get("glpi.historySource", { infer: true });
-    let sqlFallback = false;
-    if (historySource === "sql") {
-      try {
-        let sqlResult = await this.historySqlRepo.listHistoryPageAsResponse(filter);
-        if (user.role !== "technician") {
-          sqlResult = {
-            ...sqlResult,
-            items: sqlResult.items.filter((ticket) => ticket.requester.id === user.id),
-          };
-        }
-        this.logger.info(
-          {
-            historySource: "mysql",
-            userId: user.id,
-            role: user.role,
-            page: filter.page,
-            limit: filter.limit,
-            total: sqlResult.total,
-            items: sqlResult.items.length,
-          },
-          "[history] source=mysql",
-        );
-        if (meta) meta.source = "mysql";
-        return {
-          items: sqlResult.items,
-          total: sqlResult.total,
-          page: filter.page,
-          limit: filter.limit,
-        };
-      } catch (error) {
-        sqlFallback = true;
-        if (meta) meta.source = "glpi-fallback";
-        this.logger.warn(
-          {
-            historySource: "glpi-fallback",
-            reason: "sql_error",
-            userId: user.id,
-            page: filter.page,
-            err: error,
-          },
-          `[history] source=glpi-fallback message=${(error as Error).message}`,
-        );
-      }
+    if (historySource !== "sql") {
+      throw new BusinessException({
+        message: "Ticket history requires GLPI_HISTORY_SOURCE=sql",
+        code: API_ERROR_CODE.NOT_IMPLEMENTED,
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+      });
     }
 
-    const result = await this.asService((key) =>
-      this.ticketsRepo.listHistoryPage(key, filter),
-    );
+    const sqlResult = await this.historySqlRepo.listHistoryPageAsResponse(filter);
 
-    let items = result.items.filter(isActiveTicket);
-    if (user.role !== "technician") {
-      items = items.filter((ticket) => ticket.requesterId === user.id);
-    }
-
-    const enriched = await this.enrichTickets(items);
-
-    if (meta) meta.source = "glpi-api";
     this.logger.info(
       {
-        historySource: "glpi-api",
-        sqlFallback,
-        configured: historySource,
+        historySource: "mysql",
         userId: user.id,
         role: user.role,
         page: filter.page,
         limit: filter.limit,
-        total: result.total,
-        items: enriched.length,
-        enriched: true,
+        total: sqlResult.total,
+        items: sqlResult.items.length,
       },
-      "[history] source=glpi-api",
+      "[history] source=mysql",
     );
-
+    if (meta) meta.source = "mysql";
     return {
-      items: enriched,
-      total: result.total,
+      items: sqlResult.items,
+      total: sqlResult.total,
       page: filter.page,
       limit: filter.limit,
     };
@@ -459,18 +416,17 @@ export class TicketsService {
 
   async create(user: AuthenticatedUser, dto: CreateTicketDto): Promise<CreateTicketResponseDto> {
     const locationId = dto.locationId ?? normalizeLocationId(user.locationId) ?? undefined;
-    const technicianCheck = dto.assignedTechnicianId
-      ? this.assertTechnicianExists(dto.assignedTechnicianId)
-      : Promise.resolve();
 
-    const [categories, locations, requesterId] = await Promise.all([
+    const [categories, locations, requesterId, assignment] = await Promise.all([
       this.catalogService.listCategories(),
       locationId
         ? this.catalogService.listLocations()
         : Promise.resolve([] as DomainLocation[]),
       this.resolveRequesterId(user, dto.requesterId),
-      technicianCheck,
+      this.resolveAssignedTechnicianForCreate(user, dto, locationId),
     ]);
+
+    const assignedTechnicianId = assignment.technicianId;
 
     this.assertCategoryInList(categories, dto.categoryId);
     if (locationId) {
@@ -479,7 +435,7 @@ export class TicketsService {
 
     const urgency = UrgencyPolicy.defaultFor(dto.type);
     const statusGlpi = TicketMapper.mapStatusToGlpi(
-      dto.assignedTechnicianId ? TICKET_STATUS.ASSIGNED : TICKET_STATUS.NEW,
+      assignedTechnicianId ? TICKET_STATUS.ASSIGNED : TICKET_STATUS.NEW,
     );
 
     const { ticket: created, source: createSource } = await this.applyCreateTicket({
@@ -492,7 +448,7 @@ export class TicketsService {
       locations_id: locationId,
       entities_id: this.config.get("glpi.defaultEntity", { infer: true }),
       requesters_id: requesterId,
-      technicians_id: dto.assignedTechnicianId,
+      technicians_id: assignedTechnicianId,
     });
 
     this.logger.info(
@@ -500,7 +456,10 @@ export class TicketsService {
         createSource,
         ticketId: created.id,
         requesterId,
-        technicianId: dto.assignedTechnicianId ?? null,
+        technicianId: assignedTechnicianId ?? null,
+        assignSource: user.role === "technician" ? "manual" : "sql",
+        assignStrategy: assignment.strategy,
+        locationId: locationId ?? null,
       },
       "[create] ticket created",
     );
@@ -522,7 +481,7 @@ export class TicketsService {
       requesterId,
       requesterNameFallback: "Solicitante",
       requesterEmailFallback: null,
-      technicianId: dto.assignedTechnicianId,
+      technicianId: assignedTechnicianId,
       categoryName,
       locationName,
     });
@@ -794,6 +753,8 @@ export class TicketsService {
       });
     }
 
+    const previousTechnicianId = ticket.technicianId;
+
     const assignSource = await this.applyAssignTechnician(ticketId, technicianId);
     this.logger.info({ assignSource, ticketId, technicianId }, "[assign] technician assigned");
 
@@ -803,18 +764,66 @@ export class TicketsService {
     const technicianUser = await this.asService((key) =>
       this.usersRepo.findById(key, technicianId),
     );
+    const assignedBy = await this.resolveActorDisplayName(user.id);
+
     if (technicianUser?.email) {
       const payload: TicketAssignedEvent = {
         ticketId,
         subject: ticket.subject,
         technicianName: technicianUser.fullName,
-        assignedBy: await this.resolveActorDisplayName(user.id),
+        assignedBy,
         recipients: [{ name: technicianUser.fullName, email: technicianUser.email }],
       };
       this.events.emit(MAIL_EVENTS.TICKET_ASSIGNED, payload);
     }
 
+    const isReassignment =
+      previousTechnicianId != null &&
+      previousTechnicianId !== technicianId &&
+      previousTechnicianId !== user.id;
+
+    if (isReassignment && technicianUser) {
+      const previousTechnician = await this.asService((key) =>
+        this.usersRepo.findById(key, previousTechnicianId),
+      );
+      if (previousTechnician?.email) {
+        const payload: TicketReassignedEvent = {
+          ticketId,
+          subject: ticket.subject,
+          previousTechnicianName: previousTechnician.fullName,
+          newTechnicianName: technicianUser.fullName,
+          reassignedBy: assignedBy,
+          recipients: [{ name: previousTechnician.fullName, email: previousTechnician.email }],
+        };
+        this.events.emit(MAIL_EVENTS.TICKET_REASSIGNED, payload);
+      }
+    }
+
     return enriched;
+  }
+
+  async updateLocation(
+    user: AuthenticatedUser,
+    ticketId: number,
+    locationId: number,
+  ): Promise<TicketResponseDto> {
+    const ticket = await this.asService((key) => this.ticketsRepo.findById(key, ticketId));
+    if (!ticket) {
+      throw new BusinessException({
+        message: `Ticket ${ticketId} not found`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    const locations = await this.catalogService.listLocations();
+    this.assertLocationInList(locations, locationId);
+
+    const locationSource = await this.applyUpdateLocation(ticketId, locationId);
+    this.logger.info({ locationSource, ticketId, locationId }, "[location] ticket location updated");
+
+    const refreshed = await this.findTicketById(ticketId);
+    return this.enrichTicket(refreshed ?? ticket);
   }
 
   private async applyCreateTicket(input: {
@@ -872,6 +881,34 @@ export class TicketsService {
     }
 
     await this.asService((key) => this.ticketsRepo.assignTechnician(key, ticketId, technicianId));
+    return "glpi-api";
+  }
+
+  private async applyUpdateLocation(
+    ticketId: number,
+    locationId: number,
+  ): Promise<TicketLocationSource> {
+    const assignSource = this.config.get("glpi.assignSource", { infer: true });
+
+    if (assignSource === "sql") {
+      try {
+        const updated = await this.createSqlRepo.updateLocation(ticketId, locationId);
+        if (updated) {
+          return "mysql";
+        }
+        this.logger.warn(
+          { locationSource: "glpi-fallback", reason: "sql_no_rows", ticketId, locationId },
+          "[location] source=glpi-fallback reason=sql_no_rows",
+        );
+      } catch (error) {
+        this.logger.warn(
+          { locationSource: "glpi-fallback", reason: "sql_error", ticketId, err: error },
+          `[location] source=glpi-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
+    await this.asService((key) => this.ticketsRepo.updateLocation(key, ticketId, locationId));
     return "glpi-api";
   }
 
@@ -943,6 +980,57 @@ export class TicketsService {
       throw new BusinessException({
         message: `Location ${locationId} is not valid`,
         code: API_ERROR_CODE.INVALID_LOCATION,
+      });
+    }
+  }
+
+  private async resolveAssignedTechnicianForCreate(
+    user: AuthenticatedUser,
+    dto: CreateTicketDto,
+    locationId: number | undefined,
+  ): Promise<ResolvedTicketAssignment> {
+    if (user.role === "technician") {
+      if (dto.assignedTechnicianId) {
+        await this.assertTechnicianExists(dto.assignedTechnicianId);
+      }
+      return {
+        technicianId: dto.assignedTechnicianId,
+        strategy: "manual",
+      };
+    }
+
+    const normalizedLocationId = normalizeLocationId(locationId);
+    const strategy: TicketAutoAssignStrategy =
+      normalizedLocationId != null ? "site-last" : "global-last";
+    const technician = await this.usersService.resolveLastTechnicianForLocation(
+      normalizedLocationId,
+    );
+
+    if (technician) {
+      await this.assertTechnicianExists(technician.id);
+      return {
+        technicianId: technician.id,
+        strategy,
+      };
+    }
+
+    const fallbackTechnicianId = this.config.get("mail.inboundDefaultTechnicianId", {
+      infer: true,
+    });
+    await this.assertAutoAssignFallbackTechnician(fallbackTechnicianId);
+
+    return {
+      technicianId: fallbackTechnicianId,
+      strategy: "fallback-asistia",
+    };
+  }
+
+  private async assertAutoAssignFallbackTechnician(technicianId: number): Promise<void> {
+    const technician = await this.asService((key) => this.usersRepo.findById(key, technicianId));
+    if (!technician) {
+      throw new BusinessException({
+        message: `Technician ${technicianId} is not valid`,
+        code: API_ERROR_CODE.INVALID_TECHNICIAN,
       });
     }
   }

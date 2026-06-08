@@ -108,6 +108,8 @@ export interface AppConfig {
   };
   mail: {
     supportTo: string;
+    /** CC incluido en todos los correos salientes. */
+    defaultCc: string;
     /** POST /mail/send (herramienta de prueba; desactivado por defecto). */
     testEndpointEnabled: boolean;
     /** Técnico por defecto para tickets inbound via /mail/send. */
@@ -217,7 +219,7 @@ export function buildConfig(): AppConfig {
       `GLPI_BOOTSTRAP_LOGIN='${dbgBootstrapLogin}' ` +
       `GLPI_BOOTSTRAP_PASSWORD=${dbgBootstrapPassword ? `set(${dbgBootstrapPassword.length})` : "<empty>"} ` +
       `GLPI_BOOTSTRAP_USER_TOKEN=${maskToken(dbgBootstrapUserToken)} ` +
-      `GLPI_HISTORY_SOURCE=${readGlpiReadSource("GLPI_HISTORY_SOURCE", "api")} ` +
+      `GLPI_HISTORY_SOURCE=${readGlpiReadSource("GLPI_HISTORY_SOURCE", "sql")} ` +
       `GLPI_METRICS_SOURCE=${readGlpiReadSource("GLPI_METRICS_SOURCE", "api")} ` +
       `GLPI_STATUS_SOURCE=${readGlpiReadSource("GLPI_STATUS_SOURCE", "api")} ` +
       `GLPI_CREATE_SOURCE=${readGlpiReadSource("GLPI_CREATE_SOURCE", "sql")} ` +
@@ -301,7 +303,7 @@ export function buildConfig(): AppConfig {
         const parsed = Number(raw);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
       })(),
-      historySource: readGlpiReadSource("GLPI_HISTORY_SOURCE", "api"),
+      historySource: readGlpiReadSource("GLPI_HISTORY_SOURCE", "sql"),
       metricsSource: readGlpiReadSource("GLPI_METRICS_SOURCE", "api"),
       statusSource: readGlpiReadSource("GLPI_STATUS_SOURCE", "api"),
       createSource: readGlpiReadSource("GLPI_CREATE_SOURCE", "sql"),
@@ -347,6 +349,10 @@ export function buildConfig(): AppConfig {
       supportTo: readTrimmedString(
         "MAIL_SUPPORT_TO",
         readTrimmedString("SMTP_FROM", readTrimmedString("SMTP_USER", "")),
+      ),
+      defaultCc: readTrimmedString(
+        "MAIL_DEFAULT_CC",
+        "martin.schuf@grupopettengill.com.py",
       ),
       testEndpointEnabled: readBoolean("MAIL_TEST_ENDPOINT_ENABLED", false),
       inboundDefaultTechnicianId: readNumber("MAIL_INBOUND_DEFAULT_TECHNICIAN_ID", 1368),

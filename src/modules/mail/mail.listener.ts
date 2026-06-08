@@ -5,6 +5,7 @@ import {
   MAIL_EVENTS,
   type TicketAssignedEvent,
   type TicketCreatedEvent,
+  type TicketReassignedEvent,
   type TicketStatusChangedEvent,
 } from "./mail.events";
 import {
@@ -22,6 +23,11 @@ import {
   buildTicketAssignedSubject,
   buildTicketAssignedText,
 } from "./templates/ticket-assigned.template";
+import {
+  buildTicketReassignedHtml,
+  buildTicketReassignedSubject,
+  buildTicketReassignedText,
+} from "./templates/ticket-reassigned.template";
 
 export interface TicketCreatedMailDispatchResult {
   sent: boolean;
@@ -112,6 +118,19 @@ export class MailListener {
     });
     if (!result.sent && result.error) {
       this.logger.error(`Ticket ${event.ticketId} assigned mail failed: ${result.error}`);
+    }
+  }
+
+  @OnEvent(MAIL_EVENTS.TICKET_REASSIGNED, { async: true, promisify: true })
+  async onTicketReassigned(event: TicketReassignedEvent): Promise<void> {
+    const result = await this.mail.send({
+      subject: buildTicketReassignedSubject(event),
+      html: buildTicketReassignedHtml(event),
+      text: buildTicketReassignedText(event),
+      recipients: event.recipients,
+    });
+    if (!result.sent && result.error) {
+      this.logger.error(`Ticket ${event.ticketId} reassigned mail failed: ${result.error}`);
     }
   }
 }

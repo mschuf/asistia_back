@@ -4,6 +4,7 @@
   GLPI_TICKET_URGENCY,
 } from "../glpi.constants";
 import type { GlpiTicketRaw } from "../glpi.types";
+import { htmlToPlainText } from "../../../common/utils/html-text.utils";
 
 export type DomainTicketType = "incident" | "request";
 export type DomainTicketStatus =
@@ -57,7 +58,7 @@ export class TicketMapper {
       status: TicketMapper.mapStatus(raw.status),
       urgency: TicketMapper.mapUrgency(raw.urgency),
       subject: raw.name,
-      description: TicketMapper.stripHtml(raw.content ?? null),
+      description: htmlToPlainText(raw.content ?? null),
       categoryId: TicketMapper.toOptionalId(raw.itilcategories_id),
       locationId: TicketMapper.toOptionalId(raw.locations_id),
       requesterId: opts.requesterId ?? null,
@@ -146,21 +147,6 @@ export class TicketMapper {
       case "very_high":
         return GLPI_TICKET_URGENCY.VERY_HIGH;
     }
-  }
-
-  private static decodeHtmlEntities(value: string): string {
-    return value
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">")
-      .replace(/&quot;/gi, '"')
-      .replace(/&#0?39;/gi, "'")
-      .replace(/&amp;/gi, "&");
-  }
-
-  private static stripHtml(value: string | null): string | null {
-    if (!value) return null;
-    const decoded = TicketMapper.decodeHtmlEntities(value);
-    return decoded.replace(/<br\s*\/?>(\n)?/gi, "\n").replace(/<[^>]+>/g, "").trim();
   }
 
   /** GLPI REST suele devolver IDs numéricos como string en JSON. */

@@ -32,7 +32,7 @@ export interface ListTicketsResult {
 }
 
 export interface ListTicketsOptions {
-  /** Solicitante/técnico vía Ticket_User. Desactivar en métricas agregadas. */
+  /** Solicitante/técnico vía Ticket_User. Desactivar en indicadores agregadas. */
   includeActors?: boolean;
 }
 
@@ -57,10 +57,10 @@ const GLPI_SEARCH_SORT_LAST_UPDATE = 19;
 /** Reintentos tras POST /Ticket para compensar índice GLPI en User/Ticket_User. */
 const POST_CREATE_INDEX_ATTEMPTS = 3;
 const POST_CREATE_INDEX_DELAY_MS = 400;
-/** Paginación de search GLPI exclusiva para métricas TI (no comparte `list()`). */
+/** Paginación de search GLPI exclusiva para indicadores TI (no comparte `list()`). */
 const METRICS_SEARCH_PAGE_SIZE = 500;
 const METRICS_ASSIGNED_MAX = 9999;
-/** Columnas explícitas para búsquedas de métricas acotadas (Mi Sede / Indicadores). */
+/** Columnas explícitas para búsquedas de indicadores acotadas (Mi Sede / Indicadores). */
 const SCOPED_METRICS_FORCEDISPLAY = [
   GLPI_TICKET_SEARCH_FIELDS.ID,
   GLPI_TICKET_SEARCH_FIELDS.STATUS,
@@ -108,7 +108,7 @@ export class TicketsGlpiRepository {
     const includeActors = options.includeActors ?? true;
     let ticketIds: number[] | null = null;
 
-    // Historial/métricas por técnico o solicitante: vínculos Ticket_User (fiable en tickets recién creados).
+    // Historial/indicadores por técnico o solicitante: vínculos Ticket_User (fiable en tickets recién creados).
     // No usar search/Ticket por actor: el índice GLPI suele ir detrás del POST de la API.
     if (filter.technicianId !== undefined) {
       ticketIds = await this.listTicketIdsForUser(
@@ -762,7 +762,7 @@ export class TicketsGlpiRepository {
   }
 
   /**
-   * Tickets asignados al técnico para agregados de métricas.
+   * Tickets asignados al técnico para agregados de indicadores.
    * Usa search GLPI (una fila por ticket) en lugar de GET /Ticket/:id por ID.
    */
   async listAssignedTicketsForMetrics(
@@ -851,6 +851,14 @@ export class TicketsGlpiRepository {
   ): Promise<void> {
     await this.ensureTechnicianLink(sessionKey, ticketId, technicianId);
     await this.maybeStripServiceAccountActor(sessionKey, ticketId, technicianId);
+  }
+
+  async updateLocation(
+    sessionKey: string,
+    ticketId: number,
+    locationId: number,
+  ): Promise<void> {
+    await this.applyTicketLocation(sessionKey, ticketId, locationId);
   }
 
   /** Vínculo Ticket_User tipo solicitante (indexable en búsquedas GLPI). */

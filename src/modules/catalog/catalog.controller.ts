@@ -1,4 +1,4 @@
-﻿import { Controller, Get, UseGuards } from "@nestjs/common";
+﻿import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
@@ -6,6 +6,7 @@ import { CatalogService } from "./catalog.service";
 import { CategoryResponseDto } from "./dto/category.response.dto";
 import { LocationResponseDto } from "./dto/location.response.dto";
 import { GroupResponseDto } from "./dto/group.response.dto";
+import { ListLocationsQueryDto } from "./dto/list-locations-query.dto";
 
 @ApiTags("catalog")
 @ApiBearerAuth()
@@ -26,8 +27,8 @@ export class CatalogController {
   @ApiOperation({ summary: "List locations (cached)" })
   @ApiResponse({ status: 200, type: [LocationResponseDto] })
   @ResponseMessage("Locations retrieved")
-  async locations(): Promise<LocationResponseDto[]> {
-    return this.catalog.listLocations();
+  async locations(@Query() query: ListLocationsQueryDto): Promise<LocationResponseDto[]> {
+    return this.catalog.listLocations({ activeOnly: query.activeOnly });
   }
 
   @Get("groups")

@@ -7,7 +7,7 @@ import {
 import { GLPI_TICKET_STATUS } from "../../glpi/glpi.constants";
 import { TICKET_STATUS } from "./ticket-status";
 
-/** Estados GLPI equivalentes a {@link OPEN_STATUSES} (métricas SQL / API). */
+/** Estados GLPI equivalentes a {@link OPEN_STATUSES} (indicadores SQL / API). */
 export const OPEN_STATUS_GLPI = [
   GLPI_TICKET_STATUS.NEW,
   GLPI_TICKET_STATUS.ASSIGNED,

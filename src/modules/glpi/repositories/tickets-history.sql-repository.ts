@@ -1,12 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import type { QueryValues } from "mysql2";
 import type { RowDataPacket } from "mysql2/promise";
-import { TicketMapper } from "../mappers/ticket.mapper";
+import { htmlToPlainText } from "../../../common/utils/html-text.utils";
 import type { ListTicketsFilter } from "./tickets.glpi-repository";
 import { MysqlService } from "../../mysql/mysql.service";
 import type { TicketResponseDto } from "../../tickets/dto/ticket.response.dto";
 import type { TicketStatus } from "../../tickets/domain/ticket-status";
 import type { TicketType } from "../../tickets/domain/ticket-type";
+import { TicketMapper } from "../mappers/ticket.mapper";
 import type {
   DomainTicket,
   DomainTicketStatus,
@@ -209,7 +210,7 @@ export class TicketsHistorySqlRepository {
       status: this.parseStatus(row),
       urgency: this.parseUrgency(row),
       subject: row.subject ?? "",
-      description: this.stripHtml(row.description_raw),
+      description: htmlToPlainText(row.description_raw),
       categoryId: this.toOptionalId(row.category_id),
       locationId: this.toOptionalId(row.location_id),
       requesterId: this.toOptionalId(row.requester_id),
@@ -239,7 +240,7 @@ export class TicketsHistorySqlRepository {
       status: this.parseStatus(row),
       urgency: this.parseUrgency(row),
       subject: row.subject ?? "",
-      description: this.stripHtml(row.description_raw),
+      description: htmlToPlainText(row.description_raw),
       category:
         categoryId && categoryName
           ? { id: categoryId, name: categoryName }
@@ -289,10 +290,5 @@ export class TicketsHistorySqlRepository {
     if (value === null || value === undefined || value === "") return null;
     const id = Number(value);
     return Number.isFinite(id) && id > 0 ? id : null;
-  }
-
-  private stripHtml(value: string | null): string | null {
-    if (!value) return null;
-    return value.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").trim() || null;
   }
 }

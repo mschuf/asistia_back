@@ -31,7 +31,11 @@ export class MysqlService implements OnModuleDestroy {
       await connection.commit();
       return result;
     } catch (error) {
-      await connection.rollback();
+      try {
+        await connection.rollback();
+      } catch {
+        // Conexión ya cerrada; propagar error original de la transacción.
+      }
       throw error;
     } finally {
       connection.release();

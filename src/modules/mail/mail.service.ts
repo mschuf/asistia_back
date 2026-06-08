@@ -34,6 +34,11 @@ export class MailService {
       return { sent: false, error: "no_recipients" };
     }
 
+    const defaultCc = this.config.get("mail.defaultCc", { infer: true }).trim();
+    const recipientEmails = new Set(recipients.map((r) => r.email.trim().toLowerCase()));
+    const cc =
+      defaultCc && !recipientEmails.has(defaultCc.toLowerCase()) ? defaultCc : undefined;
+
     const maxRetries = 3;
     let attempt = 0;
     let lastError: Error | null = null;
@@ -48,6 +53,7 @@ export class MailService {
             address: this.config.get("smtp.from", { infer: true }),
           },
           to: recipients.map((r) => ({ name: r.name, address: r.email })),
+          ...(cc ? { cc } : {}),
           subject: input.subject,
           html: input.html,
           text: input.text,

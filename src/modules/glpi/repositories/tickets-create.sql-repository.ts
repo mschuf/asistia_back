@@ -68,6 +68,25 @@ export class TicketsCreateSqlRepository {
     });
   }
 
+  async updateLocation(ticketId: number, locationId: number): Promise<boolean> {
+    return this.mysql.withTransaction(async (connection) => {
+      const exists = await this.ticketExists(connection, ticketId);
+      if (!exists) return false;
+
+      const options: QueryOptions = {
+        sql: `UPDATE glpi_tickets
+              SET locations_id = :locationId, date_mod = NOW()
+              WHERE id = :ticketId AND COALESCE(is_deleted, 0) = 0`,
+        namedPlaceholders: true,
+      };
+      const [result] = await connection.query<ResultSetHeader>(options, {
+        ticketId,
+        locationId,
+      } as QueryValues);
+      return result.affectedRows > 0;
+    });
+  }
+
   private async insertTicket(
     connection: PoolConnection,
     input: CreateTicketSqlInput,

@@ -18,12 +18,16 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
 import { RequestTimeoutMs } from "../../common/interceptors/request-timeout.decorator";
-import { METRICS_HTTP_TIMEOUT_MS } from "../../common/interceptors/timeout.interceptor";
+import {
+  METRICS_HTTP_TIMEOUT_MS,
+  TICKET_CREATE_HTTP_TIMEOUT_MS,
+} from "../../common/interceptors/timeout.interceptor";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { TicketsService, type HistoryListMeta } from "./tickets.service";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { UpdateTicketStatusDto } from "./dto/update-ticket-status.dto";
 import { AssignTechnicianDto } from "./dto/assign-technician.dto";
+import { UpdateTicketLocationDto } from "./dto/update-ticket-location.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import {
   CreateTicketResponseDto,
@@ -90,6 +94,7 @@ export class TicketsController {
   }
 
   @Post()
+  @RequestTimeoutMs(TICKET_CREATE_HTTP_TIMEOUT_MS)
   @ApiOperation({ summary: "Create a new ticket" })
   @ApiResponse({ status: 201, type: CreateTicketResponseDto })
   @ResponseMessage("Ticket created successfully")
@@ -123,5 +128,18 @@ export class TicketsController {
     @Body() dto: AssignTechnicianDto,
   ): Promise<TicketResponseDto> {
     return this.ticketsService.assignTechnician(user, id, dto.technicianId);
+  }
+
+  @Patch(":id/location")
+  @Roles("technician")
+  @ApiOperation({ summary: "Update the location (sede) of a ticket" })
+  @ApiResponse({ status: 200, type: TicketResponseDto })
+  @ResponseMessage("Ticket location updated")
+  async updateLocation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: UpdateTicketLocationDto,
+  ): Promise<TicketResponseDto> {
+    return this.ticketsService.updateLocation(user, id, dto.locationId);
   }
 }
