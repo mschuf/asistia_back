@@ -350,10 +350,7 @@ export function buildConfig(): AppConfig {
         "MAIL_SUPPORT_TO",
         readTrimmedString("SMTP_FROM", readTrimmedString("SMTP_USER", "")),
       ),
-      defaultCc: readTrimmedString(
-        "MAIL_DEFAULT_CC",
-        "martin.schuf@grupopettengill.com.py",
-      ),
+      defaultCc: readTrimmedString("MAIL_DEFAULT_CC"),
       testEndpointEnabled: readBoolean("MAIL_TEST_ENDPOINT_ENABLED", false),
       inboundDefaultTechnicianId: readNumber("MAIL_INBOUND_DEFAULT_TECHNICIAN_ID", 1368),
       inboundDefaultTicketType:
