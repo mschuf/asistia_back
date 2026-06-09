@@ -118,6 +118,7 @@ export interface AppConfig {
     inboundDefaultTicketType: "incident" | "request";
   };
   attachments: {
+    storagePath: string;
     maxBytes: number;
     allowedMime: string[];
   };
@@ -359,11 +360,16 @@ export function buildConfig(): AppConfig {
           : "request",
     },
     attachments: {
-      maxBytes: readNumber("ATTACHMENTS_MAX_BYTES", 5 * 1024 * 1024),
+      storagePath: readString("ATTACHMENTS_STORAGE_PATH", "./data/attachments"),
+      maxBytes: readNumber("ATTACHMENTS_MAX_BYTES", 50 * 1024 * 1024),
       allowedMime: readList("ATTACHMENTS_ALLOWED_MIME", [
         "image/png",
         "image/jpeg",
         "image/webp",
+        "text/plain",
+        "text/markdown",
+        "text/x-markdown",
+        "application/pdf",
       ]),
     },
   };

@@ -249,6 +249,10 @@ class EnvSchema {
   MAIL_INBOUND_DEFAULT_TICKET_TYPE?: string;
 
   @IsOptional()
+  @IsString()
+  ATTACHMENTS_STORAGE_PATH?: string;
+
+  @IsOptional()
   @IsNumberString()
   ATTACHMENTS_MAX_BYTES?: string;
 

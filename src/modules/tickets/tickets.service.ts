@@ -494,6 +494,11 @@ export class TicketsService {
   }
 
   async findById(user: AuthenticatedUser, id: number): Promise<TicketResponseDto> {
+    const ticket = await this.assertTicketAccess(user, id);
+    return this.enrichTicket(ticket);
+  }
+
+  async assertTicketAccess(user: AuthenticatedUser, id: number): Promise<DomainTicket> {
     const ticket = await this.findTicketById(id);
     if (!ticket) {
       throw new BusinessException({
@@ -509,7 +514,7 @@ export class TicketsService {
         status: HttpStatus.FORBIDDEN,
       });
     }
-    return this.enrichTicket(ticket);
+    return ticket;
   }
 
   async create(user: AuthenticatedUser, dto: CreateTicketDto): Promise<CreateTicketResponseDto> {

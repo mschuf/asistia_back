@@ -1,15 +1,15 @@
 ﻿import {
   Controller,
+  Get,
   HttpStatus,
-  Inject,
   Param,
   ParseIntPipe,
   Post,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ApiBearerAuth,
@@ -19,23 +19,23 @@ import {
   ApiResponse,
   ApiTags,
 } from "@nestjs/swagger";
+import type { Response } from "express";
+import { unlink } from "fs/promises";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
-import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { ResponseMessage, SkipResponseEnvelope } from "../../common/interceptors/response-message.decorator";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
-import type { AppConfig } from "../../config/configuration";
+import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AttachmentsService } from "./attachments.service";
+import { TicketAttachmentResponseDto } from "./dto/attachment.response.dto";
 
 @ApiTags("attachments")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller("tickets/:id/attachments")
 export class AttachmentsController {
-  constructor(
-    private readonly attachments: AttachmentsService,
-    @Inject(ConfigService)
-    private readonly config: ConfigService<AppConfig, true>,
-  ) {}
+  constructor(private readonly attachments: AttachmentsService) {}
 
   @Post()
   @ApiConsumes("multipart/form-data")
@@ -48,14 +48,17 @@ export class AttachmentsController {
     },
   })
   @UseInterceptors(FileInterceptor("file"))
-  @ApiOperation({ summary: "Upload an image attachment for a ticket (PNG/JPEG/WEBP, 5 MB)" })
-  @ApiResponse({ status: 201 })
+  @ApiOperation({
+    summary: "Upload an attachment for a ticket (PNG/JPG/TXT/MD/PDF, max 50 MB)",
+  })
+  @ApiResponse({ status: 201, type: TicketAttachmentResponseDto })
   @ResponseMessage("Attachment uploaded")
   async upload(
+    @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseIntPipe) ticketId: number,
     @UploadedFile() file: Express.Multer.File | undefined,
-  ) {
-    if (!file) {
+  ): Promise<TicketAttachmentResponseDto> {
+    if (!file?.path) {
       throw new BusinessException({
         message: "No file received under field 'file'",
         code: API_ERROR_CODE.VALIDATION,
@@ -63,29 +66,56 @@ export class AttachmentsController {
       });
     }
 
-    const allowed = this.config.get("attachments.allowedMime", { infer: true });
-    const maxBytes = this.config.get("attachments.maxBytes", { infer: true });
-
-    if (!allowed.includes(file.mimetype)) {
-      throw new BusinessException({
-        message: `Attachment type ${file.mimetype} is not allowed`,
-        code: API_ERROR_CODE.ATTACHMENT_TYPE_NOT_ALLOWED,
-        status: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+    try {
+      return await this.attachments.uploadForTicket(user, ticketId, {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        path: file.path,
       });
+    } catch (error) {
+      await unlink(file.path).catch(() => undefined);
+      throw error;
     }
-    if (file.size > maxBytes) {
-      throw new BusinessException({
-        message: `Attachment exceeds the maximum size of ${maxBytes} bytes`,
-        code: API_ERROR_CODE.ATTACHMENT_TOO_LARGE,
-        status: HttpStatus.PAYLOAD_TOO_LARGE,
-      });
-    }
+  }
 
-    return this.attachments.uploadForTicket(ticketId, {
-      originalname: file.originalname,
-      mimetype: file.mimetype,
-      buffer: file.buffer,
-      size: file.size,
+  @Get()
+  @ApiOperation({ summary: "List attachments for a ticket" })
+  @ApiResponse({ status: 200, type: TicketAttachmentResponseDto, isArray: true })
+  @ResponseMessage("Attachments retrieved")
+  async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseIntPipe) ticketId: number,
+  ): Promise<TicketAttachmentResponseDto[]> {
+    return this.attachments.listForTicket(user, ticketId);
+  }
+
+  @Get(":attachmentId/download")
+  @SkipResponseEnvelope()
+  @ApiOperation({ summary: "Download a ticket attachment" })
+  @ApiResponse({ status: 200, description: "Binary file stream" })
+  async download(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseIntPipe) ticketId: number,
+    @Param("attachmentId", ParseIntPipe) attachmentId: number,
+    @Res() res: Response,
+  ): Promise<void> {
+    const payload = await this.attachments.resolveDownload(user, ticketId, attachmentId);
+    res.setHeader("Content-Type", payload.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(payload.filename)}`,
+    );
+    if (payload.size > 0) {
+      res.setHeader("Content-Length", String(payload.size));
+    }
+    payload.stream.on("error", () => {
+      if (!res.headersSent) {
+        res.status(HttpStatus.NOT_FOUND).end();
+        return;
+      }
+      res.end();
     });
+    payload.stream.pipe(res);
   }
 }

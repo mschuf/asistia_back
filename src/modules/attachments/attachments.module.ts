@@ -1,25 +1,33 @@
 ﻿import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { MulterModule } from "@nestjs/platform-express";
+import { join, resolve } from "path";
 import type { AppConfig } from "../../config/configuration";
+import { TicketsModule } from "../tickets/tickets.module";
+import { LocalAttachmentStorage } from "./local-attachment.storage";
 import { AttachmentsController } from "./attachments.controller";
 import { AttachmentsService } from "./attachments.service";
 import { buildMulterOptions } from "./multer.config";
+import { AttachmentsSqlRepository } from "./repositories/attachments.sql-repository";
 
 @Module({
   imports: [
+    TicketsModule,
     MulterModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService<AppConfig, true>) =>
         buildMulterOptions({
           maxBytes: config.get("attachments.maxBytes", { infer: true }),
-          allowedMime: config.get("attachments.allowedMime", { infer: true }),
+          tempDir: join(
+            resolve(config.get("attachments.storagePath", { infer: true })),
+            ".tmp",
+          ),
         }),
     }),
   ],
   controllers: [AttachmentsController],
-  providers: [AttachmentsService],
+  providers: [AttachmentsService, AttachmentsSqlRepository, LocalAttachmentStorage],
   exports: [AttachmentsService],
 })
 export class AttachmentsModule {}
