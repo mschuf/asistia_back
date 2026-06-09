@@ -25,6 +25,8 @@ import { HealthModule } from "./modules/health/health.module";
 import { ProblemsModule } from "./modules/problems/problems.module";
 import { ChangesModule } from "./modules/changes/changes.module";
 import { AiModule } from "./modules/ai/ai.module";
+import { CompaniesModule } from "./modules/companies/companies.module";
+import { PromptsModule } from "./modules/prompts/prompts.module";
 
 @Module({
   imports: [
@@ -57,6 +59,9 @@ import { AiModule } from "./modules/ai/ai.module";
                 "req.headers['app-token']",
                 "req.body.password",
                 "req.body.encryptedPassword",
+                "req.body.msClientSecret",
+                "req.body.systemInstruction",
+                "req.body.promptTemplate",
                 "req.body.accessToken",
                 "res.headers['set-cookie']",
               ],
@@ -96,6 +101,8 @@ import { AiModule } from "./modules/ai/ai.module";
     ProblemsModule,
     ChangesModule,
     AiModule,
+    CompaniesModule,
+    PromptsModule,
   ],
   providers: [
     Reflector,

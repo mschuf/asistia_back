@@ -53,6 +53,7 @@ import {
   computeMyTicketsMetrics,
   computeSiteMetrics,
   computeTypeMetrics,
+  isTicketOpen,
   normalizeLocationId,
   OPEN_STATUSES,
 } from "./domain/ticket-metrics.helpers";
@@ -199,28 +200,70 @@ export class TicketsService {
   }
 
   async getMetrics(user: AuthenticatedUser): Promise<TicketMetricsResponseDto> {
-    if (user.role !== "technician") {
-      throw new BusinessException({
-        message: "Only technicians can access ticket metrics",
-        code: API_ERROR_CODE.FORBIDDEN,
-        status: HttpStatus.FORBIDDEN,
-      });
+    if (user.role === "technician") {
+      const metricsSource = this.config.get("glpi.metricsSource", { infer: true });
+      if (metricsSource === "sql") {
+        try {
+          const result = await this.metricsSqlRepo.getMetricsForTechnician({
+            technicianId: user.id,
+            locationId: normalizeLocationId(user.locationId),
+          });
+          this.logger.info(
+            {
+              metricsSource: "mysql",
+              userId: user.id,
+              locationId: user.locationId ?? null,
+            },
+            "[metrics] source=mysql",
+          );
+          return result;
+        } catch (error) {
+          this.logger.warn(
+            {
+              metricsSource: "glpi-fallback",
+              reason: "sql_error",
+              userId: user.id,
+              err: error,
+            },
+            `[metrics] source=glpi-fallback message=${(error as Error).message}`,
+          );
+          return this.getMetricsFromGlpi(user);
+        }
+      }
+
+      const result = await this.getMetricsFromGlpi(user);
+      this.logger.info(
+        {
+          metricsSource: "glpi-api",
+          configured: metricsSource,
+          userId: user.id,
+        },
+        "[metrics] source=glpi-api",
+      );
+      return result;
     }
 
+    return this.getMetricsForRequester(user);
+  }
+
+  private async getMetricsForRequester(
+    user: AuthenticatedUser,
+  ): Promise<TicketMetricsResponseDto> {
     const metricsSource = this.config.get("glpi.metricsSource", { infer: true });
     if (metricsSource === "sql") {
       try {
-        const result = await this.metricsSqlRepo.getMetricsForTechnician({
-          technicianId: user.id,
+        const result = await this.metricsSqlRepo.getMetricsForRequester({
+          requesterId: user.id,
           locationId: normalizeLocationId(user.locationId),
         });
         this.logger.info(
           {
             metricsSource: "mysql",
             userId: user.id,
+            role: user.role,
             locationId: user.locationId ?? null,
           },
-          "[metrics] source=mysql",
+          "[metrics] source=mysql requester",
         );
         return result;
       } catch (error) {
@@ -229,24 +272,79 @@ export class TicketsService {
             metricsSource: "glpi-fallback",
             reason: "sql_error",
             userId: user.id,
+            role: user.role,
             err: error,
           },
-          `[metrics] source=glpi-fallback message=${(error as Error).message}`,
+          `[metrics] source=glpi-fallback requester message=${(error as Error).message}`,
         );
-        return this.getMetricsFromGlpi(user);
+        return this.getMetricsFromGlpiForRequester(user);
       }
     }
 
-    const result = await this.getMetricsFromGlpi(user);
+    const result = await this.getMetricsFromGlpiForRequester(user);
     this.logger.info(
       {
         metricsSource: "glpi-api",
         configured: metricsSource,
         userId: user.id,
+        role: user.role,
       },
-      "[metrics] source=glpi-api",
+      "[metrics] source=glpi-api requester",
     );
     return result;
+  }
+
+  private async getMetricsFromGlpiForRequester(
+    user: AuthenticatedUser,
+  ): Promise<TicketMetricsResponseDto> {
+    const [requesterTickets, locations] = await this.asService(async (key) => {
+      const [tickets, locs] = await Promise.all([
+        this.ticketsRepo.listRequesterTicketsForMetrics(key, user.id),
+        this.catalogService.listLocations(),
+      ]);
+      return [tickets, locs] as const;
+    });
+
+    const myTickets = computeMyTicketsMetrics(requesterTickets);
+    const myIncidents = computeTypeMetrics(requesterTickets, "incident");
+    const myRequests = computeTypeMetrics(requesterTickets, "request");
+
+    const normalizedLocationId = normalizeLocationId(user.locationId);
+    const mySitePool =
+      normalizedLocationId != null
+        ? requesterTickets.filter(
+            (ticket) =>
+              normalizeLocationId(ticket.locationId) === normalizedLocationId &&
+              isTicketOpen(ticket),
+          )
+        : [];
+    const mySite = normalizedLocationId != null ? computeSiteMetrics(mySitePool) : null;
+
+    const openRequesterTickets = requesterTickets.filter(isTicketOpen);
+    const locationIds = new Set<number>();
+    for (const ticket of openRequesterTickets) {
+      const locationId = normalizeLocationId(ticket.locationId);
+      if (locationId != null) {
+        locationIds.add(locationId);
+      }
+    }
+    const locationNameById = new Map(
+      locations
+        .filter((loc) => {
+          const id = normalizeLocationId(loc.id);
+          return id != null && locationIds.has(id);
+        })
+        .map((loc) => [normalizeLocationId(loc.id) ?? loc.id, loc.name]),
+    );
+    const openByLocation = buildOpenByLocationMetrics(openRequesterTickets, locationNameById);
+
+    return {
+      myTickets,
+      mySite,
+      myIncidents,
+      myRequests,
+      openByLocation,
+    };
   }
 
   private async getMetricsFromGlpi(

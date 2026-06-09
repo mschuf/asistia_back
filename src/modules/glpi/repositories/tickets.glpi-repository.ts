@@ -517,7 +517,7 @@ export class TicketsGlpiRepository {
 
   private async searchTicketsForMetricsPage(
     sessionKey: string,
-    filter: Pick<ListTicketsFilter, "technicianId" | "status">,
+    filter: Pick<ListTicketsFilter, "technicianId" | "requesterId" | "status">,
     rangeStart: number,
     rangeEnd: number,
     fallbackTechnicianId?: number,
@@ -526,6 +526,7 @@ export class TicketsGlpiRepository {
       page: 1,
       limit: rangeEnd - rangeStart + 1,
       technicianId: filter.technicianId,
+      requesterId: filter.requesterId,
       status: filter.status,
     };
 
@@ -783,6 +784,37 @@ export class TicketsGlpiRepository {
         rangeStart,
         rangeEnd,
         technicianId,
+      );
+      all.push(...items);
+      rangeStart += METRICS_SEARCH_PAGE_SIZE;
+      if (items.length === 0 || all.length >= total || rangeStart >= total) {
+        break;
+      }
+    }
+
+    return all;
+  }
+
+  /**
+   * Tickets solicitados por el usuario para agregados de indicadores.
+   */
+  async listRequesterTicketsForMetrics(
+    sessionKey: string,
+    requesterId: number,
+  ): Promise<DomainTicket[]> {
+    const all: DomainTicket[] = [];
+    let rangeStart = 0;
+
+    while (rangeStart < METRICS_ASSIGNED_MAX) {
+      const rangeEnd = Math.min(
+        rangeStart + METRICS_SEARCH_PAGE_SIZE - 1,
+        METRICS_ASSIGNED_MAX - 1,
+      );
+      const { items, total } = await this.searchTicketsForMetricsPage(
+        sessionKey,
+        { requesterId },
+        rangeStart,
+        rangeEnd,
       );
       all.push(...items);
       rangeStart += METRICS_SEARCH_PAGE_SIZE;

@@ -13,6 +13,7 @@ export interface UserProfile {
   groupIds: number[];
   entityId: number | null;
   entityName: string | null;
+  isSuperAdmin: boolean;
 }
 
 export interface JwtPayload {

@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { QueryValues } from "mysql2";
 import type { RowDataPacket } from "mysql2/promise";
-import { GLPI_TICKET_TYPE } from "../glpi.constants";
+import { GLPI_TICKET_TYPE, GLPI_TICKET_USER_TYPE } from "../glpi.constants";
 import { MysqlService } from "../../mysql/mysql.service";
 import { OPEN_STATUS_GLPI, openPercent } from "../../tickets/domain/ticket-metrics.helpers";
 import type { TicketMetricsResponseDto } from "../../tickets/dto/ticket-metrics.response.dto";
@@ -51,6 +51,32 @@ export interface MetricsForTechnicianInput {
   technicianId: number;
   locationId: number | null | undefined;
 }
+
+export interface MetricsForRequesterInput {
+  requesterId: number;
+  locationId: number | null | undefined;
+}
+
+const BASE_TICKET_WITH_REQUESTER_SQL = `
+  SELECT
+    t.id AS ticket_id,
+    t.is_deleted,
+    t.type AS type_glpi,
+    t.status AS status_glpi,
+    t.locations_id AS location_id,
+    t.date AS created_at,
+    req.users_id AS requester_id
+  FROM glpi_tickets t
+  LEFT JOIN glpi_tickets_users req
+    ON req.tickets_id = t.id
+   AND req.type = ${GLPI_TICKET_USER_TYPE.REQUESTER}
+   AND req.id = (
+    SELECT MIN(tu_min.id)
+    FROM glpi_tickets_users tu_min
+    WHERE tu_min.tickets_id = t.id
+      AND tu_min.type = ${GLPI_TICKET_USER_TYPE.REQUESTER}
+  )
+`;
 
 @Injectable()
 export class TicketsMetricsSqlRepository {
@@ -208,6 +234,184 @@ export class TicketsMetricsSqlRepository {
       openThisMonth,
       totalThisMonth,
     };
+  }
+
+  async getMetricsForRequester(
+    input: MetricsForRequesterInput,
+  ): Promise<TicketMetricsResponseDto> {
+    const requesterId = input.requesterId;
+    const [myTickets, myIncidents, myRequests, mySite, openByLocationRows] = await Promise.all([
+      this.aggregateRequesterMyTickets(requesterId),
+      this.aggregateRequesterTypeSlice(requesterId, GLPI_TICKET_TYPE.INCIDENT),
+      this.aggregateRequesterTypeSlice(requesterId, GLPI_TICKET_TYPE.REQUEST),
+      input.locationId != null
+        ? this.aggregateRequesterSiteSlice(requesterId, input.locationId)
+        : Promise.resolve(null),
+      this.listRequesterOpenByLocation(requesterId),
+    ]);
+
+    const openByLocation = openByLocationRows.map((row) => {
+      const locationId = Number(row.location_id);
+      return {
+        locationId,
+        name: row.name?.trim() || `Sede #${locationId}`,
+        open: Number(row.open_count) || 0,
+      };
+    });
+
+    return {
+      myTickets,
+      mySite,
+      myIncidents,
+      myRequests,
+      openByLocation,
+    };
+  }
+
+  private async aggregateRequesterMyTickets(requesterId: number): Promise<{
+    inProgress: number;
+    openPercent: number;
+    openThisMonth: number;
+    totalThisMonth: number;
+  }> {
+    const row = await this.queryRequesterAggregate(requesterId, null);
+    const openThisMonth = Number(row?.open_this_month ?? 0);
+    const totalThisMonth = Number(row?.total_this_month ?? 0);
+    return {
+      inProgress: Number(row?.in_progress ?? 0),
+      openPercent: openPercent(openThisMonth, totalThisMonth),
+      openThisMonth,
+      totalThisMonth,
+    };
+  }
+
+  private async aggregateRequesterTypeSlice(
+    requesterId: number,
+    typeGlpi: number,
+  ): Promise<{
+    open: number;
+    openPercent: number;
+    openThisMonth: number;
+    totalThisMonth: number;
+  }> {
+    const row = await this.queryRequesterAggregate(requesterId, typeGlpi);
+    const openThisMonth = Number(row?.open_this_month ?? 0);
+    const totalThisMonth = Number(row?.total_this_month ?? 0);
+    return {
+      open: Number(row?.in_progress ?? 0),
+      openPercent: openPercent(openThisMonth, totalThisMonth),
+      openThisMonth,
+      totalThisMonth,
+    };
+  }
+
+  private async queryRequesterAggregate(
+    requesterId: number,
+    typeGlpi: number | null,
+  ): Promise<AssignedAggregateRow | undefined> {
+    const typeClause = typeGlpi != null ? "AND type_glpi = :typeGlpi" : "";
+    const params: Record<string, unknown> = { requesterId };
+    if (typeGlpi != null) params.typeGlpi = typeGlpi;
+
+    const rows = await this.mysql.query<AssignedAggregateRow>(
+      `SELECT
+         SUM(CASE WHEN status_glpi IN (${OPEN_STATUS_IN}) THEN 1 ELSE 0 END) AS in_progress,
+         SUM(
+           CASE
+             WHEN status_glpi IN (${OPEN_STATUS_IN})
+              AND YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS open_this_month,
+         SUM(
+           CASE
+             WHEN YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS total_this_month
+       FROM (${BASE_TICKET_WITH_REQUESTER_SQL}) th
+       WHERE is_deleted = 0
+         AND requester_id = :requesterId
+         ${typeClause}`,
+      params as QueryValues,
+    );
+    return rows[0];
+  }
+
+  private async aggregateRequesterSiteSlice(
+    requesterId: number,
+    locationId: number,
+  ): Promise<{
+    open: number;
+    openPercent: number;
+    openThisMonth: number;
+    totalThisMonth: number;
+  }> {
+    const rows = await this.mysql.query<SiteAggregateRow>(
+      `SELECT
+         COUNT(*) AS open_count,
+         SUM(
+           CASE
+             WHEN status_glpi IN (${OPEN_STATUS_IN})
+              AND YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS open_this_month,
+         SUM(
+           CASE
+             WHEN YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS total_this_month
+       FROM (
+         SELECT status_glpi, created_at
+         FROM (${BASE_TICKET_WITH_REQUESTER_SQL}) th
+         WHERE is_deleted = 0
+           AND requester_id = :requesterId
+           AND location_id = :locationId
+           AND status_glpi IN (${OPEN_STATUS_IN})
+         LIMIT ${METRICS_SITE_LIMIT}
+       ) site_pool`,
+      { requesterId, locationId } as QueryValues,
+    );
+
+    const row = rows[0];
+    const open = Number(row?.open_count ?? 0);
+    const openThisMonth = Number(row?.open_this_month ?? 0);
+    const totalThisMonth = Number(row?.total_this_month ?? 0);
+
+    return {
+      open,
+      openPercent: openPercent(openThisMonth, totalThisMonth),
+      openThisMonth,
+      totalThisMonth,
+    };
+  }
+
+  /** Tickets abiertos del solicitante agrupados por sede. */
+  private async listRequesterOpenByLocation(
+    requesterId: number,
+  ): Promise<GlobalOpenByLocationRow[]> {
+    return this.mysql.query<GlobalOpenByLocationRow>(
+      `SELECT
+         th.location_id,
+         COALESCE(NULLIF(TRIM(loc.completename), ''), loc.name) AS name,
+         COUNT(*) AS open_count
+       FROM (${BASE_TICKET_WITH_REQUESTER_SQL}) th
+       INNER JOIN glpi_locations loc ON loc.id = th.location_id
+       WHERE th.is_deleted = 0
+         AND th.requester_id = :requesterId
+         AND th.status_glpi IN (${OPEN_STATUS_IN})
+         AND th.location_id IS NOT NULL
+         AND th.location_id > 0
+       GROUP BY th.location_id, name
+       ORDER BY open_count DESC, name ASC`,
+      { requesterId } as QueryValues,
+    );
   }
 
   /** Total global de tickets abiertos por sede (Indicadores; sin filtro por técnico). */

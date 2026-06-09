@@ -117,6 +117,7 @@ export class AuthController {
       locationId: user.locationId,
       entityId: user.entityId,
       entityName: user.entityName,
+      isSuperAdmin: user.isSuperAdmin,
     };
   }
 

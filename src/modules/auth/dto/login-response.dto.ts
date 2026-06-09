@@ -24,6 +24,12 @@ export class AuthenticatedUserResponseDto {
 
   @ApiProperty({ example: "Holding > Empresa Principal", nullable: true })
   entityName!: string | null;
+
+  @ApiProperty({
+    description: "Indica si el usuario tiene perfil Super-Admin en alguna entidad GLPI",
+    example: false,
+  })
+  isSuperAdmin!: boolean;
 }
 
 export class LoginResponseDto {

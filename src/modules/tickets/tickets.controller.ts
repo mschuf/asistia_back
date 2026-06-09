@@ -56,9 +56,8 @@ export class TicketsController {
   }
 
   @Get("metrics")
-  @Roles("technician")
   @RequestTimeoutMs(METRICS_HTTP_TIMEOUT_MS)
-  @ApiOperation({ summary: "Aggregated metrics for technicians (TI dashboard)" })
+  @ApiOperation({ summary: "Aggregated ticket metrics for the current user" })
   @ApiResponse({ status: 200, type: TicketMetricsResponseDto })
   @ResponseMessage("Ticket metrics retrieved")
   async metrics(

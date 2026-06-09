@@ -14,6 +14,7 @@ import { TicketsStatusSqlRepository } from "./repositories/tickets-status.sql-re
 import { TicketsCreateSqlRepository } from "./repositories/tickets-create.sql-repository";
 import { UsersTechniciansSqlRepository } from "./repositories/users-technicians.sql-repository";
 import { LocationsSqlRepository } from "./repositories/locations.sql-repository";
+import { UsersProfilesSqlRepository } from "./repositories/users-profiles.sql-repository";
 
 @Global()
 @Module({
@@ -38,6 +39,7 @@ import { LocationsSqlRepository } from "./repositories/locations.sql-repository"
     TicketsStatusSqlRepository,
     TicketsCreateSqlRepository,
     UsersTechniciansSqlRepository,
+    UsersProfilesSqlRepository,
     LocationsSqlRepository,
   ],
   exports: [
@@ -52,6 +54,7 @@ import { LocationsSqlRepository } from "./repositories/locations.sql-repository"
     TicketsStatusSqlRepository,
     TicketsCreateSqlRepository,
     UsersTechniciansSqlRepository,
+    UsersProfilesSqlRepository,
     LocationsSqlRepository,
   ],
 })

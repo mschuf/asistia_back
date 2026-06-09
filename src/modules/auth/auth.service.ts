@@ -2,9 +2,10 @@
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { GlpiBootstrapService } from "../glpi/glpi-bootstrap.service";
-import { isTiGroupName } from "../glpi/role.utils";
+import { isSuperAdminProfileName, isTiGroupName } from "../glpi/role.utils";
 import { UsersGlpiRepository } from "../glpi/repositories/users.glpi-repository";
 import { CatalogGlpiRepository } from "../glpi/repositories/catalog.glpi-repository";
+import { UsersProfilesSqlRepository } from "../glpi/repositories/users-profiles.sql-repository";
 import type { DomainUser } from "../glpi/mappers/user.mapper";
 import { LdapProvider } from "./strategies/ldap.provider";
 import type { IdentityResolution } from "./strategies/identity-provider.interface";
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly bootstrap: GlpiBootstrapService,
     private readonly usersRepo: UsersGlpiRepository,
     private readonly catalogRepo: CatalogGlpiRepository,
+    private readonly usersProfilesSqlRepo: UsersProfilesSqlRepository,
   ) {}
 
   async loginWithEncryptedCredentials(
@@ -110,11 +112,14 @@ export class AuthService {
       });
     }
 
-    const groupIds = await this.resolveGroupIds(glpiUser.id);
+    const [groupIds, entityName, isSuperAdmin] = await Promise.all([
+      this.resolveGroupIds(glpiUser.id),
+      this.resolveEntityName(glpiUser.entityId),
+      this.resolveIsSuperAdmin(glpiUser.id),
+    ]);
     const role = await this.determineRole(groupIds);
-    const entityName = await this.resolveEntityName(glpiUser.entityId);
     this.logger.debug(
-      `[AUTH] groupIds=${JSON.stringify(groupIds)} resolvedRole='${role}' entityId=${glpiUser.entityId ?? "null"} entityName='${entityName ?? ""}'`,
+      `[AUTH] groupIds=${JSON.stringify(groupIds)} resolvedRole='${role}' entityId=${glpiUser.entityId ?? "null"} entityName='${entityName ?? ""}' isSuperAdmin=${isSuperAdmin}`,
     );
 
     const principal: AuthenticatedUser = {
@@ -129,6 +134,7 @@ export class AuthService {
       groupIds,
       entityId: glpiUser.entityId,
       entityName,
+      isSuperAdmin,
     };
     const user: SessionUser = { ...principal, ...profile };
 
@@ -150,9 +156,10 @@ export class AuthService {
       });
     }
 
-    const [groupIds, entityName] = await Promise.all([
+    const [groupIds, entityName, isSuperAdmin] = await Promise.all([
       this.resolveGroupIds(domainUser.id),
       this.resolveEntityName(domainUser.entityId),
+      this.resolveIsSuperAdmin(domainUser.id),
     ]);
 
     return {
@@ -165,7 +172,24 @@ export class AuthService {
       groupIds,
       entityId: domainUser.entityId,
       entityName,
+      isSuperAdmin,
     };
+  }
+
+  private async resolveIsSuperAdmin(userId: number): Promise<boolean> {
+    try {
+      const profiles = await this.usersProfilesSqlRepo.listUserEntityProfiles(userId);
+      const isSuperAdmin = profiles.some((profile) => isSuperAdminProfileName(profile.profileName));
+      this.logger.debug(
+        `[AUTH] Super-admin profiles for user ${userId}: ${JSON.stringify(profiles)} resolved=${isSuperAdmin}`,
+      );
+      return isSuperAdmin;
+    } catch (error) {
+      this.logger.warn(
+        `[AUTH] Could not resolve GLPI profiles through SQL for user ${userId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
   }
 
   private async resolveEntityName(entityId: number | null): Promise<string | null> {

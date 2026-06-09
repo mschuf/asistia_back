@@ -50,6 +50,7 @@ export interface GlpiProfileUserRaw {
   id?: number;
   users_id?: number;
   profiles_id?: number;
+  entities_id?: number;
 }
 
 export interface GlpiLocationRaw {

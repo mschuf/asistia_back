@@ -68,6 +68,14 @@ export function isAdminItProfileName(name: string): boolean {
 
 
 
+export function isSuperAdminProfileName(name: string): boolean {
+
+  return normalizeRoleToken(name) === "super-admin";
+
+}
+
+
+
 export function isItProfileName(name: string): boolean {
 
   return isOperationalItProfileName(name) || isAdminItProfileName(name);
