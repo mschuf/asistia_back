@@ -68,8 +68,12 @@ const METRICS_SITE_LIMIT = 500;
 /** Límite para tickets abiertos globales (Indicadores por sede). */
 const METRICS_GLOBAL_OPEN_LIMIT = 9999;
 
-/** Máximo de tickets por página en el listado (historial). */
+/** Máximo de tickets por página en el listado activo vía GLPI. */
 const TICKETS_LIST_MAX_PAGE_SIZE = 15;
+
+/** Tamaño por defecto y máximo del historial paginado vía SQL. */
+const TICKETS_HISTORY_DEFAULT_PAGE_SIZE = 15;
+const TICKETS_HISTORY_MAX_PAGE_SIZE = 1000;
 
 /** Estados por defecto en Historial cuando no hay filtro explícito. */
 const DEFAULT_HISTORY_STATUSES: TicketStatus[] = [
@@ -579,8 +583,8 @@ export class TicketsService {
     meta?: HistoryListMeta,
   ): Promise<TicketListResponseDto> {
     const limit = Math.min(
-      Math.max(query.limit ?? TICKETS_LIST_MAX_PAGE_SIZE, 1),
-      TICKETS_LIST_MAX_PAGE_SIZE,
+      Math.max(query.limit ?? TICKETS_HISTORY_DEFAULT_PAGE_SIZE, 1),
+      TICKETS_HISTORY_MAX_PAGE_SIZE,
     );
     const trimmedSearch = query.search?.trim();
     let statusFilter = TicketsService.resolveListStatusFilter(query);
