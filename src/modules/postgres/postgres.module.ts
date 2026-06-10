@@ -1,3 +1,7 @@
+/**
+ * @file postgres.module.ts
+ * @description Módulo global que registra el pool PostgreSQL y expone {@link PostgresService}.
+ */
 import { Global, Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Pool } from "pg";
@@ -5,6 +9,9 @@ import type { AppConfig } from "../../config/configuration";
 import { POSTGRES_POOL } from "./postgres.constants";
 import { PostgresService } from "./postgres.service";
 
+/**
+ * Provee y exporta el pool PostgreSQL para datos propios de asistIA.
+ */
 @Global()
 @Module({
   providers: [

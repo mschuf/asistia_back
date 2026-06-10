@@ -1,4 +1,8 @@
-﻿import { HttpStatus, Injectable } from "@nestjs/common";
+﻿/**
+ * @file tickets.service.ts
+ * @description Orquesta tickets contra GLPI/MySQL: CRUD, métricas, asignación y correos.
+ */
+import { HttpStatus, Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
@@ -108,8 +112,12 @@ export interface InboundTicketResponse {
   mailEvent: TicketCreatedEvent;
 }
 
+/**
+ * Servicio de tickets: consulta híbrida SQL/GLPI, creación, estados y notificaciones.
+ */
 @Injectable()
 export class TicketsService {
+  /** Inyecta repositorios GLPI/SQL, catálogo, usuarios, eventos y configuración. */
   constructor(
     private readonly ticketsRepo: TicketsGlpiRepository,
     private readonly historySqlRepo: TicketsHistorySqlRepository,
@@ -130,22 +138,32 @@ export class TicketsService {
   }
 
   /**
-   * Ejecuta una operaci├│n contra GLPI usando la cuenta de servicio
-   * (`GLPI_CATALOG_BOOTSTRAP_*`, elevada con permisos CRUD). Todas las
-   * operaciones del m├│dulo de tickets pasan por aqu├¡: la autorizaci├│n
-   * a nivel de negocio se valida arriba (rol, ownership) y el actor en
-   * los inputs GLPI se setea expl├¡citamente (`_users_id_requester`, etc).
+   * Ejecuta una operación contra GLPI con la sesión de cuenta de servicio.
+   * @param fn - Callback que recibe la clave de sesión bootstrap.
+   * @returns Resultado de la operación GLPI.
+   * @throws Propaga errores de sesión o de la API GLPI.
    */
   private asService<T>(fn: (sessionKey: string) => Promise<T>): Promise<T> {
     return this.bootstrap.withCatalogBootstrapSession(fn);
   }
 
+  /**
+   * Indica si historial o estado están configurados para consulta SQL primero.
+   * @returns `true` si `glpi.historySource` o `glpi.statusSource` es `sql`.
+   * @throws Ninguno.
+   */
   private preferSqlTicketLookup(): boolean {
     const historySource = this.config.get("glpi.historySource", { infer: true });
     const statusSource = this.config.get("glpi.statusSource", { infer: true });
     return historySource === "sql" || statusSource === "sql";
   }
 
+  /**
+   * Busca un ticket en MySQL; ante error SQL devuelve null sin propagar.
+   * @param id - ID del ticket.
+   * @returns Ticket de dominio o `null`.
+   * @throws Ninguno.
+   */
   private async tryFindTicketFromSql(id: number): Promise<DomainTicket | null> {
     try {
       const fromSql = await this.historySqlRepo.findById(id);
@@ -163,8 +181,10 @@ export class TicketsService {
   }
 
   /**
-   * Carga un ticket por ID. Con historial o estado en SQL, consulta primero
-   * `v_asistia_ticket_history`; si no hay fila, hace fallback a la API de GLPI.
+   * Carga un ticket por ID con prioridad SQL y fallback a GLPI.
+   * @param id - ID del ticket.
+   * @returns Ticket encontrado o `null`.
+   * @throws Ninguno.
    */
   private async findTicketById(id: number): Promise<DomainTicket | null> {
     if (this.preferSqlTicketLookup()) {
@@ -186,7 +206,12 @@ export class TicketsService {
     return null;
   }
 
-  /** Carga previa a `updateStatus`: con `GLPI_STATUS_SOURCE=sql` prioriza MySQL. */
+  /**
+   * Carga previa a `updateStatus`; con `GLPI_STATUS_SOURCE=sql` prioriza MySQL.
+   * @param id - ID del ticket.
+   * @returns Ticket o `null` si no existe en SQL ni GLPI.
+   * @throws Ninguno.
+   */
   private async findTicketForStatusUpdate(id: number): Promise<DomainTicket | null> {
     const statusSource = this.config.get("glpi.statusSource", { infer: true });
     if (statusSource === "sql") {
@@ -199,6 +224,12 @@ export class TicketsService {
     return this.findTicketById(id);
   }
 
+  /**
+   * Obtiene métricas según rol (técnico o solicitante) y fuente configurada.
+   * @param user - Usuario autenticado.
+   * @returns Métricas agregadas del dashboard.
+   * @throws Ninguno; ante error SQL en métricas hace fallback a GLPI.
+   */
   async getMetrics(user: AuthenticatedUser): Promise<TicketMetricsResponseDto> {
     if (user.role === "technician") {
       const metricsSource = this.config.get("glpi.metricsSource", { infer: true });
@@ -246,6 +277,12 @@ export class TicketsService {
     return this.getMetricsForRequester(user);
   }
 
+  /**
+   * Métricas para solicitantes con fuente SQL o fallback GLPI.
+   * @param user - Usuario solicitante autenticado.
+   * @returns Métricas de sus tickets y sede.
+   * @throws Ninguno.
+   */
   private async getMetricsForRequester(
     user: AuthenticatedUser,
   ): Promise<TicketMetricsResponseDto> {
@@ -294,6 +331,12 @@ export class TicketsService {
     return result;
   }
 
+  /**
+   * Calcula métricas de solicitante consultando directamente GLPI.
+   * @param user - Usuario solicitante.
+   * @returns Métricas derivadas de tickets del requester.
+   * @throws Propaga errores de sesión o API GLPI.
+   */
   private async getMetricsFromGlpiForRequester(
     user: AuthenticatedUser,
   ): Promise<TicketMetricsResponseDto> {
@@ -347,6 +390,12 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Calcula métricas de técnico consultando GLPI (asignados, sede, globales).
+   * @param user - Técnico autenticado.
+   * @returns Métricas de tickets asignados y abiertos por sede.
+   * @throws Propaga errores de sesión o API GLPI.
+   */
   private async getMetricsFromGlpi(
     user: AuthenticatedUser,
   ): Promise<TicketMetricsResponseDto> {
@@ -399,6 +448,14 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Historial paginado desde MySQL (`GLPI_HISTORY_SOURCE=sql` obligatorio).
+   * @param user - Usuario autenticado.
+   * @param query - Filtros y paginación.
+   * @param meta - Objeto opcional para registrar fuente en cabecera HTTP.
+   * @returns Listado paginado de historial.
+   * @throws {BusinessException} Si el historial no está configurado en SQL.
+   */
   async listHistory(
     user: AuthenticatedUser,
     query: ListTicketsQueryDto,
@@ -461,6 +518,13 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Lista tickets activos visibles para el usuario vía API GLPI.
+   * @param user - Usuario autenticado.
+   * @param query - Filtros y paginación.
+   * @returns Listado enriquecido paginado.
+   * @throws Propaga errores de sesión o API GLPI.
+   */
   async list(user: AuthenticatedUser, query: ListTicketsQueryDto): Promise<TicketListResponseDto> {
     const limit = Math.min(Math.max(query.limit ?? TICKETS_LIST_MAX_PAGE_SIZE, 1), TICKETS_LIST_MAX_PAGE_SIZE);
     const filter = {
@@ -493,11 +557,25 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Obtiene un ticket por ID tras validar acceso del usuario.
+   * @param user - Usuario autenticado.
+   * @param id - ID del ticket.
+   * @returns DTO enriquecido del ticket.
+   * @throws {BusinessException} Si no existe o no hay permiso.
+   */
   async findById(user: AuthenticatedUser, id: number): Promise<TicketResponseDto> {
     const ticket = await this.assertTicketAccess(user, id);
     return this.enrichTicket(ticket);
   }
 
+  /**
+   * Carga el ticket y verifica que el usuario pueda acceder.
+   * @param user - Usuario autenticado.
+   * @param id - ID del ticket.
+   * @returns Ticket de dominio si el acceso es válido.
+   * @throws {BusinessException} Si no existe o el solicitante no es el dueño.
+   */
   async assertTicketAccess(user: AuthenticatedUser, id: number): Promise<DomainTicket> {
     const ticket = await this.findTicketById(id);
     if (!ticket) {
@@ -517,6 +595,13 @@ export class TicketsService {
     return ticket;
   }
 
+  /**
+   * Crea un ticket con validación de catálogo, auto-asignación y correo.
+   * @param user - Usuario creador (solicitante o técnico).
+   * @param dto - Datos del ticket.
+   * @returns ID, asunto y estado del envío de correo.
+   * @throws {BusinessException} Por categoría, sede, técnico o permisos inválidos.
+   */
   async create(user: AuthenticatedUser, dto: CreateTicketDto): Promise<CreateTicketResponseDto> {
     const locationId = dto.locationId ?? normalizeLocationId(user.locationId) ?? undefined;
 
@@ -597,6 +682,12 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Crea un ticket desde correo entrante con técnico por defecto configurado.
+   * @param input - Datos normalizados del mensaje inbound.
+   * @returns Ticket creado y evento de correo sin emitir aún.
+   * @throws {BusinessException} Si el técnico por defecto no es válido.
+   */
   async createFromInbound(input: InboundTicketInput): Promise<InboundTicketResponse> {
     const technicianId = this.config.get("mail.inboundDefaultTechnicianId", { infer: true });
     const ticketType: TicketType =
@@ -656,6 +747,13 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Resuelve destinatario de correo desde GLPI, fallback o LDAP.
+   * @param domainUser - Usuario GLPI o `null`.
+   * @param fallbackEmail - Correo alternativo si falta en GLPI.
+   * @returns Destinatario con nombre y email o `null`.
+   * @throws Ninguno.
+   */
   private async resolveMailRecipient(
     domainUser: DomainUser | null,
     fallbackEmail?: string | null,
@@ -674,6 +772,15 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Actualiza estado con validación de transición, nota de resolución y correo.
+   * @param user - Usuario que realiza el cambio.
+   * @param id - ID del ticket.
+   * @param status - Estado destino.
+   * @param resolutionNote - Nota obligatoria al marcar resuelto (técnicos).
+   * @returns ID y estado confirmado.
+   * @throws {BusinessException} Por permisos, transición inválida o verificación GLPI fallida.
+   */
   async updateStatus(
     user: AuthenticatedUser,
     id: number,
@@ -761,9 +868,12 @@ export class TicketsService {
   }
 
   /**
-   * Aplica el cambio de estado según `GLPI_STATUS_SOURCE`.
-   * Con `sql` escribe primero en MySQL (rápido); si falla, fallback a la API REST.
-   * La verificación posterior usa el mismo origen efectivo.
+   * Aplica cambio de estado en SQL o GLPI según `GLPI_STATUS_SOURCE`.
+   * @param ticketId - ID del ticket.
+   * @param statusGlpi - Código de estado GLPI.
+   * @param resolutionNote - Nota a concatenar o `null`.
+   * @returns Origen efectivo de la escritura (`mysql` o `glpi-api`).
+   * @throws Propaga errores de API GLPI si SQL falla y el fallback también.
    */
   private async applyStatusUpdate(
     ticketId: number,
@@ -812,6 +922,14 @@ export class TicketsService {
     return "glpi-api";
   }
 
+  /**
+   * Verifica que el estado se aplicó leyendo SQL o GLPI según configuración.
+   * @param ticketId - ID del ticket.
+   * @param previousTicket - Snapshot previo para fusionar campos.
+   * @param source - Origen de la escritura (`mysql` o `glpi-api`).
+   * @returns Ticket actualizado con el nuevo estado.
+   * @throws {BusinessException} Si no se puede verificar tras la actualización.
+   */
   private async verifyStatusUpdate(
     ticketId: number,
     previousTicket: DomainTicket,
@@ -841,6 +959,14 @@ export class TicketsService {
     return refreshed;
   }
 
+  /**
+   * Asigna un técnico al ticket y emite correos de asignación/reasignación.
+   * @param user - Técnico que ejecuta la asignación.
+   * @param ticketId - ID del ticket.
+   * @param technicianId - ID del técnico destino.
+   * @returns Ticket enriquecido tras la asignación.
+   * @throws {BusinessException} Si el ticket o técnico no son válidos.
+   */
   async assignTechnician(
     user: AuthenticatedUser,
     ticketId: number,
@@ -905,6 +1031,14 @@ export class TicketsService {
     return enriched;
   }
 
+  /**
+   * Actualiza la sede del ticket validando el catálogo de locations.
+   * @param user - Técnico autenticado.
+   * @param ticketId - ID del ticket.
+   * @param locationId - Nueva sede.
+   * @returns Ticket enriquecido con la sede actualizada.
+   * @throws {BusinessException} Si el ticket o la sede no son válidos.
+   */
   async updateLocation(
     user: AuthenticatedUser,
     ticketId: number,
@@ -929,6 +1063,12 @@ export class TicketsService {
     return this.enrichTicket(refreshed ?? ticket);
   }
 
+  /**
+   * Persiste un ticket nuevo en SQL o GLPI según `GLPI_CREATE_SOURCE`.
+   * @param input - Payload de creación en formato GLPI.
+   * @returns Ticket creado y origen de escritura.
+   * @throws Propaga errores SQL/GLPI si ambos fallan.
+   */
   private async applyCreateTicket(input: {
     name: string;
     content: string;
@@ -959,6 +1099,13 @@ export class TicketsService {
     return { ticket: created, source: "glpi-api" };
   }
 
+  /**
+   * Asigna técnico en SQL o GLPI según `GLPI_ASSIGN_SOURCE`.
+   * @param ticketId - ID del ticket.
+   * @param technicianId - ID del técnico.
+   * @returns Origen efectivo (`mysql` o `glpi-api`).
+   * @throws Propaga errores de API GLPI si SQL no actualiza filas.
+   */
   private async applyAssignTechnician(
     ticketId: number,
     technicianId: number,
@@ -987,6 +1134,13 @@ export class TicketsService {
     return "glpi-api";
   }
 
+  /**
+   * Actualiza sede en SQL o GLPI reutilizando `GLPI_ASSIGN_SOURCE`.
+   * @param ticketId - ID del ticket.
+   * @param locationId - Nueva sede.
+   * @returns Origen efectivo (`mysql` o `glpi-api`).
+   * @throws Propaga errores de API GLPI si SQL no actualiza filas.
+   */
   private async applyUpdateLocation(
     ticketId: number,
     locationId: number,
@@ -1015,6 +1169,13 @@ export class TicketsService {
     return "glpi-api";
   }
 
+  /**
+   * Resuelve el ID del solicitante permitiendo override solo a técnicos.
+   * @param user - Usuario creador.
+   * @param requested - ID solicitado opcional.
+   * @returns ID del solicitante efectivo.
+   * @throws {BusinessException} Si un no-técnico pide otro usuario o no existe.
+   */
   private async resolveRequesterId(
     user: AuthenticatedUser,
     requested?: number,
@@ -1038,11 +1199,24 @@ export class TicketsService {
     return target.id;
   }
 
+  /**
+   * Obtiene el nombre visible de un usuario para correos y logs.
+   * @param userId - ID del actor en GLPI.
+   * @returns Nombre completo o etiqueta `Usuario {id}`.
+   * @throws Ninguno.
+   */
   private async resolveActorDisplayName(userId: number): Promise<string> {
     const actor = await this.asService((key) => this.usersRepo.findById(key, userId));
     return actor?.fullName ?? `Usuario ${userId}`;
   }
 
+  /**
+   * Valida que la categoría exista en el catálogo cargado.
+   * @param categories - Lista de categorías válidas.
+   * @param categoryId - ID a validar.
+   * @returns Nada si es válida.
+   * @throws {BusinessException} Si la categoría no está en la lista.
+   */
   private assertCategoryInList(categories: DomainCategory[], categoryId: number): void {
     if (!categories.some((category) => category.id === categoryId)) {
       throw new BusinessException({
@@ -1052,6 +1226,12 @@ export class TicketsService {
     }
   }
 
+  /**
+   * Convierte filtros `status` o `statuses` del query a códigos GLPI.
+   * @param query - Parámetros de listado.
+   * @returns Array de estados GLPI o `undefined` si no hay filtro.
+   * @throws Ninguno.
+   */
   private static resolveListStatusFilter(query: ListTicketsQueryDto): number[] | undefined {
     if (query.status) {
       return [TicketMapper.mapStatusToGlpi(query.status)];
@@ -1078,6 +1258,13 @@ export class TicketsService {
     return parsed.map((status) => TicketMapper.mapStatusToGlpi(status));
   }
 
+  /**
+   * Valida que la sede exista en el catálogo cargado.
+   * @param locations - Lista de sedes válidas.
+   * @param locationId - ID a validar.
+   * @returns Nada si es válida.
+   * @throws {BusinessException} Si la sede no está en la lista.
+   */
   private assertLocationInList(locations: DomainLocation[], locationId: number): void {
     if (!locations.some((location) => location.id === locationId)) {
       throw new BusinessException({
@@ -1087,6 +1274,14 @@ export class TicketsService {
     }
   }
 
+  /**
+   * Determina técnico y estrategia de auto-asignación al crear ticket.
+   * @param user - Usuario creador.
+   * @param dto - DTO con asignación manual opcional.
+   * @param locationId - Sede efectiva del ticket.
+   * @returns ID de técnico y estrategia aplicada.
+   * @throws {BusinessException} Si el técnico manual o fallback no es válido.
+   */
   private async resolveAssignedTechnicianForCreate(
     user: AuthenticatedUser,
     dto: CreateTicketDto,
@@ -1128,6 +1323,12 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Valida que el técnico fallback de auto-asignación exista en GLPI.
+   * @param technicianId - ID del técnico configurado.
+   * @returns Nada si existe.
+   * @throws {BusinessException} Si el técnico no existe.
+   */
   private async assertAutoAssignFallbackTechnician(technicianId: number): Promise<void> {
     const technician = await this.asService((key) => this.usersRepo.findById(key, technicianId));
     if (!technician) {
@@ -1138,6 +1339,12 @@ export class TicketsService {
     }
   }
 
+  /**
+   * Verifica que el ID corresponda a un técnico elegible en Asistia.
+   * @param technicianId - ID del técnico.
+   * @returns Nada si es elegible.
+   * @throws {BusinessException} Si no es un técnico válido.
+   */
   private async assertTechnicianExists(technicianId: number): Promise<void> {
     const isEligible = await this.usersService.isEligibleTechnician(technicianId);
     if (!isEligible) {
@@ -1148,6 +1355,13 @@ export class TicketsService {
     }
   }
 
+  /**
+   * Valida técnico inbound; relaja reglas si coincide con usuario de servicio.
+   * @param technicianId - ID del técnico por defecto inbound.
+   * @param serviceUserId - ID del usuario de servicio GLPI o `null`.
+   * @returns Nada si es válido.
+   * @throws {BusinessException} Si el técnico no existe o no es elegible.
+   */
   private async assertInboundTechnicianExists(
     technicianId: number,
     serviceUserId: number | null,
@@ -1166,6 +1380,12 @@ export class TicketsService {
     await this.assertTechnicianExists(technicianId);
   }
 
+  /**
+   * Arma el evento de correo `TICKET_CREATED` con destinatarios resueltos.
+   * @param input - Metadatos del ticket y actores.
+   * @returns Payload listo para emitir por EventEmitter.
+   * @throws Ninguno.
+   */
   private async buildTicketCreatedEvent(input: {
     ticketId: number;
     ticketType: TicketType;
@@ -1223,16 +1443,34 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Enriquece un único ticket con usuarios, categoría y sede.
+   * @param ticket - Ticket de dominio.
+   * @returns DTO de respuesta enriquecido.
+   * @throws Propaga errores de catálogo o GLPI al cargar usuarios.
+   */
   private async enrichTicket(ticket: DomainTicket): Promise<TicketResponseDto> {
     const { items } = await this.enrichTicketsWithUsers([ticket]);
     return items[0];
   }
 
+  /**
+   * Enriquece una lista de tickets para la API.
+   * @param tickets - Tickets de dominio.
+   * @returns Lista de DTOs enriquecidos.
+   * @throws Propaga errores de catálogo o GLPI.
+   */
   private async enrichTickets(tickets: DomainTicket[]): Promise<TicketResponseDto[]> {
     const { items } = await this.enrichTicketsWithUsers(tickets);
     return items;
   }
 
+  /**
+   * Carga catálogos y usuarios necesarios y mapea tickets a DTOs.
+   * @param tickets - Tickets a enriquecer.
+   * @returns DTOs y mapa de usuarios cargados.
+   * @throws Propaga errores de catálogo o GLPI.
+   */
   private async enrichTicketsWithUsers(tickets: DomainTicket[]): Promise<{
     items: TicketResponseDto[];
     usersById: Map<number, DomainUser>;
@@ -1272,6 +1510,12 @@ export class TicketsService {
     };
   }
 
+  /**
+   * Carga usuarios GLPI por conjunto de IDs en una sesión de servicio.
+   * @param userIds - IDs únicos a resolver.
+   * @returns Mapa id → usuario de dominio.
+   * @throws Propaga errores de sesión o API GLPI.
+   */
   private async loadUsersByIds(userIds: Set<number>): Promise<Map<number, DomainUser>> {
     const usersById = new Map<number, DomainUser>();
     await this.asService(async (key) => {
@@ -1285,6 +1529,15 @@ export class TicketsService {
     return usersById;
   }
 
+  /**
+   * Mapea un ticket de dominio a DTO de respuesta con datos ya cargados.
+   * @param ticket - Ticket de dominio.
+   * @param usersById - Usuarios precargados por ID.
+   * @param categories - Categorías del catálogo.
+   * @param locations - Sedes del catálogo.
+   * @returns DTO listo para serializar en la API.
+   * @throws Ninguno.
+   */
   private mapTicketToResponse(
     ticket: DomainTicket,
     usersById: Map<number, DomainUser>,

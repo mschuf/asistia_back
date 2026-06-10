@@ -1,3 +1,7 @@
+/**
+ * @file mysql.health.indicator.ts
+ * @description Indicador de salud Terminus para MySQL cuando GLPI usa fuentes SQL.
+ */
 import { Injectable } from "@nestjs/common";
 import {
   HealthCheckError,
@@ -8,8 +12,12 @@ import { ConfigService } from "@nestjs/config";
 import type { AppConfig } from "../../config/configuration";
 import { MysqlService } from "./mysql.service";
 
+/**
+ * Comprueba disponibilidad de MySQL según las fuentes GLPI configuradas en SQL.
+ */
 @Injectable()
 export class MysqlHealthIndicator extends HealthIndicator {
+  /** Inyecta servicio MySQL y configuración de fuentes GLPI. */
   constructor(
     private readonly mysql: MysqlService,
     private readonly config: ConfigService<AppConfig, true>,
@@ -17,6 +25,12 @@ export class MysqlHealthIndicator extends HealthIndicator {
     super();
   }
 
+  /**
+   * Evalúa si MySQL está habilitado, configurado y responde al ping.
+   * @param key - Clave del indicador en el reporte de salud.
+   * @returns Resultado Terminus con estado up/down.
+   * @throws {HealthCheckError} Si se requiere MySQL y no está disponible o configurado.
+   */
   async isHealthy(key = "mysql"): Promise<HealthIndicatorResult> {
     const historySql = this.config.get("glpi.historySource", { infer: true }) === "sql";
     const metricsSql = this.config.get("glpi.metricsSource", { infer: true }) === "sql";

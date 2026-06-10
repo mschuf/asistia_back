@@ -1,3 +1,7 @@
+/**
+ * @file company-search.utils.spec.ts
+ * @description Pruebas unitarias de `parseCompanySearch` para tokens de estado y texto libre.
+ */
 import { parseCompanySearch } from "./company-search.utils";
 
 describe("parseCompanySearch", () => {

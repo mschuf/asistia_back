@@ -1,10 +1,15 @@
-﻿import { Injectable, Logger } from "@nestjs/common";
+﻿/**
+ * @file mail.service.ts
+ * @description Envía correos vía SMTP con reintentos, verificación de conexión y enriquecimiento de errores.
+ */
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import nodemailer, { Transporter } from "nodemailer";
 import type { AppConfig } from "../../config/configuration";
 import type { MailRecipient } from "./mail.events";
 import { enrichSmtpErrorMessage } from "./smtp-error.utils";
 
+/** Parámetros para enviar un correo a uno o más destinatarios. */
 export interface SendMailInput {
   subject: string;
   html: string;
@@ -12,17 +17,33 @@ export interface SendMailInput {
   recipients: MailRecipient[];
 }
 
+/**
+ * Servicio de envío de correo electrónico mediante Nodemailer.
+ */
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter | null = null;
 
+  /**
+   * Inyecta la configuración SMTP de la aplicación.
+   * @param config - Servicio de configuración.
+   */
   constructor(private readonly config: ConfigService<AppConfig, true>) {}
 
+  /**
+   * Indica si el envío de correo está habilitado según la configuración SMTP.
+   * @returns `true` si `SMTP_HOST` está definido.
+   */
   isEnabled(): boolean {
     return Boolean(this.config.get("smtp.host", { infer: true }));
   }
 
+  /**
+   * Envía un correo con reintentos exponenciales ante fallos transitorios de SMTP.
+   * @param input - Asunto, cuerpos HTML/texto y destinatarios.
+   * @returns Resultado indicando si se envió y el último error si falló.
+   */
   async send(input: SendMailInput): Promise<{ sent: boolean; error: string | null }> {
     if (!this.isEnabled()) {
       this.logger.warn("SMTP_HOST not configured. Skipping mail dispatch.");
@@ -76,6 +97,10 @@ export class MailService {
     return { sent: false, error: enrichSmtpErrorMessage(lastError?.message ?? "unknown") };
   }
 
+  /**
+   * Verifica la conectividad y credenciales SMTP sin enviar correo.
+   * @returns `true` si SMTP está deshabilitado o la verificación fue exitosa.
+   */
   async verify(): Promise<boolean> {
     if (!this.isEnabled()) return true;
     try {
@@ -94,6 +119,10 @@ export class MailService {
     }
   }
 
+  /**
+   * Obtiene o crea el transporte Nodemailer reutilizable con la configuración actual.
+   * @returns Instancia de transporte SMTP lista para enviar.
+   */
   private getTransporter(): Transporter {
     if (this.transporter) return this.transporter;
     const host = this.config.get("smtp.host", { infer: true });
@@ -116,6 +145,11 @@ export class MailService {
     return this.transporter;
   }
 
+  /**
+   * Espera un intervalo antes de reintentar el envío SMTP.
+   * @param ms - Milisegundos de espera.
+   * @returns Promesa resuelta tras el retardo.
+   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

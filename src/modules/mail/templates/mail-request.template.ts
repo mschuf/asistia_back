@@ -1,5 +1,10 @@
+/**
+ * @file mail-request.template.ts
+ * @description Plantillas de confirmación al usuario y notificación al soporte para solicitudes por correo.
+ */
 import { escapeHtml, stripHtml } from "./html-utils";
 
+/** Datos de entrada para plantillas de solicitud registrada por correo. */
 export interface MailRequestTemplateInput {
   requesterName: string;
   requesterEmail: string;
@@ -8,10 +13,20 @@ export interface MailRequestTemplateInput {
   description: string;
 }
 
+/**
+ * Construye el asunto del correo de confirmación al solicitante.
+ * @param input - Datos de la solicitud registrada.
+ * @returns Línea de asunto personalizada con la categoría.
+ */
 export function buildUserConfirmationSubject(input: MailRequestTemplateInput): string {
   return `Su solicitud fue registrada - ${input.categoryName}`;
 }
 
+/**
+ * Genera el cuerpo HTML de confirmación para el solicitante.
+ * @param input - Datos de la solicitud registrada.
+ * @returns Fragmento HTML del correo de confirmación.
+ */
 export function buildUserConfirmationHtml(input: MailRequestTemplateInput): string {
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
@@ -26,6 +41,11 @@ export function buildUserConfirmationHtml(input: MailRequestTemplateInput): stri
   `;
 }
 
+/**
+ * Genera el cuerpo en texto plano de confirmación para el solicitante.
+ * @param input - Datos de la solicitud registrada.
+ * @returns Texto plano del correo de confirmación.
+ */
 export function buildUserConfirmationText(input: MailRequestTemplateInput): string {
   return [
     `Hola ${input.requesterName},`,
@@ -38,10 +58,20 @@ export function buildUserConfirmationText(input: MailRequestTemplateInput): stri
   ].join("\n");
 }
 
+/**
+ * Construye el asunto del correo de notificación al equipo de soporte.
+ * @param input - Datos de la solicitud entrante.
+ * @returns Línea de asunto con categoría y nombre del solicitante.
+ */
 export function buildSupportNotificationSubject(input: MailRequestTemplateInput): string {
   return `Nueva solicitud - ${input.categoryName} - ${input.requesterName}`;
 }
 
+/**
+ * Genera el cuerpo HTML de notificación para el equipo de soporte.
+ * @param input - Datos de la solicitud entrante.
+ * @returns Fragmento HTML con datos del solicitante y descripción.
+ */
 export function buildSupportNotificationHtml(input: MailRequestTemplateInput): string {
   const userIdLabel =
     input.requesterUserId !== null ? String(input.requesterUserId) : "Sin ID GLPI";
@@ -61,6 +91,11 @@ export function buildSupportNotificationHtml(input: MailRequestTemplateInput): s
   `;
 }
 
+/**
+ * Genera el cuerpo en texto plano de notificación para el equipo de soporte.
+ * @param input - Datos de la solicitud entrante.
+ * @returns Texto plano con metadatos del solicitante y descripción sin HTML.
+ */
 export function buildSupportNotificationText(input: MailRequestTemplateInput): string {
   const userIdLabel =
     input.requesterUserId !== null ? String(input.requesterUserId) : "Sin ID GLPI";

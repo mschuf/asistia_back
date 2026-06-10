@@ -1,4 +1,8 @@
-﻿import { Injectable } from "@nestjs/common";
+﻿/**
+ * @file users.service.ts
+ * @description Orquesta consultas de usuarios y técnicos desde GLPI (API o SQL) con caché en memoria.
+ */
+import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import type { PaginatedResult } from "../../common/dto/pagination.dto";
@@ -19,8 +23,21 @@ import {
   type ListUsersQueryDto,
 } from "./dto/list-users-query.dto";
 
+/**
+ * Servicio de consulta de usuarios GLPI, técnicos elegibles y auto-asignación por ubicación.
+ */
 @Injectable()
 export class UsersService {
+  /**
+   * Inyecta repositorios GLPI/SQL, catálogo, caché y configuración.
+   * @param repo - Repositorio GLPI de usuarios.
+   * @param techniciansSqlRepo - Repositorio SQL de técnicos.
+   * @param catalog - Servicio de catálogo para grupos TI.
+   * @param bootstrap - Sesión bootstrap de GLPI.
+   * @param cache - Caché en memoria.
+   * @param config - Configuración de la aplicación.
+   * @param logger - Logger estructurado Pino.
+   */
   constructor(
     private readonly repo: UsersGlpiRepository,
     private readonly techniciansSqlRepo: UsersTechniciansSqlRepository,
@@ -32,10 +49,19 @@ export class UsersService {
     private readonly logger: PinoLogger,
   ) {}
 
+  /**
+   * Devuelve todos los usuarios activos sin paginación.
+   * @returns Lista completa de usuarios activos en caché.
+   */
   async listAll(): Promise<DomainUser[]> {
     return this.getCachedActiveUsers();
   }
 
+  /**
+   * Lista usuarios activos con paginación y búsqueda opcional.
+   * @param query - Parámetros de paginación y texto de búsqueda.
+   * @returns Resultado paginado de usuarios que coinciden con el filtro.
+   */
   async list(query: ListUsersQueryDto): Promise<PaginatedResult<DomainUser>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? DEFAULT_USERS_PAGE_LIMIT;
@@ -54,6 +80,10 @@ export class UsersService {
     };
   }
 
+  /**
+   * Obtiene usuarios activos desde caché, SQL o API GLPI según configuración.
+   * @returns Lista de usuarios activos del dominio.
+   */
   private async getCachedActiveUsers(): Promise<DomainUser[]> {
     const ttl = this.config.get("cache.defaultTtlSeconds", { infer: true });
     return this.cache.wrap(
@@ -102,6 +132,11 @@ export class UsersService {
     );
   }
 
+  /**
+   * Lista técnicos elegibles activos con paginación y búsqueda opcional.
+   * @param query - Parámetros opcionales de paginación y búsqueda.
+   * @returns Resultado paginado de técnicos activos.
+   */
   async listTechnicians(query?: ListUsersQueryDto): Promise<PaginatedResult<DomainUser>> {
     const page = query?.page ?? 1;
     const limit = query?.limit ?? DEFAULT_USERS_PAGE_LIMIT;
@@ -120,6 +155,10 @@ export class UsersService {
     };
   }
 
+  /**
+   * Obtiene técnicos elegibles desde caché, SQL o API GLPI según configuración.
+   * @returns Lista de técnicos del dominio.
+   */
   private async getCachedTechnicians(): Promise<DomainUser[]> {
     const ttl = this.config.get("cache.defaultTtlSeconds", { infer: true });
     return this.cache.wrap(
@@ -171,6 +210,10 @@ export class UsersService {
     );
   }
 
+  /**
+   * Resuelve los IDs de grupos TI desde el catálogo en caché.
+   * @returns Identificadores numéricos de grupos cuyo nombre corresponde a TI.
+   */
   private async getCachedTiGroupIds(): Promise<number[]> {
     const groups = await this.catalog.listGroups();
     return groups
@@ -178,12 +221,22 @@ export class UsersService {
       .map((group) => group.id);
   }
 
+  /**
+   * Busca un usuario por su identificador GLPI.
+   * @param id - ID numérico del usuario.
+   * @returns Usuario encontrado o `null` si no existe.
+   */
   async findById(id: number): Promise<DomainUser | null> {
     return this.bootstrap.withCatalogBootstrapSession((key) =>
       this.repo.findById(key, id),
     );
   }
 
+  /**
+   * Busca un usuario por login GLPI.
+   * @param login - Nombre de usuario (se recorta espacios).
+   * @returns Usuario encontrado o `null` si el login está vacío o no existe.
+   */
   async findByLogin(login: string): Promise<DomainUser | null> {
     const trimmed = login.trim();
     if (!trimmed) {
@@ -194,6 +247,11 @@ export class UsersService {
     );
   }
 
+  /**
+   * Busca un usuario por correo electrónico, priorizando la caché local.
+   * @param email - Dirección de correo (se recorta espacios).
+   * @returns Usuario encontrado o `null` si el email es inválido o no existe.
+   */
   async findByEmail(email: string): Promise<DomainUser | null> {
     const trimmed = email.trim();
     if (!trimmed.includes("@")) {
@@ -213,11 +271,21 @@ export class UsersService {
     );
   }
 
+  /**
+   * Indica si un usuario pertenece al conjunto de técnicos elegibles.
+   * @param userId - ID del usuario a verificar.
+   * @returns `true` si el usuario es técnico elegible.
+   */
   async isEligibleTechnician(userId: number): Promise<boolean> {
     const technicians = await this.getCachedTechnicians();
     return technicians.some((user) => user.id === userId);
   }
 
+  /**
+   * Resuelve el último técnico activo asignado a tickets de una ubicación.
+   * @param locationId - ID de ubicación GLPI o `null`.
+   * @returns Técnico candidato para auto-asignación o `null` si no hay coincidencia o falla SQL.
+   */
   async resolveLastTechnicianForLocation(locationId: number | null): Promise<DomainUser | null> {
     const normalizedLocationId = normalizeLocationId(locationId);
     const tiGroupIds = await this.getCachedTiGroupIds();

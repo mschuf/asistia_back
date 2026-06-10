@@ -22,3 +22,11 @@
 ## Módulo IA
 
 - El módulo `ai/` es scaffold: `GET /ai/health` operativo, `POST /ai/chat` reservado.
+
+## Documentación en código
+
+- Todo archivo `.ts` de lógica debe iniciar con cabecera `@file` y `@description` en español.
+- Toda función y método (público o privado) debe tener JSDoc en español con `@param`, `@returns` y `@throws` cuando aplique.
+- No duplicar texto de Swagger (`@ApiOperation`, `@ApiProperty`); complementar con contexto de negocio.
+- En archivos grandes (>300 líneas), JSDoc conciso de 2–4 líneas máximo por función.
+- Referencia de estilo: `src/modules/companies/companies.service.ts`.

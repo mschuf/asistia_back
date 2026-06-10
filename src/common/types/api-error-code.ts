@@ -1,4 +1,10 @@
-﻿export const API_ERROR_CODE = {
+﻿/**
+ * @file api-error-code.ts
+ * @description Códigos de error estables expuestos por la API en respuestas de fallo.
+ */
+
+/** Mapa de códigos de error de negocio y técnicos soportados por la API. */
+export const API_ERROR_CODE = {
   UNKNOWN: "UNKNOWN_ERROR",
   VALIDATION: "VALIDATION_ERROR",
   UNAUTHORIZED: "UNAUTHORIZED",
@@ -34,4 +40,5 @@
   MAIL_SEND_FAILED: "MAIL_SEND_FAILED",
 } as const;
 
+/** Unión de todos los códigos definidos en {@link API_ERROR_CODE}. */
 export type ApiErrorCode = (typeof API_ERROR_CODE)[keyof typeof API_ERROR_CODE];

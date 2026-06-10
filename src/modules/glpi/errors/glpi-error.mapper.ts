@@ -1,4 +1,8 @@
-﻿import { HttpStatus } from "@nestjs/common";
+﻿/**
+ * @file glpi-error.mapper.ts
+ * @description Traduce errores Axios/GLPI a excepciones `GlpiException` del dominio API.
+ */
+import { HttpStatus } from "@nestjs/common";
 import { AxiosError } from "axios";
 import { GlpiException } from "../../../common/exceptions/glpi.exception";
 import { API_ERROR_CODE } from "../../../common/types/api-error-code";
@@ -8,7 +12,16 @@ interface GlpiErrorEnvelope {
   message?: string;
 }
 
+/**
+ * Mapeador estático de errores de la integración GLPI.
+ */
 export class GlpiErrorMapper {
+  /**
+   * Convierte un error desconocido en `GlpiException` con código API normalizado.
+   * @param error - Error original (Axios, GlpiException u otro).
+   * @returns Excepción de dominio lista para propagar al cliente.
+   * @throws No lanza excepciones; siempre devuelve `GlpiException`.
+   */
   static map(error: unknown): GlpiException {
     if (error instanceof GlpiException) return error;
 
@@ -19,7 +32,7 @@ export class GlpiErrorMapper {
       const apiCode = this.translate(code, status);
       const resolvedMessage =
         code === "ERROR_RIGHT_MISSING"
-          ? "Su perfil GLPI no tiene permisos para esta operaci├│n. Verifique que tenga permiso para crear o consultar tickets en GLPI."
+          ? "Su perfil GLPI no tiene permisos para esta operación. Verifique que tenga permiso para crear o consultar tickets en GLPI."
           : (message ?? error.message ?? "GLPI request failed");
 
       return new GlpiException({
@@ -39,6 +52,12 @@ export class GlpiErrorMapper {
     });
   }
 
+  /**
+   * Comprueba si el valor es un error de Axios.
+   * @param value - Valor a evaluar.
+   * @returns `true` si es instancia de AxiosError.
+   * @throws No lanza excepciones.
+   */
   private static isAxiosError(value: unknown): value is AxiosError {
     return Boolean(
       value &&
@@ -47,6 +66,12 @@ export class GlpiErrorMapper {
     );
   }
 
+  /**
+   * Extrae código y mensaje del cuerpo de error GLPI.
+   * @param error - Error Axios con respuesta HTTP.
+   * @returns Sobre sobre con `code` y `message` parseados.
+   * @throws No lanza excepciones.
+   */
   private static extractGlpiError(error: AxiosError): GlpiErrorEnvelope {
     const data = error.response?.data as unknown;
 
@@ -72,6 +97,13 @@ export class GlpiErrorMapper {
     return { code: null, message: error.message };
   }
 
+  /**
+   * Traduce un código GLPI y estado HTTP a código de error API.
+   * @param glpiCode - Código de error devuelto por GLPI.
+   * @param httpStatus - Estado HTTP de la respuesta.
+   * @returns Código normalizado de `API_ERROR_CODE`.
+   * @throws No lanza excepciones.
+   */
   private static translate(
     glpiCode: string | null | undefined,
     httpStatus: number,
@@ -111,6 +143,13 @@ export class GlpiErrorMapper {
     return API_ERROR_CODE.GLPI_UNAVAILABLE;
   }
 
+  /**
+   * Resuelve el estado HTTP final según el código API normalizado.
+   * @param apiCode - Código de error API.
+   * @param originalStatus - Estado HTTP original de GLPI.
+   * @returns Estado HTTP para la respuesta de Asistia.
+   * @throws No lanza excepciones.
+   */
   private static resolveStatus(
     apiCode: (typeof API_ERROR_CODE)[keyof typeof API_ERROR_CODE],
     originalStatus: number,

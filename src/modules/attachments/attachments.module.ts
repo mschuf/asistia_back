@@ -1,4 +1,8 @@
-﻿import { Module } from "@nestjs/common";
+﻿/**
+ * @file attachments.module.ts
+ * @description Módulo NestJS que registra controlador, servicios y configuración Multer para adjuntos.
+ */
+import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { MulterModule } from "@nestjs/platform-express";
 import { join, resolve } from "path";
@@ -10,6 +14,9 @@ import { AttachmentsService } from "./attachments.service";
 import { buildMulterOptions } from "./multer.config";
 import { AttachmentsSqlRepository } from "./repositories/attachments.sql-repository";
 
+/**
+ * Módulo de adjuntos de tickets con almacenamiento local y persistencia en Postgres.
+ */
 @Module({
   imports: [
     TicketsModule,

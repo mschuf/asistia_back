@@ -1,3 +1,7 @@
+/**
+ * @file tickets-create.sql-repository.ts
+ * @description Creación y actualización de tickets y actores directamente en MySQL de GLPI.
+ */
 import { Injectable } from "@nestjs/common";
 import type { QueryOptions, QueryValues, RowDataPacket } from "mysql2";
 import type { PoolConnection, ResultSetHeader } from "mysql2/promise";
@@ -22,10 +26,20 @@ interface TicketExistenceRow extends RowDataPacket {
   id: number;
 }
 
+/**
+ * Repositorio SQL para alta de tickets y vínculos Ticket_User en GLPI.
+ */
 @Injectable()
 export class TicketsCreateSqlRepository {
+  /** Inyecta el servicio MySQL compartido. */
   constructor(private readonly mysql: MysqlService) {}
 
+  /**
+   * Inserta ticket y actores en una transacción MySQL.
+   * @param input - Datos del ticket a crear.
+   * @returns Ticket de dominio construido desde el input.
+   * @throws {Error} Si el insert no devuelve un ID válido.
+   */
   async create(input: CreateTicketSqlInput): Promise<DomainTicket> {
     const ticketId = await this.mysql.withTransaction(async (connection) => {
       const createdTicketId = await this.insertTicket(connection, input);
@@ -51,6 +65,13 @@ export class TicketsCreateSqlRepository {
     return TicketsCreateSqlRepository.buildTicketFromInput(ticketId, input);
   }
 
+  /**
+   * Asigna técnico al ticket y promueve estado Nuevo→Asignado si aplica.
+   * @param ticketId - ID del ticket GLPI.
+   * @param technicianId - ID del técnico.
+   * @returns `true` si el ticket existía y se actualizó.
+   * @throws Error de base de datos si la transacción falla.
+   */
   async assignTechnician(ticketId: number, technicianId: number): Promise<boolean> {
     return this.mysql.withTransaction(async (connection) => {
       const exists = await this.ticketExists(connection, ticketId);
@@ -68,6 +89,13 @@ export class TicketsCreateSqlRepository {
     });
   }
 
+  /**
+   * Actualiza la sede (`locations_id`) del ticket.
+   * @param ticketId - ID del ticket GLPI.
+   * @param locationId - ID de sede GLPI.
+   * @returns `true` si se actualizó al menos una fila.
+   * @throws Error de base de datos si la transacción falla.
+   */
   async updateLocation(ticketId: number, locationId: number): Promise<boolean> {
     return this.mysql.withTransaction(async (connection) => {
       const exists = await this.ticketExists(connection, ticketId);
@@ -87,6 +115,13 @@ export class TicketsCreateSqlRepository {
     });
   }
 
+  /**
+   * Inserta la fila principal en `glpi_tickets`.
+   * @param connection - Conexión de transacción activa.
+   * @param input - Datos del ticket.
+   * @returns ID del ticket insertado.
+   * @throws {Error} Si `insertId` no es válido.
+   */
   private async insertTicket(
     connection: PoolConnection,
     input: CreateTicketSqlInput,
@@ -144,6 +179,15 @@ export class TicketsCreateSqlRepository {
     return ticketId;
   }
 
+  /**
+   * Inserta un vínculo en `glpi_tickets_users`.
+   * @param connection - Conexión de transacción.
+   * @param ticketId - ID del ticket.
+   * @param userId - ID del usuario GLPI.
+   * @param type - Tipo de actor (`REQUESTER` o `ASSIGNED`).
+   * @returns void
+   * @throws Error de base de datos si el insert falla.
+   */
   private async insertTicketUser(
     connection: PoolConnection,
     ticketId: number,
@@ -164,6 +208,15 @@ export class TicketsCreateSqlRepository {
     } as QueryValues);
   }
 
+  /**
+   * Actualiza o inserta vínculo Ticket_User del tipo indicado.
+   * @param connection - Conexión de transacción.
+   * @param ticketId - ID del ticket.
+   * @param userId - ID del usuario GLPI.
+   * @param type - Tipo de actor GLPI.
+   * @returns void
+   * @throws Error de base de datos si falla update/insert.
+   */
   private async upsertTicketUser(
     connection: PoolConnection,
     ticketId: number,
@@ -187,6 +240,13 @@ export class TicketsCreateSqlRepository {
     }
   }
 
+  /**
+   * Comprueba existencia de ticket activo (no borrado).
+   * @param connection - Conexión de transacción.
+   * @param ticketId - ID del ticket.
+   * @returns `true` si existe fila activa.
+   * @throws Error de base de datos si la consulta falla.
+   */
   private async ticketExists(connection: PoolConnection, ticketId: number): Promise<boolean> {
     const options: QueryOptions = {
       sql: `SELECT id FROM glpi_tickets
@@ -200,6 +260,13 @@ export class TicketsCreateSqlRepository {
     return Array.isArray(rows) && rows.length > 0;
   }
 
+  /**
+   * Pasa tickets en estado Nuevo (1) a Asignado (2) al asignar técnico.
+   * @param connection - Conexión de transacción.
+   * @param ticketId - ID del ticket.
+   * @returns void
+   * @throws Error de base de datos si el update falla.
+   */
   private async touchTicketStatusIfNew(connection: PoolConnection, ticketId: number): Promise<void> {
     const options: QueryOptions = {
       sql: `UPDATE glpi_tickets
@@ -211,6 +278,13 @@ export class TicketsCreateSqlRepository {
     await connection.query(options, { ticketId } as QueryValues);
   }
 
+  /**
+   * Construye `DomainTicket` sintético tras creación SQL.
+   * @param ticketId - ID insertado.
+   * @param input - Input de creación original.
+   * @returns Ticket de dominio con timestamps actuales.
+   * @throws No lanza excepciones.
+   */
   private static buildTicketFromInput(ticketId: number, input: CreateTicketSqlInput): DomainTicket {
     const description = input.content?.trim();
     return {

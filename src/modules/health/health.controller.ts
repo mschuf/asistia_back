@@ -1,4 +1,8 @@
-﻿import { Controller, Get } from "@nestjs/common";
+﻿/**
+ * @file health.controller.ts
+ * @description Endpoint público de liveness/readiness con indicadores de dependencias.
+ */
+import { Controller, Get } from "@nestjs/common";
 import {
   HealthCheck,
   HealthCheckService,
@@ -11,9 +15,13 @@ import { SmtpHealthIndicator } from "./indicators/smtp.indicator";
 import { MysqlHealthIndicator } from "../mysql/mysql.health.indicator";
 import { PostgresHealthIndicator } from "../postgres/postgres.health.indicator";
 
+/**
+ * Controlador HTTP de salud agregando memoria, GLPI, SMTP, MySQL y PostgreSQL.
+ */
 @ApiTags("health")
 @Controller("health")
 export class HealthController {
+  /** Inyecta servicio Terminus e indicadores de dependencias. */
   constructor(
     private readonly health: HealthCheckService,
     private readonly memory: MemoryHealthIndicator,
@@ -23,6 +31,10 @@ export class HealthController {
     private readonly postgres: PostgresHealthIndicator,
   ) {}
 
+  /**
+   * Ejecuta el chequeo agregado de salud de la API y sus dependencias.
+   * @returns Resultado Terminus con estado de cada indicador.
+   */
   @Get()
   @Public()
   @HealthCheck()

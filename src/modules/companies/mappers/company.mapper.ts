@@ -1,8 +1,17 @@
+/**
+ * @file company.mapper.ts
+ * @description Mapea filas SQL de empresas a DTOs de respuesta de la API.
+ */
 import type { CompanyResponseDto } from "../dto/company.response.dto";
 import type { CompanyRow } from "../companies.types";
 
 const CLIENT_SECRET_MASK = "••••••••";
 
+/**
+ * Convierte una fila de Postgres en DTO de respuesta enmascarando el secreto de cliente.
+ * @param row - Fila cruda de `public.companies`.
+ * @returns DTO listo para serializar en HTTP.
+ */
 export function mapCompanyRowToResponse(row: CompanyRow): CompanyResponseDto {
   const hasClientSecret = Boolean(row.ms_client_secret?.trim());
 

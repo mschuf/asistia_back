@@ -1,5 +1,10 @@
-﻿import { ApiProperty } from "@nestjs/swagger";
+﻿/**
+ * @file me.response.dto.ts
+ * @description DTO de respuesta del perfil del usuario autenticado (`GET /users/me`).
+ */
+import { ApiProperty } from "@nestjs/swagger";
 
+/** Perfil del usuario autenticado con rol, grupos y entidad GLPI. */
 export class MeResponseDto {
   @ApiProperty({ example: 188 })
   id!: number;

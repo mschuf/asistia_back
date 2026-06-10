@@ -1,6 +1,11 @@
-﻿import { ApiProperty } from "@nestjs/swagger";
+﻿/**
+ * @file user-list.response.dto.ts
+ * @description DTO de respuesta paginada para listados de usuarios.
+ */
+import { ApiProperty } from "@nestjs/swagger";
 import { UserResponseDto } from "./user.response.dto";
 
+/** Contenedor paginado de usuarios para respuestas HTTP. */
 export class UserListResponseDto {
   @ApiProperty({ type: () => [UserResponseDto] })
   items!: UserResponseDto[];
@@ -14,4 +19,3 @@ export class UserListResponseDto {
   @ApiProperty({ example: 20 })
   limit!: number;
 }
-

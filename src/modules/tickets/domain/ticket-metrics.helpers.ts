@@ -1,3 +1,7 @@
+/**
+ * @file ticket-metrics.helpers.ts
+ * @description Cálculo de métricas, normalización de sedes y agregación por ubicación.
+ */
 import {
   isActiveTicket,
   type DomainTicket,
@@ -28,7 +32,12 @@ export const IN_PROGRESS_STATUSES: DomainTicketStatus[] = [
   TICKET_STATUS.WAITING,
 ];
 
-/** Mes calendario actual en UTC (documentado en código). */
+/**
+ * Indica si una fecha ISO cae en el mes calendario actual (UTC).
+ * @param isoDate - Fecha en formato ISO o nula.
+ * @returns `true` si pertenece al mes actual en UTC.
+ * @throws Ninguno.
+ */
 export function isInCurrentMonth(isoDate: string | null): boolean {
   if (!isoDate) return false;
   const date = new Date(isoDate);
@@ -40,14 +49,33 @@ export function isInCurrentMonth(isoDate: string | null): boolean {
   );
 }
 
+/**
+ * Determina si el ticket está en un estado considerado abierto.
+ * @param ticket - Ticket de dominio.
+ * @returns `true` si el estado está en {@link OPEN_STATUSES}.
+ * @throws Ninguno.
+ */
 export function isTicketOpen(ticket: DomainTicket): boolean {
   return OPEN_STATUSES.includes(ticket.status);
 }
 
+/**
+ * Determina si el ticket está en progreso (asignado, planificado o en espera).
+ * @param ticket - Ticket de dominio.
+ * @returns `true` si el estado está en {@link IN_PROGRESS_STATUSES}.
+ * @throws Ninguno.
+ */
 export function isTicketInProgress(ticket: DomainTicket): boolean {
   return IN_PROGRESS_STATUSES.includes(ticket.status);
 }
 
+/**
+ * Calcula el porcentaje de abiertos respecto al total del mes.
+ * @param openCount - Cantidad de tickets abiertos.
+ * @param totalMonth - Total de tickets del mes.
+ * @returns Porcentaje redondeado (0 si el total es ≤ 0).
+ * @throws Ninguno.
+ */
 export function openPercent(openCount: number, totalMonth: number): number {
   if (totalMonth <= 0) return 0;
   return Math.round((openCount / totalMonth) * 100);
@@ -67,10 +95,22 @@ export interface MyTicketsMetricSlice {
   totalThisMonth: number;
 }
 
+/**
+ * Filtra tickets activos (no eliminados lógicamente).
+ * @param tickets - Lista de tickets de entrada.
+ * @returns Solo tickets activos según `isActiveTicket`.
+ * @throws Ninguno.
+ */
 function activeOnly(tickets: DomainTicket[]): DomainTicket[] {
   return tickets.filter(isActiveTicket);
 }
 
+/**
+ * Calcula métricas de "Mis tickets" para técnicos asignados.
+ * @param assigned - Tickets asignados al técnico.
+ * @returns Slice con en progreso, porcentaje y conteos del mes.
+ * @throws Ninguno.
+ */
 export function computeMyTicketsMetrics(assigned: DomainTicket[]): MyTicketsMetricSlice {
   const active = activeOnly(assigned);
   const monthTickets = active.filter((t) => isInCurrentMonth(t.createdAt));
@@ -84,6 +124,13 @@ export function computeMyTicketsMetrics(assigned: DomainTicket[]): MyTicketsMetr
   };
 }
 
+/**
+ * Calcula métricas por tipo (incidente o solicitud).
+ * @param assigned - Pool de tickets asignados.
+ * @param type - Tipo de ticket a filtrar.
+ * @returns Slice de métricas para el tipo indicado.
+ * @throws Ninguno.
+ */
 export function computeTypeMetrics(
   assigned: DomainTicket[],
   type: DomainTicketType,
@@ -99,6 +146,12 @@ export function computeTypeMetrics(
   };
 }
 
+/**
+ * Calcula métricas de tickets de una sede concreta.
+ * @param siteTickets - Tickets de la sede.
+ * @returns Slice de abiertos y estadísticas del mes.
+ * @throws Ninguno.
+ */
 export function computeSiteMetrics(
   siteTickets: DomainTicket[],
 ): TicketMetricSlice {
@@ -113,13 +166,25 @@ export function computeSiteMetrics(
   };
 }
 
-/** Normaliza IDs de GLPI (p. ej. string en JSON) para comparaciones y mapas. */
+/**
+ * Normaliza IDs de GLPI (p. ej. string en JSON) para comparaciones y mapas.
+ * @param value - ID crudo de sede o técnico.
+ * @returns ID numérico positivo o `null` si no es válido.
+ * @throws Ninguno.
+ */
 export function normalizeLocationId(value: number | null | undefined): number | null {
   if (value == null) return null;
   const id = Number(value);
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 
+/**
+ * Fusiona dos snapshots del mismo ticket priorizando campos del existente.
+ * @param existing - Ticket ya almacenado en el mapa.
+ * @param incoming - Ticket entrante a fusionar.
+ * @returns Ticket combinado con campos no nulos del existente.
+ * @throws Ninguno.
+ */
 function mergeMetricsTicketSnapshot(existing: DomainTicket, incoming: DomainTicket): DomainTicket {
   return {
     ...incoming,
@@ -131,6 +196,12 @@ function mergeMetricsTicketSnapshot(existing: DomainTicket, incoming: DomainTick
   };
 }
 
+/**
+ * Elimina duplicados por ID fusionando snapshots de métricas.
+ * @param tickets - Lista posiblemente con IDs repetidos.
+ * @returns Tickets únicos por `id`.
+ * @throws Ninguno.
+ */
 export function dedupeTicketsById(tickets: DomainTicket[]): DomainTicket[] {
   const byId = new Map<number, DomainTicket>();
   for (const ticket of tickets) {
@@ -140,6 +211,12 @@ export function dedupeTicketsById(tickets: DomainTicket[]): DomainTicket[] {
   return [...byId.values()];
 }
 
+/**
+ * Recolecta IDs de técnicos sin sede en el ticket que requieren resolución.
+ * @param pools - Uno o más pools de tickets.
+ * @returns Conjunto de IDs de técnico con `locationId` nulo en el ticket.
+ * @throws Ninguno.
+ */
 export function collectTechnicianIdsNeedingLocation(
   ...pools: DomainTicket[][]
 ): Set<number> {
@@ -154,7 +231,13 @@ export function collectTechnicianIdsNeedingLocation(
   return ids;
 }
 
-/** Sede efectiva: la del ticket o, si falta, la del técnico asignado. */
+/**
+ * Sede efectiva: la del ticket o, si falta, la del técnico asignado.
+ * @param ticket - Ticket de dominio.
+ * @param technicianLocations - Mapa técnico → sede.
+ * @returns ID de sede normalizado o `null`.
+ * @throws Ninguno.
+ */
 export function resolveTicketLocationId(
   ticket: DomainTicket,
   technicianLocations: ReadonlyMap<number, number | null>,
@@ -165,6 +248,15 @@ export function resolveTicketLocationId(
   return normalizeLocationId(technicianLocations.get(ticket.technicianId) ?? null);
 }
 
+/**
+ * Arma el pool de tickets de "Mi sede" deduplicando y filtrando por ubicación.
+ * @param siteTickets - Tickets abiertos de la sede.
+ * @param assignedTickets - Tickets asignados al usuario.
+ * @param userLocationId - Sede del usuario autenticado.
+ * @param technicianLocations - Mapa técnico → sede.
+ * @returns Tickets activos cuya sede efectiva coincide con la del usuario.
+ * @throws Ninguno.
+ */
 export function buildMySiteTicketPool(
   siteTickets: DomainTicket[],
   assignedTickets: DomainTicket[],
@@ -187,7 +279,13 @@ export interface OpenByLocationMetricRow {
   open: number;
 }
 
-/** Total global de abiertos por sede; incluye todas las sedes del catálogo con 0 si aplica. */
+/**
+ * Total global de abiertos por sede; incluye todas las sedes del catálogo con 0 si aplica.
+ * @param tickets - Tickets abiertos a agregar.
+ * @param locationNameById - Mapa sede → nombre para el resultado.
+ * @returns Filas ordenadas por abiertos descendente y nombre.
+ * @throws Ninguno.
+ */
 export function buildOpenByLocationMetrics(
   tickets: DomainTicket[],
   locationNameById: ReadonlyMap<number, string>,

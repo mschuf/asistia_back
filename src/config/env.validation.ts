@@ -1,4 +1,8 @@
-﻿import { plainToInstance } from "class-transformer";
+﻿/**
+ * @file env.validation.ts
+ * @description Valida variables de entorno al arranque con class-validator antes de cargar la configuración.
+ */
+import { plainToInstance } from "class-transformer";
 import {
   IsBooleanString,
   IsIn,
@@ -9,6 +13,9 @@ import {
   validateSync,
 } from "class-validator";
 
+/**
+ * Esquema de validación de variables de entorno requeridas y opcionales.
+ */
 class EnvSchema {
   @IsOptional()
   @IsNumberString()
@@ -261,6 +268,12 @@ class EnvSchema {
   ATTACHMENTS_ALLOWED_MIME?: string;
 }
 
+/**
+ * Valida el objeto de entorno contra {@link EnvSchema} y falla el arranque si hay errores.
+ * @param config - Variables de entorno crudas (`process.env`).
+ * @returns Instancia validada del esquema.
+ * @throws {Error} Si alguna variable no cumple las restricciones definidas.
+ */
 export function validateEnv(config: Record<string, unknown>): EnvSchema {
   const instance = plainToInstance(EnvSchema, config, { enableImplicitConversion: false });
   const errors = validateSync(instance, { skipMissingProperties: false });

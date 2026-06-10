@@ -1,4 +1,8 @@
-﻿import {
+﻿/**
+ * @file attachments.controller.ts
+ * @description Expone endpoints REST para subir, listar y descargar adjuntos de tickets.
+ */
+import {
   Controller,
   Get,
   HttpStatus,
@@ -30,13 +34,28 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AttachmentsService } from "./attachments.service";
 import { TicketAttachmentResponseDto } from "./dto/attachment.response.dto";
 
+/**
+ * Controlador HTTP de adjuntos asociados a tickets.
+ */
 @ApiTags("attachments")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller("tickets/:id/attachments")
 export class AttachmentsController {
+  /**
+   * Inyecta el servicio de adjuntos.
+   * @param attachments - Servicio de lógica de adjuntos.
+   */
   constructor(private readonly attachments: AttachmentsService) {}
 
+  /**
+   * Sube un archivo adjunto al ticket indicado vía multipart/form-data.
+   * @param user - Usuario autenticado.
+   * @param ticketId - ID del ticket destino.
+   * @param file - Archivo recibido por Multer bajo el campo `file`.
+   * @returns DTO del adjunto creado.
+   * @throws {BusinessException} Si no se recibió archivo o falla la subida.
+   */
   @Post()
   @ApiConsumes("multipart/form-data")
   @ApiBody({
@@ -79,6 +98,13 @@ export class AttachmentsController {
     }
   }
 
+  /**
+   * Lista los adjuntos de un ticket.
+   * @param user - Usuario autenticado.
+   * @param ticketId - ID del ticket.
+   * @returns Colección de DTOs de adjuntos.
+   * @throws {BusinessException} Si el usuario no tiene acceso al ticket.
+   */
   @Get()
   @ApiOperation({ summary: "List attachments for a ticket" })
   @ApiResponse({ status: 200, type: TicketAttachmentResponseDto, isArray: true })
@@ -90,6 +116,15 @@ export class AttachmentsController {
     return this.attachments.listForTicket(user, ticketId);
   }
 
+  /**
+   * Descarga un adjunto como stream binario con cabeceras de contenido adecuadas.
+   * @param user - Usuario autenticado.
+   * @param ticketId - ID del ticket.
+   * @param attachmentId - ID del adjunto a descargar.
+   * @param res - Respuesta Express para escribir el stream.
+   * @returns Promesa vacía; el cuerpo se envía por pipe del stream.
+   * @throws {BusinessException} Si el usuario no tiene acceso o el adjunto no existe.
+   */
   @Get(":attachmentId/download")
   @SkipResponseEnvelope()
   @ApiOperation({ summary: "Download a ticket attachment" })

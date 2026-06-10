@@ -1,3 +1,7 @@
+/**
+ * @file update-company.dto.ts
+ * @description DTO de validación para actualización parcial de una empresa.
+ */
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
@@ -13,6 +17,7 @@ import {
   MinLength,
 } from "class-validator";
 
+/** Cuerpo HTTP con campos opcionales para modificar una empresa existente. */
 export class UpdateCompanyDto {
   @ApiPropertyOptional({ example: "Pettengill" })
   @IsOptional()

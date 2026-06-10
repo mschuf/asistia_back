@@ -1,3 +1,13 @@
+/**
+ * @file html-text.utils.ts
+ * @description Utilidades para decodificar entidades HTML y convertir fragmentos HTML a texto plano.
+ */
+
+/**
+ * Decodifica entidades HTML comunes en una cadena.
+ * @param value - Texto con entidades HTML.
+ * @returns Texto con caracteres decodificados.
+ */
 export function decodeHtmlEntities(value: string): string {
   return value
     .replace(/&lt;/gi, "<")
@@ -10,6 +20,11 @@ export function decodeHtmlEntities(value: string): string {
 
 const BLOCK_BREAK = /<\/(?:p|div|li|h[1-6]|tr|blockquote|pre)>/gi;
 
+/**
+ * Convierte HTML a texto plano preservando saltos de línea básicos.
+ * @param value - Fragmento HTML o cadena vacía/nula.
+ * @returns Texto plano recortado o `null` si no queda contenido.
+ */
 export function htmlToPlainText(value: string | null | undefined): string | null {
   if (!value) return null;
 

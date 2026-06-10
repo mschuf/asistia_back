@@ -1,21 +1,31 @@
-﻿export const MAIL_EVENTS = {
+﻿/**
+ * @file mail.events.ts
+ * @description Constantes de eventos y tipos de payload para notificaciones por correo de tickets.
+ */
+
+/** Nombres de eventos emitidos por el módulo de correo. */
+export const MAIL_EVENTS = {
   TICKET_CREATED: "mail.ticket.created",
   TICKET_STATUS_CHANGED: "mail.ticket.status_changed",
   TICKET_ASSIGNED: "mail.ticket.assigned",
   TICKET_REASSIGNED: "mail.ticket.reassigned",
 } as const;
 
+/** Destinatario de correo con nombre visible y dirección. */
 export interface MailRecipient {
   name: string;
   email: string;
 }
 
+/** Rol del destinatario en la notificación de ticket creado. */
 export type TicketCreatedRecipientRole = "requester" | "technician";
 
+/** Destinatario de ticket creado con rol para personalizar la plantilla. */
 export interface TicketCreatedRecipient extends MailRecipient {
   role: TicketCreatedRecipientRole;
 }
 
+/** Payload del evento emitido al crear un ticket. */
 export interface TicketCreatedEvent {
   ticketId: number;
   type: string;
@@ -28,6 +38,7 @@ export interface TicketCreatedEvent {
   notify: TicketCreatedRecipient[];
 }
 
+/** Payload del evento emitido al cambiar el estado de un ticket. */
 export interface TicketStatusChangedEvent {
   ticketId: number;
   subject: string;
@@ -37,6 +48,7 @@ export interface TicketStatusChangedEvent {
   recipients: MailRecipient[];
 }
 
+/** Payload del evento emitido al asignar un ticket a un técnico. */
 export interface TicketAssignedEvent {
   ticketId: number;
   subject: string;
@@ -45,6 +57,7 @@ export interface TicketAssignedEvent {
   recipients: MailRecipient[];
 }
 
+/** Payload del evento emitido al reasignar un ticket a otro técnico. */
 export interface TicketReassignedEvent {
   ticketId: number;
   subject: string;

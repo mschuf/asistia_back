@@ -1,4 +1,8 @@
-﻿import {
+﻿/**
+ * @file auth.controller.ts
+ * @description Endpoints HTTP de autenticación: clave pública RSA, login LDAP, perfil y logout.
+ */
+import {
   Body,
   Controller,
   Get,
@@ -29,15 +33,24 @@ import {
 } from "./dto/login-response.dto";
 import { PublicKeyResponseDto } from "./dto/public-key-response.dto";
 
+/**
+ * Controlador HTTP de autenticación con sesión JWT en cookie HttpOnly.
+ */
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
+  /** Inyecta servicio de autenticación, cifrado y configuración. */
   constructor(
     private readonly authService: AuthService,
     private readonly cryptoService: CryptoService,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
+  /**
+   * Expone la clave pública RSA para cifrar credenciales en el cliente.
+   * @returns Clave pública en formato PEM.
+   * @throws No lanza excepciones explícitas.
+   */
   @Get("public-key")
   @Public()
   @ApiOperation({ summary: "Get RSA public key for encrypting login credentials" })
@@ -47,6 +60,13 @@ export class AuthController {
     return { publicKey: this.cryptoService.getPublicKeyPem() };
   }
 
+  /**
+   * Autentica con credenciales LDAP cifradas y establece la cookie de sesión.
+   * @param dto - Usuario y contraseña cifrada con RSA-OAEP.
+   * @param res - Respuesta HTTP para escribir la cookie de sesión.
+   * @returns Token de expiración y perfil del usuario autenticado.
+   * @throws {BusinessException} Si las credenciales son inválidas o el usuario no existe en GLPI.
+   */
   @Post("login")
   @Public()
   @HttpCode(HttpStatus.OK)
@@ -70,6 +90,13 @@ export class AuthController {
     return AuthController.toLoginResponse(result);
   }
 
+  /**
+   * Devuelve el perfil del usuario autenticado y la expiración de la sesión.
+   * @param user - Usuario autenticado extraído del JWT.
+   * @param req - Petición HTTP con la cookie de sesión.
+   * @returns Perfil enriquecido desde GLPI y timestamp de expiración.
+   * @throws {BusinessException} Si el usuario no existe en GLPI.
+   */
   @Get("me")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -88,6 +115,13 @@ export class AuthController {
     };
   }
 
+  /**
+   * Cierra la sesión del usuario eliminando la cookie HttpOnly.
+   * @param user - Usuario autenticado cuya sesión se revoca.
+   * @param res - Respuesta HTTP para limpiar la cookie.
+   * @returns Indicador de revocación exitosa.
+   * @throws No lanza excepciones explícitas.
+   */
   @Post("logout")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -107,6 +141,12 @@ export class AuthController {
     return { revoked: true };
   }
 
+  /**
+   * Mapea un usuario de sesión al DTO de respuesta HTTP.
+   * @param user - Usuario de sesión con perfil GLPI.
+   * @returns DTO serializable del usuario autenticado.
+   * @throws No lanza excepciones explícitas.
+   */
   private static toUserDto(user: SessionUser): AuthenticatedUserResponseDto {
     return {
       id: user.id,
@@ -121,6 +161,12 @@ export class AuthController {
     };
   }
 
+  /**
+   * Construye la respuesta de login a partir del resultado del servicio.
+   * @param result - Token de expiración y usuario de sesión.
+   * @returns DTO de respuesta de autenticación exitosa.
+   * @throws No lanza excepciones explícitas.
+   */
   private static toLoginResponse(result: {
     expiresIn: string;
     user: SessionUser;
@@ -131,6 +177,13 @@ export class AuthController {
     };
   }
 
+  /**
+   * Extrae el timestamp de expiración del JWT almacenado en la cookie de sesión.
+   * @param req - Petición HTTP con cookies.
+   * @param config - Servicio de configuración con el nombre de la cookie.
+   * @returns Timestamp Unix en milisegundos; usa la hora actual si no puede decodificar el token.
+   * @throws No lanza excepciones explícitas; captura errores de decodificación internamente.
+   */
   private static resolveExpiresAt(req: Request, config: ConfigService<AppConfig, true>): number {
     const cookieName = readAuthCookieName(config);
     const token = req.cookies?.[cookieName];

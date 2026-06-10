@@ -1,13 +1,27 @@
-﻿import { Injectable } from "@nestjs/common";
+﻿/**
+ * @file glpi.indicator.ts
+ * @description Indicador de salud Terminus que valida sesión bootstrap contra GLPI.
+ */
+import { Injectable } from "@nestjs/common";
 import { HealthIndicator, HealthIndicatorResult, HealthCheckError } from "@nestjs/terminus";
 import { GlpiClient } from "../../glpi/glpi.client";
 
+/**
+ * Comprueba credenciales bootstrap e inicialización de sesión GLPI.
+ */
 @Injectable()
 export class GlpiHealthIndicator extends HealthIndicator {
+  /** Inyecta el cliente HTTP de GLPI. */
   constructor(private readonly glpi: GlpiClient) {
     super();
   }
 
+  /**
+   * Intenta abrir sesión GLPI con las credenciales bootstrap configuradas.
+   * @param key - Clave del indicador en el reporte de salud.
+   * @returns Resultado Terminus con estado up si la sesión se inicia.
+   * @throws {HealthCheckError} Si faltan credenciales o GLPI no responde.
+   */
   async isHealthy(key = "glpi"): Promise<HealthIndicatorResult> {
     try {
       const bootstrapAuth = this.glpi.resolveBootstrapAuth();

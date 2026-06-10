@@ -1,3 +1,7 @@
+/**
+ * @file send-mail.dto.ts
+ * @description DTO de entrada para crear un ticket desde un payload de correo entrante.
+ */
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
@@ -12,6 +16,7 @@ import {
 } from "class-validator";
 import { TICKET_TYPE, type TicketType } from "../../tickets/domain/ticket-type";
 
+/** Cuerpo validado del endpoint POST /mail/send. */
 export class SendMailDto {
   @ApiProperty({ example: "usuario@empresa.com" })
   @IsEmail()

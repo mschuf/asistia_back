@@ -1,4 +1,8 @@
-﻿import {
+﻿/**
+ * @file ticket.mapper.ts
+ * @description Mapea tickets de GLPI al modelo de dominio y traduce enums bidireccionales.
+ */
+import {
   GLPI_TICKET_STATUS,
   GLPI_TICKET_TYPE,
   GLPI_TICKET_URGENCY,
@@ -40,17 +44,39 @@ export interface DomainTicket {
   isDeleted: boolean;
 }
 
+/**
+ * Indica si el ticket de dominio está activo (no eliminado en GLPI).
+ * @param ticket - Ticket de dominio.
+ * @returns `true` si no está marcado como eliminado.
+ * @throws No lanza excepciones.
+ */
 export function isActiveTicket(ticket: DomainTicket): boolean {
   return !ticket.isDeleted;
 }
 
-/** GLPI puede devolver flags booleanos como 0/1, "0"/"1" o true/false. */
+/**
+ * Interpreta el flag `is_deleted` de GLPI en booleano.
+ * GLPI puede devolver flags booleanos como 0/1, "0"/"1" o true/false.
+ * @param value - Valor crudo del flag.
+ * @returns `true` si el ticket está eliminado.
+ * @throws No lanza excepciones.
+ */
 export function parseGlpiDeletedFlag(value: unknown): boolean {
   if (value === true) return true;
   return Number(value) === 1;
 }
 
+/**
+ * Convierte tickets GLPI a objetos de dominio y traduce enums.
+ */
 export class TicketMapper {
+  /**
+   * Transforma un ticket GLPI en su representación de dominio.
+   * @param raw - Registro crudo devuelto por la API de GLPI.
+   * @param opts - IDs opcionales de solicitante y técnico ya resueltos.
+   * @returns Ticket normalizado con descripción en texto plano.
+   * @throws No lanza excepciones.
+   */
   static toDomain(raw: GlpiTicketRaw, opts: { requesterId?: number | null; technicianId?: number | null } = {}): DomainTicket {
     return {
       id: TicketMapper.toId(raw.id),
@@ -72,15 +98,33 @@ export class TicketMapper {
     };
   }
 
+  /**
+   * Mapea el tipo numérico GLPI al dominio.
+   * @param value - Código de tipo GLPI.
+   * @returns `"incident"` o `"request"`.
+   * @throws No lanza excepciones.
+   */
   static mapType(value: number): DomainTicketType {
     if (value === GLPI_TICKET_TYPE.INCIDENT) return "incident";
     return "request";
   }
 
+  /**
+   * Mapea el tipo de dominio al código numérico GLPI.
+   * @param value - Tipo de dominio.
+   * @returns Código `GLPI_TICKET_TYPE`.
+   * @throws No lanza excepciones.
+   */
   static mapTypeToGlpi(value: DomainTicketType): number {
     return value === "incident" ? GLPI_TICKET_TYPE.INCIDENT : GLPI_TICKET_TYPE.REQUEST;
   }
 
+  /**
+   * Mapea el estado numérico GLPI al dominio.
+   * @param value - Código de estado GLPI.
+   * @returns Estado de dominio; `"new"` por defecto si es desconocido.
+   * @throws No lanza excepciones.
+   */
   static mapStatus(value: number): DomainTicketStatus {
     switch (value) {
       case GLPI_TICKET_STATUS.NEW:
@@ -100,6 +144,12 @@ export class TicketMapper {
     }
   }
 
+  /**
+   * Mapea el estado de dominio al código numérico GLPI.
+   * @param value - Estado de dominio.
+   * @returns Código `GLPI_TICKET_STATUS`.
+   * @throws No lanza excepciones.
+   */
   static mapStatusToGlpi(value: DomainTicketStatus): number {
     switch (value) {
       case "new":
@@ -117,6 +167,12 @@ export class TicketMapper {
     }
   }
 
+  /**
+   * Mapea la urgencia numérica GLPI al dominio.
+   * @param value - Código de urgencia GLPI.
+   * @returns Urgencia de dominio; `"medium"` por defecto.
+   * @throws No lanza excepciones.
+   */
   static mapUrgency(value: number): DomainTicketUrgency {
     switch (value) {
       case GLPI_TICKET_URGENCY.VERY_LOW:
@@ -134,6 +190,12 @@ export class TicketMapper {
     }
   }
 
+  /**
+   * Mapea la urgencia de dominio al código numérico GLPI.
+   * @param value - Urgencia de dominio.
+   * @returns Código `GLPI_TICKET_URGENCY`.
+   * @throws No lanza excepciones.
+   */
   static mapUrgencyToGlpi(value: DomainTicketUrgency): number {
     switch (value) {
       case "very_low":
@@ -149,13 +211,25 @@ export class TicketMapper {
     }
   }
 
-  /** GLPI REST suele devolver IDs numéricos como string en JSON. */
+  /**
+   * Convierte un valor desconocido en ID opcional positivo.
+   * GLPI REST suele devolver IDs numéricos como string en JSON.
+   * @param value - Valor crudo del ID.
+   * @returns ID positivo o `null`.
+   * @throws No lanza excepciones.
+   */
   private static toOptionalId(value: unknown): number | null {
     if (value === null || value === undefined || value === "") return null;
     const id = Number(value);
     return Number.isFinite(id) && id > 0 ? id : null;
   }
 
+  /**
+   * Convierte un valor desconocido en ID numérico (0 si no es válido).
+   * @param value - Valor crudo del ID.
+   * @returns ID positivo o `0`.
+   * @throws No lanza excepciones.
+   */
   private static toId(value: unknown): number {
     return TicketMapper.toOptionalId(value) ?? 0;
   }

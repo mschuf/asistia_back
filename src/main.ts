@@ -1,4 +1,8 @@
-﻿import "reflect-metadata";
+﻿/**
+ * @file main.ts
+ * @description Punto de entrada de la API NestJS: bootstrap, CORS, Swagger y escucha HTTP.
+ */
+import "reflect-metadata";
 import { NestFactory, Reflector } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
@@ -9,6 +13,10 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import type { AppConfig } from "./config/configuration";
 
+/**
+ * Inicializa la aplicación NestJS con pipes, CORS, prefijo global, Swagger y escucha HTTP.
+ * @returns Promesa que se resuelve cuando el servidor está en escucha.
+ */
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,

@@ -1,4 +1,8 @@
-﻿import {
+﻿/**
+ * @file all-exceptions.filter.ts
+ * @description Filtro global que normaliza cualquier excepción al sobre de error de la API.
+ */
+import {
   ArgumentsHost,
   Catch,
   ExceptionFilter,
@@ -10,6 +14,7 @@ import { Request, Response } from "express";
 import { API_ERROR_CODE, type ApiErrorCode } from "../types/api-error-code";
 import { BusinessException } from "../exceptions/business.exception";
 
+/** Formato JSON estándar de error devuelto al cliente. */
 interface ErrorEnvelope {
   success: false;
   message: string;
@@ -17,10 +22,19 @@ interface ErrorEnvelope {
   details?: unknown;
 }
 
+/**
+ * Captura excepciones no controladas y las convierte en respuestas HTTP consistentes.
+ */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  /**
+   * Resuelve la excepción, registra el evento y responde con el sobre de error.
+   * @param exception - Error capturado en la cadena de NestJS.
+   * @param host - Host de argumentos HTTP.
+   * @returns void
+   */
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -42,6 +56,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json(body);
   }
 
+  /**
+   * Clasifica la excepción y construye estado HTTP y cuerpo de error.
+   * @param exception - Error original.
+   * @returns Par `{ status, body }` listo para serializar.
+   */
   private resolve(exception: unknown): { status: number; body: ErrorEnvelope } {
     if (exception instanceof BusinessException) {
       const status = exception.getStatus();
@@ -70,6 +89,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
   }
 
+  /**
+   * Normaliza la respuesta de una {@link BusinessException}.
+   * @param raw - Cuerpo crudo de la excepción.
+   * @param exception - Instancia de negocio.
+   * @returns Sobre de error tipado.
+   */
   private buildEnvelopeFromBusinessException(
     raw: unknown,
     exception: BusinessException,
@@ -85,6 +110,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
   }
 
+  /**
+   * Normaliza la respuesta de una {@link HttpException} genérica de NestJS.
+   * @param raw - Cuerpo crudo de la excepción.
+   * @param status - Código HTTP de la excepción.
+   * @returns Sobre de error tipado.
+   */
   private buildEnvelopeFromHttpException(
     raw: unknown,
     status: number,
@@ -116,6 +147,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     return { success: false, message: `HTTP ${status}`, code };
   }
 
+  /**
+   * Mapea un código HTTP a un {@link ApiErrorCode} estable cuando no viene explícito.
+   * @param status - Código de estado HTTP.
+   * @returns Código de error de la API más cercano.
+   */
   private mapHttpStatusToCode(status: number): ApiErrorCode {
     switch (status) {
       case HttpStatus.BAD_REQUEST:

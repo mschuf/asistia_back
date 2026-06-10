@@ -1,5 +1,10 @@
+/**
+ * @file company.response.dto.ts
+ * @description DTOs de respuesta de empresa individual y listado paginado.
+ */
 import { ApiProperty } from "@nestjs/swagger";
 
+/** Representación serializable de una empresa para la API. */
 export class CompanyResponseDto {
   @ApiProperty({ example: 1 })
   id!: number;
@@ -44,6 +49,7 @@ export class CompanyResponseDto {
   updatedAt!: string;
 }
 
+/** Contenedor paginado de empresas para respuestas HTTP. */
 export class CompanyListResponseDto {
   @ApiProperty({ type: () => [CompanyResponseDto] })
   items!: CompanyResponseDto[];

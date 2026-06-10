@@ -1,8 +1,13 @@
+/**
+ * @file attachment-validation.ts
+ * @description Valida extensiones, tipos MIME y tamaño máximo de archivos adjuntos permitidos.
+ */
 import { HttpStatus } from "@nestjs/common";
 import { extname } from "path";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 
+/** Extensiones de archivo permitidas para adjuntos de tickets. */
 export const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   ".png",
   ".jpg",
@@ -16,14 +21,31 @@ export const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
 
 const OCTET_STREAM_MIME = "application/octet-stream";
 
+/**
+ * Normaliza la extensión de un nombre de archivo a minúsculas.
+ * @param filename - Nombre de archivo con o sin ruta.
+ * @returns Extensión incluyendo el punto, en minúsculas.
+ */
 export function normalizeAttachmentExtension(filename: string): string {
   return extname(filename).toLowerCase();
 }
 
+/**
+ * Indica si la extensión del archivo está en la lista permitida.
+ * @param filename - Nombre de archivo a evaluar.
+ * @returns `true` si la extensión está permitida.
+ */
 export function isAllowedAttachmentExtension(filename: string): boolean {
   return ALLOWED_ATTACHMENT_EXTENSIONS.has(normalizeAttachmentExtension(filename));
 }
 
+/**
+ * Comprueba si el MIME declarado es coherente con la extensión y la lista configurada.
+ * @param mimetype - Tipo MIME reportado por el cliente o Multer.
+ * @param filename - Nombre original del archivo.
+ * @param allowedMime - Lista de tipos MIME permitidos por configuración.
+ * @returns `true` si el par MIME/extensión es válido.
+ */
 export function isMimeAllowedForAttachment(
   mimetype: string,
   filename: string,
@@ -41,6 +63,12 @@ export function isMimeAllowedForAttachment(
   return false;
 }
 
+/**
+ * Valida tipo y tamaño de un adjunto; lanza excepción de negocio si no cumple.
+ * @param input - Metadatos del archivo y límites de configuración.
+ * @returns void
+ * @throws {BusinessException} Si el tipo MIME no está permitido o el tamaño supera el máximo.
+ */
 export function validateAttachmentFile(input: {
   originalname: string;
   mimetype: string;

@@ -1,4 +1,8 @@
-﻿import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+﻿/**
+ * @file create-ticket.dto.ts
+ * @description DTO de validación para la creación de tickets desde la API.
+ */
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
   IsEnum,
@@ -12,6 +16,9 @@ import {
 } from "class-validator";
 import { TICKET_TYPE, type TicketType } from "../domain/ticket-type";
 
+/**
+ * Payload de POST /tickets con datos del ticket y asignación opcional.
+ */
 export class CreateTicketDto {
   @ApiProperty({ enum: Object.values(TICKET_TYPE), example: "incident" })
   @IsEnum(Object.values(TICKET_TYPE) as readonly string[])

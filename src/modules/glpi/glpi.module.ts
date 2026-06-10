@@ -1,4 +1,8 @@
-﻿import { HttpModule } from "@nestjs/axios";
+﻿/**
+ * @file glpi.module.ts
+ * @description Módulo NestJS global que registra cliente, sesiones, bootstrap y repositorios GLPI.
+ */
+import { HttpModule } from "@nestjs/axios";
 import { Global, Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { AppConfig } from "../../config/configuration";
@@ -16,6 +20,9 @@ import { UsersTechniciansSqlRepository } from "./repositories/users-technicians.
 import { LocationsSqlRepository } from "./repositories/locations.sql-repository";
 import { UsersProfilesSqlRepository } from "./repositories/users-profiles.sql-repository";
 
+/**
+ * Módulo global de integración con GLPI (HTTP, sesiones y persistencia).
+ */
 @Global()
 @Module({
   imports: [

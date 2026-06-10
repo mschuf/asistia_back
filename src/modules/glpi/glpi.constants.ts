@@ -1,4 +1,8 @@
-﻿export const GLPI_HEADERS = {
+﻿/**
+ * @file glpi.constants.ts
+ * @description Constantes de cabeceras HTTP, endpoints REST, estados y campos de búsqueda de GLPI.
+ */
+export const GLPI_HEADERS = {
   APP_TOKEN: "App-Token",
   SESSION_TOKEN: "Session-Token",
   AUTHORIZATION: "Authorization",
@@ -72,4 +76,3 @@ export const GLPI_TICKET_SEARCH_FIELDS = {
   DATE_DUE: 18,
   DATE_MOD: 19,
 } as const;
-

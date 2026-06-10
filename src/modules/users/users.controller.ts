@@ -1,4 +1,8 @@
-﻿import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
+﻿/**
+ * @file users.controller.ts
+ * @description Endpoints HTTP para perfil autenticado, listado de usuarios y técnicos.
+ */
+import { Controller, Get, HttpStatus, Param, ParseIntPipe, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
@@ -15,16 +19,27 @@ import { MeResponseDto } from "./dto/me.response.dto";
 import { ListUsersQueryDto } from "./dto/list-users-query.dto";
 import { UserListResponseDto } from "./dto/user-list.response.dto";
 
+/** Controlador REST del módulo de usuarios protegido con JWT y roles. */
 @ApiTags("users")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("users")
 export class UsersController {
+  /**
+   * Inyecta servicios de usuarios y autenticación.
+   * @param usersService - Servicio de consulta de usuarios.
+   * @param authService - Servicio de resolución de perfil autenticado.
+   */
   constructor(
     private readonly usersService: UsersService,
     private readonly authService: AuthService,
   ) {}
 
+  /**
+   * Devuelve el perfil del usuario autenticado.
+   * @param user - Usuario extraído del token JWT.
+   * @returns Perfil enriquecido con datos GLPI y rol.
+   */
   @Get("me")
   @ApiOperation({ summary: "Get the currently authenticated user profile" })
   @ApiResponse({ status: 200, type: MeResponseDto })
@@ -44,6 +59,11 @@ export class UsersController {
     };
   }
 
+  /**
+   * Lista técnicos activos elegibles con paginación opcional.
+   * @param query - Parámetros de paginación y búsqueda.
+   * @returns Lista paginada de técnicos.
+   */
   @Get("technicians")
   @ApiOperation({
     summary:
@@ -55,6 +75,11 @@ export class UsersController {
     return this.usersService.listTechnicians(query);
   }
 
+  /**
+   * Lista usuarios con paginación; restringido a rol técnico.
+   * @param query - Parámetros de paginación y búsqueda.
+   * @returns Lista paginada de usuarios activos.
+   */
   @Get()
   @Roles("technician")
   @ApiOperation({ summary: "List users with pagination and optional search. Restricted to technicians." })
@@ -64,6 +89,13 @@ export class UsersController {
     return this.usersService.list(query);
   }
 
+  /**
+   * Obtiene un usuario por ID; usuarios finales solo pueden ver su propio perfil.
+   * @param current - Usuario autenticado que realiza la consulta.
+   * @param id - ID del usuario solicitado.
+   * @returns DTO del usuario encontrado.
+   * @throws {BusinessException} Si no tiene permiso o el usuario no existe.
+   */
   @Get(":id")
   @ApiOperation({ summary: "Get a user by id" })
   @ApiResponse({ status: 200, type: UserResponseDto })

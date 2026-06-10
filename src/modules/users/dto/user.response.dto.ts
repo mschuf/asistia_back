@@ -1,5 +1,10 @@
-﻿import { ApiProperty } from "@nestjs/swagger";
+﻿/**
+ * @file user.response.dto.ts
+ * @description DTO de respuesta con datos públicos de un usuario GLPI.
+ */
+import { ApiProperty } from "@nestjs/swagger";
 
+/** Representación serializable de un usuario para la API. */
 export class UserResponseDto {
   @ApiProperty({ example: 188 })
   id!: number;

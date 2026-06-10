@@ -1,3 +1,7 @@
+/**
+ * @file attachments.sql-repository.ts
+ * @description Repositorio SQL para operaciones CRUD de adjuntos en `ticket_attachment`.
+ */
 import { Injectable } from "@nestjs/common";
 import { PostgresService } from "../../postgres/postgres.service";
 import type {
@@ -5,10 +9,22 @@ import type {
   TicketAttachmentRow,
 } from "../attachments.types";
 
+/**
+ * Acceso a datos de adjuntos de tickets en Postgres.
+ */
 @Injectable()
 export class AttachmentsSqlRepository {
+  /**
+   * Inyecta el servicio de Postgres.
+   * @param postgres - Cliente de consultas SQL.
+   */
   constructor(private readonly postgres: PostgresService) {}
 
+  /**
+   * Cuenta cuántos adjuntos tiene un ticket.
+   * @param ticketId - ID del ticket.
+   * @returns Número total de adjuntos asociados.
+   */
   async countByTicketId(ticketId: number): Promise<number> {
     const rows = await this.postgres.query<{ total: string }>(
       `SELECT COUNT(*)::text AS total
@@ -19,6 +35,11 @@ export class AttachmentsSqlRepository {
     return Number(rows[0]?.total ?? 0);
   }
 
+  /**
+   * Inserta un nuevo adjunto y devuelve la fila creada.
+   * @param input - Datos del adjunto a persistir.
+   * @returns Fila insertada con todos los campos.
+   */
   async insert(input: CreateTicketAttachmentInput): Promise<TicketAttachmentRow> {
     const rows = await this.postgres.query<TicketAttachmentRow>(
       `INSERT INTO public.ticket_attachment (
@@ -42,6 +63,11 @@ export class AttachmentsSqlRepository {
     return rows[0];
   }
 
+  /**
+   * Lista adjuntos de un ticket ordenados por fecha de creación.
+   * @param ticketId - ID del ticket.
+   * @returns Filas de adjuntos del ticket.
+   */
   async findByTicketId(ticketId: number): Promise<TicketAttachmentRow[]> {
     return this.postgres.query<TicketAttachmentRow>(
       `SELECT *
@@ -52,6 +78,12 @@ export class AttachmentsSqlRepository {
     );
   }
 
+  /**
+   * Busca un adjunto por ID asegurando que pertenezca al ticket indicado.
+   * @param attachmentId - ID del adjunto.
+   * @param ticketId - ID del ticket propietario.
+   * @returns Fila encontrada o `null` si no existe la combinación.
+   */
   async findByIdAndTicketId(
     attachmentId: number,
     ticketId: number,

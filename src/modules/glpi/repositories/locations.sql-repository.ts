@@ -1,3 +1,7 @@
+/**
+ * @file locations.sql-repository.ts
+ * @description Consulta sedes GLPI con usuarios activos vía MySQL.
+ */
 import { Injectable } from "@nestjs/common";
 import type { RowDataPacket } from "mysql2";
 import { MysqlService } from "../../mysql/mysql.service";
@@ -11,10 +15,19 @@ interface SqlLocationRow extends RowDataPacket {
   room: string | null;
 }
 
+/**
+ * Repositorio SQL de sedes asociadas a usuarios activos en GLPI.
+ */
 @Injectable()
 export class LocationsSqlRepository {
+  /** Inyecta el servicio MySQL compartido. */
   constructor(private readonly mysql: MysqlService) {}
 
+  /**
+   * Lista sedes que tienen al menos un usuario activo asignado.
+   * @returns Sedes ordenadas por ruta completa.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async listLocationsWithActiveUsers(): Promise<DomainLocation[]> {
     const rows = await this.mysql.query<SqlLocationRow>(
       `SELECT DISTINCT

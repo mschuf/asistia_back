@@ -1,8 +1,13 @@
+/**
+ * @file list-companies-query.dto.ts
+ * @description DTO de consulta para listar empresas con paginación, búsqueda y filtro de activas.
+ */
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import { IsBoolean, IsOptional, IsString } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
 
+/** Parámetros de query para el listado paginado de empresas. */
 export class ListCompaniesQueryDto extends PaginationDto {
   @ApiPropertyOptional({ description: "Free-text search in name or mailbox" })
   @IsOptional()
@@ -21,4 +26,5 @@ export class ListCompaniesQueryDto extends PaginationDto {
   activeOnly?: boolean;
 }
 
+/** Límite por defecto de registros por página en listados de empresas. */
 export const DEFAULT_COMPANIES_PAGE_LIMIT = 20;

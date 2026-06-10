@@ -1,3 +1,7 @@
+/**
+ * @file tickets-history.sql-repository.ts
+ * @description Consulta paginada del historial de tickets desde la vista MySQL `v_asistia_ticket_history`.
+ */
 import { Injectable } from "@nestjs/common";
 import type { QueryValues } from "mysql2";
 import type { RowDataPacket } from "mysql2/promise";
@@ -97,10 +101,20 @@ const HISTORY_SELECT_COLUMNS = `
   updated_at
 `;
 
+/**
+ * Repositorio SQL del historial de tickets materializado en vista MySQL.
+ */
 @Injectable()
 export class TicketsHistorySqlRepository {
+  /** Inyecta el servicio MySQL compartido. */
   constructor(private readonly mysql: MysqlService) {}
 
+  /**
+   * Lista página de historial como DTOs de respuesta API.
+   * @param filter - Filtros de listado (actores, sede, fechas, búsqueda).
+   * @returns Items paginados y total de coincidencias.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async listHistoryPageAsResponse(filter: ListTicketsFilter): Promise<HistoryPageResponse> {
     const { whereSql, params } = this.buildWhereClause(filter);
 
@@ -126,6 +140,12 @@ export class TicketsHistorySqlRepository {
     };
   }
 
+  /**
+   * Obtiene un ticket del historial por ID como dominio.
+   * @param ticketId - ID del ticket GLPI.
+   * @returns Ticket de dominio o `null` si no existe o está borrado.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async findById(ticketId: number): Promise<DomainTicket | null> {
     const rows = await this.mysql.query<HistoryRow>(
       `SELECT ${HISTORY_SELECT_COLUMNS}
@@ -138,6 +158,12 @@ export class TicketsHistorySqlRepository {
     return row ? this.toDomainTicket(row) : null;
   }
 
+  /**
+   * Construye cláusula WHERE y parámetros nombrados desde filtros de listado.
+   * @param filter - Filtros de historial.
+   * @returns SQL de condiciones y mapa de parámetros.
+   * @throws No lanza excepciones.
+   */
   private buildWhereClause(filter: ListTicketsFilter): {
     whereSql: string;
     params: Record<string, unknown>;
@@ -198,11 +224,23 @@ export class TicketsHistorySqlRepository {
     return { whereSql: whereClauses.join(" AND "), params };
   }
 
+  /**
+   * Normaliza lista de estados GLPI eliminando duplicados e inválidos.
+   * @param statuses - Estados crudos del filtro.
+   * @returns Enteros positivos únicos.
+   * @throws No lanza excepciones.
+   */
   private normalizeStatusFilter(statuses?: number[]): number[] {
     if (!statuses?.length) return [];
     return [...new Set(statuses.filter((value) => Number.isInteger(value) && value > 0))];
   }
 
+  /**
+   * Mapea fila de historial a `DomainTicket`.
+   * @param row - Fila de la vista SQL.
+   * @returns Ticket de dominio.
+   * @throws No lanza excepciones.
+   */
   private toDomainTicket(row: HistoryRow): DomainTicket {
     return {
       id: Number(row.ticket_id),
@@ -224,6 +262,12 @@ export class TicketsHistorySqlRepository {
     };
   }
 
+  /**
+   * Mapea fila de historial a DTO de respuesta API con actores anidados.
+   * @param row - Fila de la vista SQL.
+   * @returns DTO listo para el cliente.
+   * @throws No lanza excepciones.
+   */
   private toTicketResponseDto(row: HistoryRow): TicketResponseDto {
     const categoryId = this.toOptionalId(row.category_id);
     const locationId = this.toOptionalId(row.location_id);
@@ -265,6 +309,12 @@ export class TicketsHistorySqlRepository {
     };
   }
 
+  /**
+   * Parsea tipo de ticket desde columnas de vista o código GLPI.
+   * @param row - Fila de historial.
+   * @returns Tipo de dominio API.
+   * @throws No lanza excepciones.
+   */
   private parseType(row: HistoryRow): TicketType {
     if (row.type && TICKET_TYPES.has(row.type as DomainTicketType)) {
       return row.type as TicketType;
@@ -272,6 +322,12 @@ export class TicketsHistorySqlRepository {
     return TicketMapper.mapType(Number(row.type_glpi ?? 1));
   }
 
+  /**
+   * Parsea estado de ticket desde columnas de vista o código GLPI.
+   * @param row - Fila de historial.
+   * @returns Estado de dominio API.
+   * @throws No lanza excepciones.
+   */
   private parseStatus(row: HistoryRow): TicketStatus {
     if (row.status && TICKET_STATUSES.has(row.status as DomainTicketStatus)) {
       return row.status as TicketStatus;
@@ -279,6 +335,12 @@ export class TicketsHistorySqlRepository {
     return TicketMapper.mapStatus(Number(row.status_glpi ?? 1));
   }
 
+  /**
+   * Parsea urgencia desde columnas de vista o código GLPI.
+   * @param row - Fila de historial.
+   * @returns Urgencia de dominio.
+   * @throws No lanza excepciones.
+   */
   private parseUrgency(row: HistoryRow): DomainTicketUrgency {
     if (row.urgency && TICKET_URGENCIES.has(row.urgency as DomainTicketUrgency)) {
       return row.urgency as DomainTicketUrgency;
@@ -286,6 +348,12 @@ export class TicketsHistorySqlRepository {
     return TicketMapper.mapUrgency(Number(row.urgency_glpi ?? 3));
   }
 
+  /**
+   * Convierte valor SQL en ID positivo opcional.
+   * @param value - Valor de columna.
+   * @returns ID o `null`.
+   * @throws No lanza excepciones.
+   */
   private toOptionalId(value: unknown): number | null {
     if (value === null || value === undefined || value === "") return null;
     const id = Number(value);

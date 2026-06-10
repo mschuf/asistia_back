@@ -1,6 +1,11 @@
+/**
+ * @file send-mail.response.dto.ts
+ * @description DTOs de respuesta Swagger para el resultado del flujo de correo entrante.
+ */
 import { ApiProperty } from "@nestjs/swagger";
 import type { TicketType } from "../../tickets/domain/ticket-type";
 
+/** Solicitante resuelto en el flujo de correo entrante. */
 export class SendMailRequesterDto {
   @ApiProperty({ example: 1367, nullable: true })
   userId!: number | null;
@@ -15,6 +20,7 @@ export class SendMailRequesterDto {
   source!: "glpi" | "ldap";
 }
 
+/** Categoría ITIL asociada al ticket creado desde correo. */
 export class SendMailCategoryDto {
   @ApiProperty({ example: 65 })
   id!: number;
@@ -23,6 +29,7 @@ export class SendMailCategoryDto {
   name!: string;
 }
 
+/** Respuesta agregada tras crear ticket y despachar correos. */
 export class SendMailResponseDto {
   @ApiProperty({ example: 4521 })
   ticketId!: number;

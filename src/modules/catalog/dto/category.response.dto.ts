@@ -1,5 +1,10 @@
-﻿import { ApiProperty } from "@nestjs/swagger";
+﻿/**
+ * @file category.response.dto.ts
+ * @description DTO de respuesta de una categoría ITIL GLPI.
+ */
+import { ApiProperty } from "@nestjs/swagger";
 
+/** Representación serializable de una categoría ITIL para la API. */
 export class CategoryResponseDto {
   @ApiProperty({ example: 65 })
   id!: number;

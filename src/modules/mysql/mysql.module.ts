@@ -1,3 +1,7 @@
+/**
+ * @file mysql.module.ts
+ * @description Módulo global que registra el pool MySQL y expone {@link MysqlService}.
+ */
 import { Global, Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createPool, type Pool } from "mysql2/promise";
@@ -5,6 +9,9 @@ import type { AppConfig } from "../../config/configuration";
 import { MYSQL_POOL } from "./mysql.constants";
 import { MysqlService } from "./mysql.service";
 
+/**
+ * Provee y exporta el pool MySQL para acceso SQL directo a GLPI.
+ */
 @Global()
 @Module({
   providers: [

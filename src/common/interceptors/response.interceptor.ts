@@ -1,4 +1,8 @@
-﻿import {
+﻿/**
+ * @file response.interceptor.ts
+ * @description Interceptor que envuelve respuestas exitosas en `{ success, message, data }`.
+ */
+import {
   CallHandler,
   ExecutionContext,
   Injectable,
@@ -7,27 +11,44 @@
 import { Reflector } from "@nestjs/core";
 import { Observable, map } from "rxjs";
 
+/** Clave de metadatos para el mensaje de respuesta personalizado. */
 export const RESPONSE_MESSAGE_KEY = "responseMessage";
+
+/** Clave de metadatos para omitir el sobre de respuesta. */
 export const SKIP_RESPONSE_ENVELOPE_KEY = "skipResponseEnvelope";
 
+/**
+ * Formato estándar de respuesta exitosa de la API.
+ */
 export interface EnvelopeSuccess<T> {
   success: true;
   message: string;
   data: T;
 }
 
+/** Payload interno que puede indicar respuesta cruda o ya envuelta. */
 interface MaybeWrapped<T> {
   __raw?: boolean;
   message?: string;
   data?: T;
 }
 
+/**
+ * Interceptor global que normaliza respuestas HTTP exitosas al sobre de la API.
+ */
 @Injectable()
 export class ResponseInterceptor<T>
   implements NestInterceptor<T, EnvelopeSuccess<T> | T>
 {
+  /** Inyecta el reflector para leer metadatos del handler. */
   constructor(private readonly reflector: Reflector) {}
 
+  /**
+   * Envuelve el payload del handler salvo que esté marcado para omitir el sobre.
+   * @param context - Contexto de ejecución HTTP.
+   * @param next - Cadena de handlers siguientes.
+   * @returns Observable con respuesta envuelta o cruda según metadatos.
+   */
   intercept(
     context: ExecutionContext,
     next: CallHandler<T>,

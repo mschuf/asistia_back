@@ -1,6 +1,11 @@
-﻿import { Injectable, Logger } from "@nestjs/common";
+﻿/**
+ * @file ldap-auth.service.ts
+ * @description Servicio legacy de autenticación LDAP directa y diagnóstico de base DN.
+ */
+import { Injectable, Logger } from "@nestjs/common";
 import { Client, type SearchOptions } from "ldapts";
 
+/** Forma mínima de error devuelto por operaciones LDAP. */
 interface LdapAuthError {
   message?: string;
   code?: number;
@@ -8,10 +13,20 @@ interface LdapAuthError {
   stack?: string;
 }
 
+/**
+ * Autentica usuarios contra Active Directory y devuelve atributos sin pasar por GLPI.
+ */
 @Injectable()
 export class LdapAuthService {
   private readonly logger = new Logger(LdapAuthService.name);
 
+  /**
+   * Valida credenciales en AD, busca el usuario con cuenta admin y mapea sus atributos.
+   * @param username - Nombre de usuario (sAMAccountName o equivalente).
+   * @param password - Contraseña en texto plano.
+   * @returns Objeto con bandera de éxito y datos normalizados del usuario AD.
+   * @throws {Error} Si faltan credenciales admin, no se encuentra el usuario o la autenticación falla.
+   */
   async authenticate(username: string, password: string): Promise<{ success: true; user: Record<string, unknown> }> {
     const url = process.env.LDAP_URL || "ldaps://192.168.12.112:636";
     const domain = process.env.LDAP_DOMAIN || "grupopettengill.com.py";
@@ -139,6 +154,11 @@ export class LdapAuthService {
     }
   }
 
+  /**
+   * Consulta el rootDSE del servidor LDAP para diagnosticar naming contexts.
+   * @returns Entrada rootDSE con `defaultNamingContext` y contextos de nomenclatura.
+   * @throws {Error} Si faltan credenciales admin o falla la conexión/búsqueda LDAP.
+   */
   async testBaseDN(): Promise<{ success: true; rootDSE: Record<string, unknown> | undefined }> {
     const url = process.env.LDAP_URL || "ldaps://192.168.12.112:636";
     const domain = process.env.LDAP_DOMAIN || "grupopettengill.com.py";

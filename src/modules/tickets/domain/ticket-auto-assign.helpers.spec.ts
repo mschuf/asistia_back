@@ -1,6 +1,16 @@
+/**
+ * @file ticket-auto-assign.helpers.spec.ts
+ * @description Pruebas unitarias de selección de técnico por sede o globalmente.
+ */
 import type { DomainUser } from "../../glpi/mappers/user.mapper";
 import { pickLastActiveTechnicianByName } from "./ticket-auto-assign.helpers";
 
+/**
+ * Construye un `DomainUser` mínimo para los casos de prueba.
+ * @param partial - Campos obligatorios del técnico de prueba.
+ * @returns Usuario de dominio con valores por defecto en campos opcionales.
+ * @throws Ninguno.
+ */
 function technician(
   partial: Pick<DomainUser, "id" | "fullName" | "locationId" | "isActive">,
 ): DomainUser {

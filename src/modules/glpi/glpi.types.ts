@@ -1,4 +1,8 @@
-﻿export interface GlpiInitSessionResponse {
+﻿/**
+ * @file glpi.types.ts
+ * @description Tipos TypeScript que modelan las respuestas crudas de la API REST de GLPI.
+ */
+export interface GlpiInitSessionResponse {
   session_token: string;
 }
 

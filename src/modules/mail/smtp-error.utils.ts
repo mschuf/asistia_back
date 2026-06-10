@@ -1,4 +1,14 @@
-/** Appends actionable hints for common SMTP failures (Office 365, config, etc.). */
+/**
+ * @file smtp-error.utils.ts
+ * @description Enriquece mensajes de error SMTP con pistas accionables para diagnóstico.
+ */
+
+/**
+ * Añade sugerencias de configuración a errores SMTP frecuentes (Office 365, certificados, timeouts).
+ * Appends actionable hints for common SMTP failures (Office 365, config, etc.).
+ * @param message - Mensaje de error original devuelto por Nodemailer o el servidor SMTP.
+ * @returns Mensaje original ampliado con indicaciones cuando el patrón es reconocido.
+ */
 export function enrichSmtpErrorMessage(message: string): string {
   const normalized = message.toLowerCase();
 

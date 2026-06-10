@@ -1,4 +1,8 @@
-﻿import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+﻿/**
+ * @file attachments.service.ts
+ * @description Orquesta la subida, listado y descarga de adjuntos de tickets con validación y almacenamiento local.
+ */
+import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { ReadStream } from "fs";
 import { BusinessException } from "../../common/exceptions/business.exception";
@@ -13,8 +17,10 @@ import { LocalAttachmentStorage } from "./local-attachment.storage";
 import { mapAttachmentRowToResponse } from "./mappers/attachment.mapper";
 import { AttachmentsSqlRepository } from "./repositories/attachments.sql-repository";
 
+/** Cantidad máxima de adjuntos permitidos por ticket. */
 export const MAX_ATTACHMENTS_PER_TICKET = 5;
 
+/** Datos mínimos de un archivo recibido para persistir como adjunto. */
 export interface AttachmentUploadInput {
   originalname: string;
   mimetype: string;
@@ -22,6 +28,7 @@ export interface AttachmentUploadInput {
   path: string;
 }
 
+/** Payload listo para transmitir un adjunto al cliente HTTP. */
 export interface AttachmentDownloadPayload {
   stream: ReadStream;
   filename: string;
@@ -29,10 +36,20 @@ export interface AttachmentDownloadPayload {
   size: number;
 }
 
+/**
+ * Servicio de gestión de adjuntos de tickets.
+ */
 @Injectable()
 export class AttachmentsService {
   private readonly logger = new Logger(AttachmentsService.name);
 
+  /**
+   * Inyecta configuración, tickets, repositorio y almacenamiento local.
+   * @param config - Servicio de configuración de la aplicación.
+   * @param tickets - Servicio de tickets para validar acceso.
+   * @param repository - Repositorio SQL de adjuntos.
+   * @param storage - Almacenamiento local de archivos.
+   */
   constructor(
     private readonly config: ConfigService<AppConfig, true>,
     private readonly tickets: TicketsService,
@@ -40,6 +57,14 @@ export class AttachmentsService {
     private readonly storage: LocalAttachmentStorage,
   ) {}
 
+  /**
+   * Sube un adjunto para un ticket validando tipo, tamaño y límite por ticket.
+   * @param user - Usuario autenticado que realiza la subida.
+   * @param ticketId - ID del ticket destino.
+   * @param file - Metadatos y ruta temporal del archivo subido.
+   * @returns DTO del adjunto persistido.
+   * @throws {BusinessException} Si el ticket supera el límite de adjuntos, falla la validación o el almacenamiento.
+   */
   async uploadForTicket(
     user: AuthenticatedUser,
     ticketId: number,
@@ -96,6 +121,13 @@ export class AttachmentsService {
     }
   }
 
+  /**
+   * Lista los adjuntos de un ticket si el usuario tiene acceso.
+   * @param user - Usuario autenticado solicitante.
+   * @param ticketId - ID del ticket.
+   * @returns Lista de DTOs de adjuntos ordenados por creación.
+   * @throws {BusinessException} Si el usuario no tiene acceso al ticket.
+   */
   async listForTicket(
     user: AuthenticatedUser,
     ticketId: number,
@@ -105,6 +137,14 @@ export class AttachmentsService {
     return rows.map(mapAttachmentRowToResponse);
   }
 
+  /**
+   * Resuelve el stream y metadatos para descargar un adjunto concreto.
+   * @param user - Usuario autenticado solicitante.
+   * @param ticketId - ID del ticket.
+   * @param attachmentId - ID del adjunto.
+   * @returns Payload con stream de lectura y metadatos del archivo.
+   * @throws {BusinessException} Si el usuario no tiene acceso, el adjunto no existe o el archivo no está disponible.
+   */
   async resolveDownload(
     user: AuthenticatedUser,
     ticketId: number,
@@ -124,6 +164,12 @@ export class AttachmentsService {
     return this.buildDownloadPayload(row);
   }
 
+  /**
+   * Construye el payload de descarga a partir de una fila de base de datos.
+   * @param row - Fila del adjunto en Postgres.
+   * @returns Stream y metadatos del archivo en disco.
+   * @throws {BusinessException} Si el archivo no puede leerse del almacenamiento.
+   */
   private buildDownloadPayload(row: TicketAttachmentRow): AttachmentDownloadPayload {
     try {
       return {

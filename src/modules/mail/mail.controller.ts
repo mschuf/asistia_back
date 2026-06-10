@@ -1,3 +1,7 @@
+/**
+ * @file mail.controller.ts
+ * @description Endpoints públicos de prueba para listar categorías y crear tickets desde correo entrante.
+ */
 import { Body, Controller, Get, HttpCode, HttpStatus, NotFoundException, Post } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
@@ -11,21 +15,40 @@ import { CategoryResponseDto } from "../catalog/dto/category.response.dto";
 import { SendMailDto } from "./dto/send-mail.dto";
 import { MailDispatchService } from "./mail-dispatch.service";
 
+/**
+ * Controlador HTTP del flujo de correo entrante y utilidades de prueba.
+ */
 @ApiTags("mail")
 @Controller("mail")
 export class MailController {
+  /**
+   * Inyecta despacho de correo, catálogo y configuración.
+   * @param mailDispatch - Servicio de creación de ticket y envío SMTP.
+   * @param catalog - Servicio de categorías ITIL.
+   * @param config - Configuración de la aplicación.
+   */
   constructor(
     private readonly mailDispatch: MailDispatchService,
     private readonly catalog: CatalogService,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
+  /**
+   * Comprueba que el endpoint de prueba de correo esté habilitado en configuración.
+   * @returns void
+   * @throws {NotFoundException} Si `MAIL_TEST_ENDPOINT_ENABLED` no está activo.
+   */
   private assertMailTestEnabled(): void {
     if (!this.config.get("mail.testEndpointEnabled", { infer: true })) {
       throw new NotFoundException();
     }
   }
 
+  /**
+   * Lista categorías ITIL sin autenticación cuando el endpoint de prueba está habilitado.
+   * @returns Categorías del catálogo.
+   * @throws {NotFoundException} Si el endpoint de prueba está deshabilitado.
+   */
   @Public()
   @Get("categories")
   @ApiOperation({
@@ -40,6 +63,13 @@ export class MailController {
     return this.catalog.listCategories();
   }
 
+  /**
+   * Crea un ticket desde un payload de correo y envía notificaciones de forma síncrona.
+   * @param dto - Datos del correo entrante validados.
+   * @returns void con cuerpo vacío en éxito.
+   * @throws {NotFoundException} Si el endpoint de prueba está deshabilitado.
+   * @throws {BusinessException} Si falla la validación, resolución de usuario o envío SMTP.
+   */
   @Public()
   @Post("send")
   @HttpCode(HttpStatus.OK)

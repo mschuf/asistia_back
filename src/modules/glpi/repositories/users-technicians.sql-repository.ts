@@ -1,3 +1,7 @@
+/**
+ * @file users-technicians.sql-repository.ts
+ * @description Consulta usuarios activos y técnicos elegibles desde MySQL de GLPI.
+ */
 import { Injectable } from "@nestjs/common";
 import type { QueryValues, RowDataPacket } from "mysql2";
 import { OPERATIONAL_IT_PROFILE_KEYWORDS } from "../role.utils";
@@ -20,10 +24,19 @@ interface SqlUserRow extends RowDataPacket {
   is_deleted: number;
 }
 
+/**
+ * Repositorio SQL de usuarios y técnicos elegibles en GLPI.
+ */
 @Injectable()
 export class UsersTechniciansSqlRepository {
+  /** Inyecta el servicio MySQL compartido. */
   constructor(private readonly mysql: MysqlService) {}
 
+  /**
+   * Lista todos los usuarios activos no eliminados.
+   * @returns Usuarios de dominio ordenados por nombre.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async listActiveUsers(): Promise<DomainUser[]> {
     const rows = await this.mysql.query<SqlUserRow>(
       `SELECT DISTINCT
@@ -49,10 +62,23 @@ export class UsersTechniciansSqlRepository {
     return sortUsersByName(rows.map((row) => this.toDomainUser(row)));
   }
 
+  /**
+   * Lista técnicos elegibles según grupos TI y perfiles operativos.
+   * @param tiGroupIds - IDs de grupos de soporte/TI.
+   * @returns Técnicos elegibles ordenados por nombre.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async listEligibleTechnicians(tiGroupIds: number[]): Promise<DomainUser[]> {
     return this.queryEligibleTechnicians(tiGroupIds);
   }
 
+  /**
+   * Lista técnicos elegibles opcionalmente filtrados por sede.
+   * @param tiGroupIds - IDs de grupos de soporte/TI.
+   * @param locationId - ID de sede GLPI opcional.
+   * @returns Técnicos elegibles en la sede indicada.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async listEligibleTechniciansForLocation(
     tiGroupIds: number[],
     locationId?: number | null,
@@ -60,6 +86,13 @@ export class UsersTechniciansSqlRepository {
     return this.queryEligibleTechnicians(tiGroupIds, locationId);
   }
 
+  /**
+   * Ejecuta la consulta SQL de técnicos elegibles con filtros dinámicos.
+   * @param tiGroupIds - IDs de grupos TI.
+   * @param locationId - Sede opcional para filtrar.
+   * @returns Usuarios técnicos elegibles.
+   * @throws Error de base de datos si la consulta falla.
+   */
   private async queryEligibleTechnicians(
     tiGroupIds: number[],
     locationId?: number | null,
@@ -117,6 +150,12 @@ export class UsersTechniciansSqlRepository {
     return sortUsersByName(rows.map((row) => this.toDomainUser(row)));
   }
 
+  /**
+   * Construye parámetros nombrados para grupos y perfiles en la consulta.
+   * @param tiGroupIds - IDs de grupos TI.
+   * @returns Mapa de placeholders SQL.
+   * @throws No lanza excepciones.
+   */
   private buildParams(tiGroupIds: number[]): Record<string, number | string> {
     const params: Record<string, number | string> = {};
     tiGroupIds.forEach((groupId, index) => {
@@ -128,24 +167,48 @@ export class UsersTechniciansSqlRepository {
     return params;
   }
 
+  /**
+   * Normaliza valor desconocido a cadena opcional.
+   * @param value - Valor de columna SQL.
+   * @returns Texto recortado o `null`.
+   * @throws No lanza excepciones.
+   */
   private toOptionalString(value: unknown): string | null {
     if (value === null || value === undefined) return null;
     const text = String(value).trim();
     return text.length > 0 ? text : null;
   }
 
+  /**
+   * Normaliza valor a número positivo opcional.
+   * @param value - Valor de columna SQL.
+   * @returns Entero positivo o `null`.
+   * @throws No lanza excepciones.
+   */
   private toOptionalPositiveNumber(value: unknown): number | null {
     if (value === null || value === undefined || value === "") return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
 
+  /**
+   * Normaliza y valida correo electrónico.
+   * @param value - Valor de columna SQL.
+   * @returns Correo con `@` o `null`.
+   * @throws No lanza excepciones.
+   */
   private toOptionalEmail(value: unknown): string | null {
     const email = this.toOptionalString(value);
     if (!email || !email.includes("@")) return null;
     return email;
   }
 
+  /**
+   * Mapea fila SQL a `DomainUser`.
+   * @param row - Fila de `glpi_users`.
+   * @returns Usuario de dominio.
+   * @throws No lanza excepciones.
+   */
   private toDomainUser(row: SqlUserRow): DomainUser {
     const firstName = this.toOptionalString(row.firstname);
     const lastName = this.toOptionalString(row.realname);

@@ -1,4 +1,8 @@
-﻿import {
+﻿/**
+ * @file tickets.controller.ts
+ * @description Endpoints REST de tickets: listado, métricas, historial, CRUD y asignación.
+ */
+import {
   Body,
   Controller,
   Get,
@@ -37,13 +41,24 @@ import {
 } from "./dto/ticket.response.dto";
 import { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
 
+/**
+ * Controlador HTTP del módulo de tickets protegido por JWT y roles.
+ */
 @ApiTags("tickets")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("tickets")
 export class TicketsController {
+  /** Inyecta el servicio de orquestación de tickets. */
   constructor(private readonly ticketsService: TicketsService) {}
 
+  /**
+   * Lista tickets visibles para el usuario autenticado.
+   * @param user - Usuario autenticado desde el JWT.
+   * @param query - Filtros y paginación.
+   * @returns Listado paginado de tickets enriquecidos.
+   * @throws Propaga excepciones del servicio (p. ej. GLPI no disponible).
+   */
   @Get()
   @ApiOperation({ summary: "List tickets visible to the current user" })
   @ApiResponse({ status: 200, type: TicketListResponseDto })
@@ -55,6 +70,12 @@ export class TicketsController {
     return this.ticketsService.list(user, query);
   }
 
+  /**
+   * Devuelve métricas agregadas de tickets para el usuario actual.
+   * @param user - Usuario autenticado.
+   * @returns Métricas de mis tickets, sede, tipos y abiertos por sede.
+   * @throws Propaga excepciones del servicio o timeout HTTP configurado.
+   */
   @Get("metrics")
   @RequestTimeoutMs(METRICS_HTTP_TIMEOUT_MS)
   @ApiOperation({ summary: "Aggregated ticket metrics for the current user" })
@@ -66,6 +87,14 @@ export class TicketsController {
     return this.ticketsService.getMetrics(user);
   }
 
+  /**
+   * Historial paginado de tickets (pestaña Historial).
+   * @param user - Usuario autenticado.
+   * @param query - Filtros y paginación.
+   * @param res - Respuesta HTTP para cabecera `X-History-Source`.
+   * @returns Listado paginado desde MySQL.
+   * @throws {BusinessException} Si `GLPI_HISTORY_SOURCE` no es `sql`.
+   */
   @Get("history")
   @ApiOperation({ summary: "Paginated ticket history for the current user (Historial tab)" })
   @ApiResponse({ status: 200, type: TicketListResponseDto })
@@ -81,6 +110,13 @@ export class TicketsController {
     return result;
   }
 
+  /**
+   * Obtiene un ticket por ID con control de acceso.
+   * @param user - Usuario autenticado.
+   * @param id - ID numérico del ticket.
+   * @returns Ticket enriquecido con categoría, sede y actores.
+   * @throws {BusinessException} Si no existe o el usuario no tiene acceso.
+   */
   @Get(":id")
   @ApiOperation({ summary: "Get a ticket by id" })
   @ApiResponse({ status: 200, type: TicketResponseDto })
@@ -92,6 +128,13 @@ export class TicketsController {
     return this.ticketsService.findById(user, id);
   }
 
+  /**
+   * Crea un ticket nuevo con auto-asignación según rol.
+   * @param user - Usuario autenticado (solicitante o técnico).
+   * @param dto - Datos del ticket a crear.
+   * @returns ID, asunto y estado del envío de correo.
+   * @throws {BusinessException} Por validación de catálogo, técnico o permisos.
+   */
   @Post()
   @RequestTimeoutMs(TICKET_CREATE_HTTP_TIMEOUT_MS)
   @ApiOperation({ summary: "Create a new ticket" })
@@ -104,6 +147,14 @@ export class TicketsController {
     return this.ticketsService.create(user, dto);
   }
 
+  /**
+   * Actualiza el estado de un ticket.
+   * @param user - Usuario autenticado.
+   * @param id - ID del ticket.
+   * @param dto - Nuevo estado y nota de resolución opcional.
+   * @returns ID y estado confirmado.
+   * @throws {BusinessException} Por transición inválida, permisos o nota insuficiente.
+   */
   @Patch(":id/status")
   @ApiOperation({ summary: "Update the status of a ticket" })
   @ApiResponse({ status: 200, type: UpdateTicketStatusResponseDto })
@@ -116,6 +167,14 @@ export class TicketsController {
     return this.ticketsService.updateStatus(user, id, dto.status, dto.resolutionNote);
   }
 
+  /**
+   * Asigna un técnico al ticket (solo rol technician).
+   * @param user - Técnico que realiza la asignación.
+   * @param id - ID del ticket.
+   * @param dto - ID del técnico destino.
+   * @returns Ticket enriquecido tras la asignación.
+   * @throws {BusinessException} Si el ticket o técnico no son válidos.
+   */
   @Post(":id/assign")
   @Roles("technician")
   @ApiOperation({ summary: "Assign a technician to a ticket" })
@@ -129,6 +188,14 @@ export class TicketsController {
     return this.ticketsService.assignTechnician(user, id, dto.technicianId);
   }
 
+  /**
+   * Actualiza la sede del ticket (solo rol technician).
+   * @param user - Técnico autenticado.
+   * @param id - ID del ticket.
+   * @param dto - Nueva sede (location).
+   * @returns Ticket enriquecido con la sede actualizada.
+   * @throws {BusinessException} Si el ticket o la sede no son válidos.
+   */
   @Patch(":id/location")
   @Roles("technician")
   @ApiOperation({ summary: "Update the location (sede) of a ticket" })

@@ -1,4 +1,8 @@
-﻿import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+﻿/**
+ * @file ldap.provider.ts
+ * @description Proveedor LDAP/Active Directory para autenticación y consulta de atributos de usuario.
+ */
+import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Client } from "ldapts";
 import type { AppConfig } from "../../../config/configuration";
@@ -6,17 +10,33 @@ import { BusinessException } from "../../../common/exceptions/business.exception
 import { API_ERROR_CODE } from "../../../common/types/api-error-code";
 import type { IdentityProvider, IdentityResolution } from "./identity-provider.interface";
 
+/**
+ * Implementación de autenticación y búsqueda de usuarios contra LDAP/Active Directory.
+ */
 @Injectable()
 export class LdapProvider implements IdentityProvider {
   readonly name = "ldap";
   private readonly logger = new Logger(LdapProvider.name);
 
+  /** Inyecta la configuración de conexión y credenciales LDAP. */
   constructor(private readonly config: ConfigService<AppConfig, true>) {}
 
+  /**
+   * Resolución por petición HTTP no soportada en este proveedor.
+   * @returns Siempre `null`.
+   * @throws No lanza excepciones explícitas.
+   */
   async resolveFromRequest(): Promise<IdentityResolution | null> {
     return null;
   }
 
+  /**
+   * Autentica al usuario contra AD y opcionalmente enriquece atributos con búsqueda admin.
+   * @param username - Nombre de usuario (sAMAccountName).
+   * @param password - Contraseña en texto plano.
+   * @returns Resolución de identidad con login, dominio y atributos; `null` solo en búsqueda mínima.
+   * @throws {BusinessException} Si LDAP no está configurado, credenciales inválidas o hay error de referral.
+   */
   async resolveFromCredentials(
     username: string,
     password: string,
@@ -122,6 +142,12 @@ export class LdapProvider implements IdentityProvider {
     }
   }
 
+  /**
+   * Busca un usuario en AD por correo electrónico usando credenciales de administrador.
+   * @param email - Dirección de correo a buscar.
+   * @returns Login, nombre y email resueltos, o `null` si no hay configuración o no existe.
+   * @throws No lanza excepciones explícitas; devuelve `null` ante errores LDAP.
+   */
   async lookupUserByEmail(
     email: string,
   ): Promise<{ login: string; name: string; email: string } | null> {
@@ -181,6 +207,12 @@ export class LdapProvider implements IdentityProvider {
     }
   }
 
+  /**
+   * Obtiene el correo electrónico de un usuario AD a partir de su login.
+   * @param login - sAMAccountName o identificador equivalente.
+   * @returns Email del usuario o `null` si no se encuentra o falta configuración.
+   * @throws No lanza excepciones explícitas; devuelve `null` ante errores LDAP.
+   */
   async lookupEmailByLogin(login: string): Promise<string | null> {
     const url = this.config.get("auth.ldap.url", { infer: true });
     const domain = this.config.get("auth.ldap.domain", { infer: true });
@@ -220,6 +252,12 @@ export class LdapProvider implements IdentityProvider {
     }
   }
 
+  /**
+   * Escapa caracteres especiales de un valor para usarlo en filtros LDAP.
+   * @param value - Cadena a escapar.
+   * @returns Valor seguro para interpolar en un filtro LDAP.
+   * @throws No lanza excepciones explícitas.
+   */
   private static escapeLdapFilterValue(value: string): string {
     return value.replace(/[\0()*\\]/g, (char) => {
       const hex = char.charCodeAt(0).toString(16).padStart(2, "0");
@@ -227,6 +265,14 @@ export class LdapProvider implements IdentityProvider {
     });
   }
 
+  /**
+   * Busca en el directorio los atributos del usuario tras autenticación exitosa.
+   * @param client - Cliente LDAP ya instanciado.
+   * @param username - Nombre de usuario a buscar.
+   * @param config - Parámetros de conexión y credenciales admin.
+   * @returns Resolución enriquecida o mínima si no hay búsqueda admin configurada.
+   * @throws Error LDAP si el bind admin o la búsqueda fallan.
+   */
   private async lookupDirectoryEntry(
     client: Client,
     username: string,

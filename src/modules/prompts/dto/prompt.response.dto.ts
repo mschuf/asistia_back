@@ -1,5 +1,10 @@
+/**
+ * @file prompt.response.dto.ts
+ * @description DTOs de respuesta de prompt individual y listado paginado.
+ */
 import { ApiProperty } from "@nestjs/swagger";
 
+/** Representación serializable de un prompt para la API. */
 export class PromptResponseDto {
   @ApiProperty({ example: 1 })
   id!: number;
@@ -23,6 +28,7 @@ export class PromptResponseDto {
   updatedAt!: string;
 }
 
+/** Contenedor paginado de prompts para respuestas HTTP. */
 export class PromptListResponseDto {
   @ApiProperty({ type: () => [PromptResponseDto] })
   items!: PromptResponseDto[];

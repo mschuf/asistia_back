@@ -1,6 +1,11 @@
-﻿import { escapeHtml, stripHtml } from "./html-utils";
+﻿/**
+ * @file ticket-created.template.ts
+ * @description Plantillas de correo para notificar la creación de un ticket según el rol del destinatario.
+ */
+import { escapeHtml, stripHtml } from "./html-utils";
 import type { TicketCreatedRecipientRole } from "../mail.events";
 
+/** Datos de entrada para plantillas de ticket creado. */
 export interface TicketCreatedTemplateInput {
   ticketId: number;
   type: string;
@@ -12,6 +17,11 @@ export interface TicketCreatedTemplateInput {
   locationName: string | null;
 }
 
+/**
+ * Construye filas HTML de detalle del ticket para la plantilla.
+ * @param input - Datos del ticket creado.
+ * @returns Fragmento HTML con filas de tabla.
+ */
 function buildDetailsRows(input: TicketCreatedTemplateInput): string {
   return [
     `<tr><td style="padding:4px 8px;"><strong>Asunto</strong></td><td style="padding:4px 8px;">${escapeHtml(input.subject)}</td></tr>`,
@@ -27,6 +37,11 @@ function buildDetailsRows(input: TicketCreatedTemplateInput): string {
   ].join("");
 }
 
+/**
+ * Construye líneas de detalle en texto plano para la plantilla.
+ * @param input - Datos del ticket creado.
+ * @returns Arreglo de líneas descriptivas omitiendo campos nulos.
+ */
 function buildDetailsText(input: TicketCreatedTemplateInput): string[] {
   return [
     `Asunto: ${input.subject}`,
@@ -38,6 +53,12 @@ function buildDetailsText(input: TicketCreatedTemplateInput): string[] {
   ].filter((line): line is string => line !== null);
 }
 
+/**
+ * Construye el asunto del correo de ticket creado según el rol del destinatario.
+ * @param input - Datos del ticket creado.
+ * @param role - Rol del destinatario (`requester` o `technician`).
+ * @returns Línea de asunto personalizada.
+ */
 export function buildTicketCreatedSubject(
   input: TicketCreatedTemplateInput,
   role: TicketCreatedRecipientRole,
@@ -48,6 +69,12 @@ export function buildTicketCreatedSubject(
   return `Su ticket #${input.ticketId} fue creado`;
 }
 
+/**
+ * Genera el cuerpo HTML del correo de ticket creado según el rol del destinatario.
+ * @param input - Datos del ticket creado.
+ * @param role - Rol del destinatario (`requester` o `technician`).
+ * @returns Fragmento HTML del correo.
+ */
 export function buildTicketCreatedHtml(
   input: TicketCreatedTemplateInput,
   role: TicketCreatedRecipientRole,
@@ -70,6 +97,12 @@ export function buildTicketCreatedHtml(
   `;
 }
 
+/**
+ * Genera el cuerpo en texto plano del correo de ticket creado según el rol del destinatario.
+ * @param input - Datos del ticket creado.
+ * @param role - Rol del destinatario (`requester` o `technician`).
+ * @returns Texto plano del correo.
+ */
 export function buildTicketCreatedText(
   input: TicketCreatedTemplateInput,
   role: TicketCreatedRecipientRole,

@@ -1,3 +1,7 @@
+/**
+ * @file companies.sql-repository.ts
+ * @description Acceso SQL a la tabla `public.companies` con paginación y búsqueda.
+ */
 import { Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../../common/dto/pagination.dto";
 import { PostgresService } from "../../postgres/postgres.service";
@@ -9,10 +13,20 @@ import type {
 } from "../companies.types";
 import { parseCompanySearch } from "../company-search.utils";
 
+/** Repositorio Postgres para operaciones CRUD de empresas. */
 @Injectable()
 export class CompaniesSqlRepository {
+  /**
+   * Inyecta el servicio de Postgres.
+   * @param postgres - Cliente de consultas SQL.
+   */
   constructor(private readonly postgres: PostgresService) {}
 
+  /**
+   * Lista empresas paginadas aplicando filtros de búsqueda y activas.
+   * @param filters - Paginación, texto de búsqueda y `activeOnly`.
+   * @returns Filas paginadas y metadatos de paginación.
+   */
   async findAll(filters: CompanyListFilters): Promise<PaginatedResult<CompanyRow>> {
     const params: unknown[] = [];
     const whereClauses: string[] = [];
@@ -86,6 +100,11 @@ export class CompaniesSqlRepository {
     };
   }
 
+  /**
+   * Busca una empresa por identificador.
+   * @param id - ID numérico de la empresa.
+   * @returns Fila encontrada o `null`.
+   */
   async findById(id: number): Promise<CompanyRow | null> {
     const rows = await this.postgres.query<CompanyRow>(
       `SELECT
@@ -110,6 +129,11 @@ export class CompaniesSqlRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Inserta una nueva empresa en Postgres.
+   * @param input - Datos normalizados de creación.
+   * @returns Fila de la empresa creada.
+   */
   async create(input: CreateCompanyInput): Promise<CompanyRow> {
     const rows = await this.postgres.query<CompanyRow>(
       `INSERT INTO public.companies (
@@ -155,10 +179,22 @@ export class CompaniesSqlRepository {
     return rows[0];
   }
 
+  /**
+   * Actualiza parcialmente una empresa existente.
+   * @param id - ID de la empresa a modificar.
+   * @param input - Campos a persistir; si está vacío, reconsulta sin cambios.
+   * @returns Fila actualizada o `null` si no existe.
+   */
   async update(id: number, input: UpdateCompanyInput): Promise<CompanyRow | null> {
     const assignments: string[] = [];
     const params: unknown[] = [];
 
+    /**
+     * Acumula una asignación de columna en el UPDATE dinámico.
+     * @param column - Nombre de columna SQL.
+     * @param value - Valor a asignar.
+     * @returns void
+     */
     const setField = (column: string, value: unknown): void => {
       params.push(value);
       assignments.push(`${column} = $${params.length}`);
@@ -208,6 +244,11 @@ export class CompaniesSqlRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Desactiva una empresa estableciendo `is_active = false`.
+   * @param id - ID de la empresa.
+   * @returns Fila actualizada o `null` si no existe.
+   */
   async softDelete(id: number): Promise<CompanyRow | null> {
     const rows = await this.postgres.query<CompanyRow>(
       `UPDATE public.companies
@@ -233,6 +274,11 @@ export class CompaniesSqlRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Activa una empresa estableciendo `is_active = true`.
+   * @param id - ID de la empresa.
+   * @returns Fila actualizada o `null` si no existe.
+   */
   async activate(id: number): Promise<CompanyRow | null> {
     const rows = await this.postgres.query<CompanyRow>(
       `UPDATE public.companies
@@ -258,6 +304,11 @@ export class CompaniesSqlRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Elimina permanentemente una empresa de la base de datos.
+   * @param id - ID de la empresa.
+   * @returns ID eliminado como número o `null` si no existía.
+   */
   async hardDelete(id: number): Promise<number | null> {
     const rows = await this.postgres.query<{ id: string }>(
       `DELETE FROM public.companies WHERE id = $1 RETURNING id`,

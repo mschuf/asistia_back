@@ -1,5 +1,10 @@
-﻿import { ApiProperty } from "@nestjs/swagger";
+﻿/**
+ * @file ticket.response.dto.ts
+ * @description DTOs de respuesta para tickets, listados y operaciones de creación/estado.
+ */
+import { ApiProperty } from "@nestjs/swagger";
 
+/** Actor del ticket (solicitante o técnico) expuesto en la API. */
 class TicketActorDto {
   @ApiProperty({ example: 188, nullable: true })
   id!: number | null;
@@ -11,6 +16,7 @@ class TicketActorDto {
   email!: string | null;
 }
 
+/** Categoría ITIL asociada al ticket. */
 class TicketCategoryDto {
   @ApiProperty({ example: 65 })
   id!: number;
@@ -19,6 +25,7 @@ class TicketCategoryDto {
   name!: string;
 }
 
+/** Sede (location) del ticket. */
 class TicketLocationDto {
   @ApiProperty({ example: 12, nullable: true })
   id!: number | null;
@@ -27,6 +34,7 @@ class TicketLocationDto {
   name!: string | null;
 }
 
+/** Representación enriquecida de un ticket para la API. */
 export class TicketResponseDto {
   @ApiProperty({ example: 10453 })
   id!: number;
@@ -95,6 +103,7 @@ export class CreateTicketResponseDto {
   mail!: { sent: boolean; error: string | null };
 }
 
+/** Listado paginado de tickets. */
 export class TicketListResponseDto {
   @ApiProperty({ type: () => [TicketResponseDto] })
   items!: TicketResponseDto[];

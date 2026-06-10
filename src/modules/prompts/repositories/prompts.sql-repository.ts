@@ -1,3 +1,7 @@
+/**
+ * @file prompts.sql-repository.ts
+ * @description Acceso SQL a la tabla `public.prompt` con join a empresas y paginación.
+ */
 import { Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../../common/dto/pagination.dto";
 import { PostgresService } from "../../postgres/postgres.service";
@@ -23,10 +27,20 @@ const FROM_JOIN = `
   INNER JOIN public.companies c ON c.id = p.company_id
 `;
 
+/** Repositorio Postgres para operaciones CRUD de prompts. */
 @Injectable()
 export class PromptsSqlRepository {
+  /**
+   * Inyecta el servicio de Postgres.
+   * @param postgres - Cliente de consultas SQL.
+   */
   constructor(private readonly postgres: PostgresService) {}
 
+  /**
+   * Lista prompts paginados con filtros de búsqueda y empresa.
+   * @param filters - Paginación, texto de búsqueda y `companyId` opcional.
+   * @returns Filas paginadas y metadatos de paginación.
+   */
   async findAll(filters: PromptListFilters): Promise<PaginatedResult<PromptRow>> {
     const params: unknown[] = [];
     const whereClauses: string[] = [];
@@ -74,6 +88,11 @@ export class PromptsSqlRepository {
     };
   }
 
+  /**
+   * Busca un prompt por identificador con datos de empresa.
+   * @param id - ID numérico del prompt.
+   * @returns Fila encontrada o `null`.
+   */
   async findById(id: number): Promise<PromptRow | null> {
     const rows = await this.postgres.query<PromptRow>(
       `SELECT ${SELECT_COLUMNS}
@@ -85,6 +104,11 @@ export class PromptsSqlRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Busca el prompt asociado a una empresa.
+   * @param companyId - ID de la empresa.
+   * @returns Fila encontrada o `null` si la empresa no tiene prompt.
+   */
   async findByCompanyId(companyId: number): Promise<PromptRow | null> {
     const rows = await this.postgres.query<PromptRow>(
       `SELECT ${SELECT_COLUMNS}
@@ -96,6 +120,11 @@ export class PromptsSqlRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Indica si una empresa existe en `public.companies`.
+   * @param companyId - ID de la empresa a verificar.
+   * @returns `true` si existe al menos una fila.
+   */
   async companyExists(companyId: number): Promise<boolean> {
     const rows = await this.postgres.query<{ id: string }>(
       `SELECT id FROM public.companies WHERE id = $1`,
@@ -105,6 +134,12 @@ export class PromptsSqlRepository {
     return rows.length > 0;
   }
 
+  /**
+   * Inserta un nuevo prompt y lo reconsulta con join a empresa.
+   * @param input - Datos normalizados de creación.
+   * @returns Fila del prompt creado con nombre de empresa.
+   * @throws {Error} Si el prompt no es recuperable tras el insert.
+   */
   async create(input: CreatePromptInput): Promise<PromptRow> {
     const rows = await this.postgres.query<PromptRow>(
       `INSERT INTO public.prompt (
@@ -131,10 +166,22 @@ export class PromptsSqlRepository {
     return withCompany;
   }
 
+  /**
+   * Actualiza parcialmente un prompt existente.
+   * @param id - ID del prompt a modificar.
+   * @param input - Campos a persistir; si está vacío, reconsulta sin cambios.
+   * @returns Fila actualizada con join o `null` si no existe.
+   */
   async update(id: number, input: UpdatePromptInput): Promise<PromptRow | null> {
     const assignments: string[] = [];
     const params: unknown[] = [];
 
+    /**
+     * Acumula una asignación de columna en el UPDATE dinámico.
+     * @param column - Nombre de columna SQL.
+     * @param value - Valor a asignar.
+     * @returns void
+     */
     const setField = (column: string, value: unknown): void => {
       params.push(value);
       assignments.push(`${column} = $${params.length}`);
@@ -168,6 +215,11 @@ export class PromptsSqlRepository {
     return this.findById(id);
   }
 
+  /**
+   * Elimina permanentemente un prompt de la base de datos.
+   * @param id - ID del prompt.
+   * @returns ID eliminado como número o `null` si no existía.
+   */
   async hardDelete(id: number): Promise<number | null> {
     const rows = await this.postgres.query<{ id: string }>(
       `DELETE FROM public.prompt WHERE id = $1 RETURNING id`,

@@ -1,5 +1,10 @@
+/**
+ * @file attachment.response.dto.ts
+ * @description DTO de respuesta Swagger para metadatos de un adjunto de ticket.
+ */
 import { ApiProperty } from "@nestjs/swagger";
 
+/** Representación pública de un adjunto asociado a un ticket. */
 export class TicketAttachmentResponseDto {
   @ApiProperty({ example: 1 })
   id!: number;

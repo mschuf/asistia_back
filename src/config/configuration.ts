@@ -1,7 +1,15 @@
-﻿import "dotenv/config";
+﻿/**
+ * @file configuration.ts
+ * @description Lee variables de entorno y construye el objeto tipado de configuración de la aplicación.
+ */
+import "dotenv/config";
 
+/** Proveedor de autenticación soportado por la API. */
 export type AuthProvider = "windows-sso" | "ldap";
 
+/**
+ * Estructura completa de configuración cargada desde el entorno.
+ */
 export interface AppConfig {
   server: {
     port: number;
@@ -124,6 +132,12 @@ export interface AppConfig {
   };
 }
 
+/**
+ * Lee una variable de entorno como cadena.
+ * @param name - Nombre de la variable.
+ * @param fallback - Valor por defecto si no está definida o está vacía.
+ * @returns Valor leído o fallback/cadena vacía.
+ */
 function readString(name: string, fallback?: string): string {
   const value = process.env[name];
   if (value === undefined || value === "") {
@@ -133,11 +147,22 @@ function readString(name: string, fallback?: string): string {
   return value;
 }
 
+/**
+ * Lee una variable de entorno y elimina espacios al inicio y al final.
+ * @param name - Nombre de la variable.
+ * @param fallback - Valor por defecto opcional.
+ * @returns Cadena recortada.
+ */
 function readTrimmedString(name: string, fallback?: string): string {
   return readString(name, fallback).trim();
 }
 
-/** Trims and removes optional surrounding quotes (common in .env). */
+/**
+ * Lee un secreto del entorno, recortando espacios y comillas envolventes opcionales.
+ * @param name - Nombre de la variable.
+ * @param fallback - Valor por defecto si no está definida.
+ * @returns Secreto normalizado.
+ */
 function readSecretString(name: string, fallback = ""): string {
   let value = readTrimmedString(name, fallback);
   if (
@@ -150,6 +175,12 @@ function readSecretString(name: string, fallback = ""): string {
   return value;
 }
 
+/**
+ * Lee una variable de entorno numérica.
+ * @param name - Nombre de la variable.
+ * @param fallback - Valor por defecto si no es un número válido.
+ * @returns Número parseado o fallback.
+ */
 function readNumber(name: string, fallback: number): number {
   const value = process.env[name];
   if (value === undefined || value === "") return fallback;
@@ -157,12 +188,24 @@ function readNumber(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/**
+ * Lee una variable de entorno booleana (1/true/yes/si/on).
+ * @param name - Nombre de la variable.
+ * @param fallback - Valor por defecto si no está definida.
+ * @returns Valor booleano interpretado.
+ */
 function readBoolean(name: string, fallback: boolean): boolean {
   const value = process.env[name];
   if (value === undefined || value === "") return fallback;
   return ["1", "true", "yes", "si", "on"].includes(value.toLowerCase());
 }
 
+/**
+ * Lee el atributo SameSite de la cookie de autenticación.
+ * @param name - Nombre de la variable de entorno.
+ * @param fallback - Valor por defecto si el valor no es válido.
+ * @returns Política SameSite (`lax`, `strict` o `none`).
+ */
 function readSameSite(
   name: string,
   fallback: AppConfig["auth"]["cookie"]["sameSite"],
@@ -172,6 +215,12 @@ function readSameSite(
   return fallback;
 }
 
+/**
+ * Lee una lista separada por comas desde el entorno.
+ * @param name - Nombre de la variable.
+ * @param fallback - Lista por defecto si no está definida.
+ * @returns Arreglo de cadenas no vacías.
+ */
 function readList(name: string, fallback: string[] = []): string[] {
   const value = process.env[name];
   if (value === undefined || value === "") return fallback;
@@ -181,6 +230,12 @@ function readList(name: string, fallback: string[] = []): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Lee la fuente de lectura GLPI (`api` o `sql`) desde el entorno.
+ * @param name - Nombre de la variable.
+ * @param fallback - Fuente por defecto.
+ * @returns `"api"` o `"sql"`.
+ */
 function readGlpiReadSource(
   name: string,
   fallback: "api" | "sql",
@@ -190,7 +245,11 @@ function readGlpiReadSource(
   return value === "sql" ? "sql" : "api";
 }
 
-/** Accepts `http://host/soporte` or `http://host/soporte/apirest.php`. */
+/**
+ * Normaliza la URL base de GLPI aceptando rutas con o sin `apirest.php`.
+ * @param raw - URL cruda del entorno.
+ * @returns URL terminada en `/apirest.php` o cadena vacía.
+ */
 function normalizeGlpiBaseUrl(raw: string): string {
   const trimmed = raw.trim().replace(/\/+$/, "");
   if (!trimmed) return "";
@@ -198,12 +257,21 @@ function normalizeGlpiBaseUrl(raw: string): string {
   return `${trimmed}/apirest.php`;
 }
 
+/**
+ * Enmascara un token para logs de depuración sin exponer el valor completo.
+ * @param value - Token o secreto a enmascarar.
+ * @returns Representación segura para consola.
+ */
 function maskToken(value: string): string {
   if (!value) return "<empty>";
   if (value.length <= 8) return `${"*".repeat(value.length)} (len=${value.length})`;
   return `${value.slice(0, 6)}ÔÇª${value.slice(-2)} (len=${value.length})`;
 }
 
+/**
+ * Construye el objeto de configuración completo a partir de `process.env`.
+ * @returns Configuración tipada de la aplicación.
+ */
 export function buildConfig(): AppConfig {
   const nodeEnv = readString("NODE_ENV", "development") as AppConfig["server"]["nodeEnv"];
 

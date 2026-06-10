@@ -1,3 +1,7 @@
+/**
+ * @file tickets-status.sql-repository.ts
+ * @description Escritura directa del estado de tickets en la BD MySQL de GLPI.
+ */
 import { Injectable } from "@nestjs/common";
 import type { QueryValues } from "mysql2";
 import type { RowDataPacket } from "mysql2/promise";
@@ -22,8 +26,15 @@ interface StatusRow extends RowDataPacket {
  */
 @Injectable()
 export class TicketsStatusSqlRepository {
+  /** Inyecta el servicio MySQL compartido. */
   constructor(private readonly mysql: MysqlService) {}
 
+  /**
+   * Obtiene el contenido HTML crudo del ticket.
+   * @param ticketId - ID del ticket GLPI.
+   * @returns Contenido o `null` si no existe.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async getRawContent(ticketId: number): Promise<string | null> {
     const rows = await this.mysql.query<ContentRow>(
       `SELECT content FROM glpi_tickets WHERE id = :id LIMIT 1`,
@@ -33,6 +44,12 @@ export class TicketsStatusSqlRepository {
     return content === null || content === undefined ? null : String(content);
   }
 
+  /**
+   * Lee el estado actual del ticket en dominio.
+   * @param ticketId - ID del ticket GLPI.
+   * @returns Estado de dominio o `null` si no existe o está borrado.
+   * @throws Error de base de datos si la consulta falla.
+   */
   async getStatus(ticketId: number): Promise<DomainTicketStatus | null> {
     const rows = await this.mysql.query<StatusRow>(
       `SELECT status FROM glpi_tickets
@@ -48,6 +65,11 @@ export class TicketsStatusSqlRepository {
    * Actualiza el estado del ticket. Devuelve `true` si la fila existía y no
    * estaba borrada. `content` (opcional) reemplaza la descripción (usado al
    * adjuntar la nota de resolución).
+   * @param ticketId - ID del ticket GLPI.
+   * @param statusGlpi - Código numérico de estado GLPI.
+   * @param content - Descripción HTML opcional a persistir.
+   * @returns `true` si se actualizó al menos una fila.
+   * @throws Error de base de datos si el `UPDATE` falla.
    */
   async updateStatus(
     ticketId: number,

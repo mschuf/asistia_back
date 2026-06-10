@@ -1,4 +1,8 @@
-﻿import { Injectable } from "@nestjs/common";
+/**
+ * @file users.glpi-repository.ts
+ * @description Repositorio REST de usuarios GLPI: búsqueda, listados y resolución de técnicos.
+ */
+import { Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../../common/dto/pagination.dto";
 import { GlpiClient } from "../glpi.client";
 import { GLPI_ENDPOINTS } from "../glpi.constants";
@@ -29,11 +33,28 @@ export interface ListUsersFilter {
 const USER_FETCH_BATCH_SIZE = 200;
 const MAX_USER_FETCH_BATCHES = 50;
 
+/**
+ * Repositorio REST de usuarios y técnicos en GLPI.
+ */
 @Injectable()
 export class UsersGlpiRepository {
+  /**
+ Inyecta el cliente HTTP de GLPI.
+   * @returns void
+   * @throws No lanza excepciones salvo errores de infraestructura.
+   */
   constructor(private readonly glpi: GlpiClient) {}
 
-  async findById(sessionKey: string, userId: number): Promise<DomainUser | null> {
+  /**
+
+   * Obtiene usuario por ID; complementa email vía UserEmail si falta.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param userId - Parámetro `userId`.
+   * @returns `Promise<DomainUser | null>`
+   */
+  async findById(sessionKey: string, userId: number): Promise<DomainUser | null>  {
     try {
       const response = await this.glpi.request<GlpiUserRaw>({
         method: "GET",
@@ -53,7 +74,16 @@ export class UsersGlpiRepository {
     }
   }
 
-  private async findPrimaryEmail(sessionKey: string, userId: number): Promise<string | null> {
+  /**
+
+   * Lee correo principal desde sub-recurso UserEmail.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param userId - Parámetro `userId`.
+   * @returns `Promise<string | null>`
+   */
+  private async findPrimaryEmail(sessionKey: string, userId: number): Promise<string | null>  {
     try {
       const response = await this.glpi.request<GlpiUserEmailRaw[]>({
         method: "GET",
@@ -75,7 +105,16 @@ export class UsersGlpiRepository {
     }
   }
 
-  async findByEmail(sessionKey: string, email: string): Promise<DomainUser | null> {
+  /**
+
+   * Busca usuario por correo electrónico.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param email - Parámetro `email`.
+   * @returns `Promise<DomainUser | null>`
+   */
+  async findByEmail(sessionKey: string, email: string): Promise<DomainUser | null>  {
     const trimmed = email.trim();
     if (!trimmed.includes("@")) {
       return null;
@@ -105,7 +144,16 @@ export class UsersGlpiRepository {
     }
   }
 
-  async findByLogin(sessionKey: string, login: string): Promise<DomainUser | null> {
+  /**
+
+   * Busca usuario por login GLPI con coincidencia exacta en name.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param login - Parámetro `login`.
+   * @returns `Promise<DomainUser | null>`
+   */
+  async findByLogin(sessionKey: string, login: string): Promise<DomainUser | null>  {
     // GLPI 9.4 espera filtros por campo como `searchText[<field>]=<value>` (array de
     // query params), no como `searchText=name:<value>`. Si se manda mal, GLPI ignora
     // el filtro y devuelve toda la tabla paginada.
@@ -131,11 +179,27 @@ export class UsersGlpiRepository {
     return exact ? UserMapper.toDomain(exact) : null;
   }
 
-  async listAll(sessionKey: string): Promise<DomainUser[]> {
+  /**
+
+   * Alias de fetchAllActiveUsers para listado completo.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @returns `Promise<DomainUser[]>`
+   */
+  async listAll(sessionKey: string): Promise<DomainUser[]>  {
     return this.fetchAllActiveUsers(sessionKey);
   }
 
-  async fetchAllActiveUsers(sessionKey: string): Promise<DomainUser[]> {
+  /**
+
+   * Descarga usuarios activos paginando la API User.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @returns `Promise<DomainUser[]>`
+   */
+  async fetchAllActiveUsers(sessionKey: string): Promise<DomainUser[]>  {
     const all: DomainUser[] = [];
     let start = 0;
     let total: number | null = null;
@@ -178,10 +242,19 @@ export class UsersGlpiRepository {
     return sortUsersByName(all);
   }
 
+  /**
+
+   * Lista usuarios activos con búsqueda y paginación en memoria.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @returns `Promise<PaginatedResult<DomainUser>>`
+   */
   async list(
     sessionKey: string,
     filter: ListUsersFilter,
-  ): Promise<PaginatedResult<DomainUser>> {
+  ): Promise<PaginatedResult<DomainUser>>  {
     const search = filter.search?.trim();
     const allUsers = await this.fetchAllActiveUsers(sessionKey);
     const filtered = search
@@ -197,7 +270,16 @@ export class UsersGlpiRepository {
     };
   }
 
-  async findEntityName(sessionKey: string, entityId: number): Promise<string | null> {
+  /**
+
+   * Resuelve nombre de entidad GLPI por ID.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param entityId - Parámetro `entityId`.
+   * @returns `Promise<string | null>`
+   */
+  async findEntityName(sessionKey: string, entityId: number): Promise<string | null>  {
     try {
       const response = await this.glpi.request<GlpiEntityRaw>({
         method: "GET",
@@ -213,7 +295,16 @@ export class UsersGlpiRepository {
     }
   }
 
-  async listGroupsOfUser(sessionKey: string, userId: number): Promise<number[]> {
+  /**
+
+   * IDs de grupos a los que pertenece el usuario.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param userId - Parámetro `userId`.
+   * @returns `Promise<number[]>`
+   */
+  async listGroupsOfUser(sessionKey: string, userId: number): Promise<number[]>  {
     const response = await this.glpi.request<Array<{ groups_id?: number }>>({
       method: "GET",
       path: GLPI_ENDPOINTS.GROUP_USER,
@@ -227,17 +318,35 @@ export class UsersGlpiRepository {
     return Array.from(new Set(ids));
   }
 
+  /**
+
+   * IDs de miembros de los grupos técnico indicados.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param technicianGroupIds - Parámetro `technicianGroupIds`.
+   * @returns `Promise<number[]>`
+   */
   async resolveTechnicianIds(
     sessionKey: string,
     technicianGroupIds: number[],
-  ): Promise<number[]> {
+  ): Promise<number[]>  {
     return this.fetchAllGroupMemberIds(sessionKey, technicianGroupIds);
   }
 
+  /**
+
+   * Pagina Group_User filtrando membresías del grupo pedido.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param groupIds - Parámetro `groupIds`.
+   * @returns `Promise<number[]>`
+   */
   private async fetchAllGroupMemberIds(
     sessionKey: string,
     groupIds: number[],
-  ): Promise<number[]> {
+  ): Promise<number[]>  {
     if (groupIds.length === 0) {
       return [];
     }
@@ -287,7 +396,15 @@ export class UsersGlpiRepository {
     return [...memberIds];
   }
 
-  private async listProfiles(sessionKey: string): Promise<GlpiProfileRaw[]> {
+  /**
+
+   * Lista perfiles GLPI disponibles (rango 0-499).
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @returns `Promise<GlpiProfileRaw[]>`
+   */
+  private async listProfiles(sessionKey: string): Promise<GlpiProfileRaw[]>  {
     const response = await this.glpi.request<GlpiProfileRaw[]>({
       method: "GET",
       path: GLPI_ENDPOINTS.PROFILE,
@@ -297,10 +414,19 @@ export class UsersGlpiRepository {
     return Array.isArray(response.data) ? response.data : [];
   }
 
+  /**
+
+   * IDs de usuarios asociados a perfiles dados.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param profileIds - Parámetro `profileIds`.
+   * @returns `Promise<number[]>`
+   */
   private async fetchAllProfileUserIds(
     sessionKey: string,
     profileIds: number[],
-  ): Promise<number[]> {
+  ): Promise<number[]>  {
     if (profileIds.length === 0) {
       return [];
     }
@@ -342,7 +468,15 @@ export class UsersGlpiRepository {
     return [...userIds];
   }
 
-  private async resolveOperationalProfileUserIds(sessionKey: string): Promise<number[]> {
+  /**
+
+   * Usuarios con perfiles operativos de TI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @returns `Promise<number[]>`
+   */
+  private async resolveOperationalProfileUserIds(sessionKey: string): Promise<number[]>  {
     const profiles = await this.listProfiles(sessionKey);
     const operationalProfileIds = profiles
       .filter((profile) => isOperationalItProfileName(profile.name))
@@ -350,11 +484,21 @@ export class UsersGlpiRepository {
     return this.fetchAllProfileUserIds(sessionKey, operationalProfileIds);
   }
 
+  /**
+
+   * Filtra técnicos elegibles desde usuarios ya cargados.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param technicianGroupIds - Parámetro `technicianGroupIds`.
+   * @param activeUsers - Parámetro `activeUsers`.
+   * @returns `Promise<DomainUser[]>`
+   */
   async resolveEligibleTechniciansFromUsers(
     sessionKey: string,
     technicianGroupIds: number[],
     activeUsers: DomainUser[],
-  ): Promise<DomainUser[]> {
+  ): Promise<DomainUser[]>  {
     const [groupMemberIds, operationalProfileUserIds] = await Promise.all([
       this.fetchAllGroupMemberIds(sessionKey, technicianGroupIds),
       this.resolveOperationalProfileUserIds(sessionKey),
@@ -390,24 +534,52 @@ export class UsersGlpiRepository {
     return sortUsersByName([...eligible.values()]);
   }
 
+  /**
+
+   * Carga usuarios activos y resuelve técnicos elegibles.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param technicianGroupIds - Parámetro `technicianGroupIds`.
+   * @returns `Promise<DomainUser[]>`
+   */
   private async resolveEligibleTechnicians(
     sessionKey: string,
     technicianGroupIds: number[],
-  ): Promise<DomainUser[]> {
+  ): Promise<DomainUser[]>  {
     const activeUsers = await this.fetchAllActiveUsers(sessionKey);
     return this.resolveEligibleTechniciansFromUsers(sessionKey, technicianGroupIds, activeUsers);
   }
 
+  /**
+
+   * Indica si un usuario es técnico elegible.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param userId - Parámetro `userId`.
+   * @param technicianGroupIds - Parámetro `technicianGroupIds`.
+   * @returns `Promise<boolean>`
+   */
   async isEligibleTechnician(
     sessionKey: string,
     userId: number,
     technicianGroupIds: number[],
-  ): Promise<boolean> {
+  ): Promise<boolean>  {
     const technicians = await this.resolveEligibleTechnicians(sessionKey, technicianGroupIds);
     return technicians.some((user) => user.id === userId);
   }
 
-  async fetchUsersByIds(sessionKey: string, userIds: number[]): Promise<DomainUser[]> {
+  /**
+
+   * Carga usuarios activos por lista de IDs.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param userIds - Parámetro `userIds`.
+   * @returns `Promise<DomainUser[]>`
+   */
+  async fetchUsersByIds(sessionKey: string, userIds: number[]): Promise<DomainUser[]>  {
     if (userIds.length === 0) {
       return [];
     }
@@ -416,11 +588,21 @@ export class UsersGlpiRepository {
     return users.filter((user): user is DomainUser => user !== null && user.isActive);
   }
 
+  /**
+
+   * Lista técnicos elegibles con paginación opcional.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición en métodos que propagan error.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param technicianGroupIds - Parámetro `technicianGroupIds`.
+   * @param filter - Parámetro `filter`.
+   * @returns `Promise<DomainUser[] | PaginatedResult<DomainUser>>`
+   */
   async listTechnicians(
     sessionKey: string,
     technicianGroupIds: number[],
     filter?: ListUsersFilter,
-  ): Promise<DomainUser[] | PaginatedResult<DomainUser>> {
+  ): Promise<DomainUser[] | PaginatedResult<DomainUser>>  {
     const users = await this.resolveEligibleTechnicians(sessionKey, technicianGroupIds);
 
     if (!filter) {

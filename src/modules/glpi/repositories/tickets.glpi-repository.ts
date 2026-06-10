@@ -1,4 +1,8 @@
-﻿import { Injectable } from "@nestjs/common";
+/**
+ * @file tickets.glpi-repository.ts
+ * @description Repositorio REST de tickets GLPI: listado, historial, métricas y ciclo de vida.
+ */
+import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { GlpiClient } from "../glpi.client";
 import {
@@ -32,7 +36,8 @@ export interface ListTicketsResult {
 }
 
 export interface ListTicketsOptions {
-  /** Solicitante/técnico vía Ticket_User. Desactivar en indicadores agregadas. */
+  /**
+ Solicitante/técnico vía Ticket_User. Desactivar en indicadores agregadas. */
   includeActors?: boolean;
 }
 
@@ -93,18 +98,32 @@ interface ScopedMetricsSearchFilter {
   status?: number[];
 }
 
+/**
+ * Repositorio REST de tickets GLPI contra la API.
+ */
 @Injectable()
 export class TicketsGlpiRepository {
+  /** Inyecta cliente GLPI y configuración. */
   constructor(
     private readonly glpi: GlpiClient,
     private readonly config: ConfigService<AppConfig, true>,
   ) {}
 
+  /**
+
+   * Lista tickets paginados combinando Ticket_User, búsqueda GLPI y filtros locales.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @param options - Parámetro `options`.
+   * @returns `Promise<ListTicketsResult>`
+   */
   async list(
     sessionKey: string,
     filter: ListTicketsFilter,
     options: ListTicketsOptions = {},
-  ): Promise<ListTicketsResult> {
+  ): Promise<ListTicketsResult>  {
     const includeActors = options.includeActors ?? true;
     let ticketIds: number[] | null = null;
 
@@ -213,11 +232,21 @@ export class TicketsGlpiRepository {
     };
   }
 
+  /**
+
+   * Listado vía search GLPI cuando no hay filtro por actor vía Ticket_User.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @param includeActors - Parámetro `includeActors`.
+   * @returns `Promise<ListTicketsResult>`
+   */
   private async listViaSearch(
     sessionKey: string,
     filter: ListTicketsFilter,
     includeActors: boolean,
-  ): Promise<ListTicketsResult> {
+  ): Promise<ListTicketsResult>  {
     const start = (filter.page - 1) * filter.limit;
     const end = start + filter.limit - 1;
 
@@ -259,8 +288,15 @@ export class TicketsGlpiRepository {
     return { items: resultItems, total };
   }
 
-  /** Búsqueda GLPI solo cuando no hay filtro por actor (técnico/solicitante vía Ticket_User). */
-  private static shouldUseSearchOnlyList(filter: ListTicketsFilter): boolean {
+  /**
+
+   * Indica si el listado puede resolverse solo con search GLPI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param filter - Parámetro `filter`.
+   * @returns `boolean`
+   */
+  private static shouldUseSearchOnlyList(filter: ListTicketsFilter): boolean  {
     if (filter.technicianId !== undefined || filter.requesterId !== undefined) {
       return false;
     }
@@ -274,7 +310,15 @@ export class TicketsGlpiRepository {
     );
   }
 
-  private static buildSearchCriteria(filter: ListTicketsFilter): Record<string, string | number> {
+  /**
+
+   * Arma criterios de búsqueda GLPI desde filtros de listado.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param filter - Parámetro `filter`.
+   * @returns `Record<string, string | number>`
+   */
+  private static buildSearchCriteria(filter: ListTicketsFilter): Record<string, string | number>  {
     const query: Record<string, string | number> = {};
     let idx = 0;
 
@@ -324,9 +368,17 @@ export class TicketsGlpiRepository {
     return query;
   }
 
+  /**
+
+   * Criterios de búsqueda para indicadores acotados (Mi Sede).
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param filter - Parámetro `filter`.
+   * @returns `Record<string, string | number>`
+   */
   private static buildScopedMetricsSearchCriteria(
     filter: ScopedMetricsSearchFilter,
-  ): Record<string, string | number> {
+  ): Record<string, string | number>  {
     const query: Record<string, string | number> = {};
     let idx = 0;
 
@@ -364,7 +416,14 @@ export class TicketsGlpiRepository {
     return query;
   }
 
-  private static buildScopedMetricsForcedisplayQuery(): Record<string, number> {
+  /**
+
+   * Columnas forcedisplay para búsquedas de indicadores.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @returns `Record<string, number>`
+   */
+  private static buildScopedMetricsForcedisplayQuery(): Record<string, number>  {
     const query: Record<string, number> = {};
     SCOPED_METRICS_FORCEDISPLAY.forEach((field, index) => {
       query[`forcedisplay[${index}]`] = field;
@@ -372,7 +431,14 @@ export class TicketsGlpiRepository {
     return query;
   }
 
-  private static buildHistoryForcedisplayQuery(): Record<string, number> {
+  /**
+
+   * Columnas forcedisplay para búsquedas de historial.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @returns `Record<string, number>`
+   */
+  private static buildHistoryForcedisplayQuery(): Record<string, number>  {
     const query: Record<string, number> = {};
     HISTORY_FORCEDISPLAY.forEach((field, index) => {
       query[`forcedisplay[${index}]`] = field;
@@ -380,14 +446,25 @@ export class TicketsGlpiRepository {
     return query;
   }
 
-  /** Búsqueda GLPI paginada exclusiva para Historial (no comparte list/metrics). */
+  /**
+
+   * Página de historial vía search GLPI aislada de list/metrics.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @param rangeStart - Parámetro `rangeStart`.
+   * @param rangeEnd - Parámetro `rangeEnd`.
+   * @param _fallbackTechnicianId - Parámetro `_fallbackTechnicianId`.
+   * @returns `Promise<`
+   */
   private async searchHistoryTicketsPage(
     sessionKey: string,
     filter: ListTicketsFilter,
     rangeStart: number,
     rangeEnd: number,
     _fallbackTechnicianId?: number,
-  ): Promise<{ items: DomainTicket[]; total: number }> {
+  ): Promise< { items: DomainTicket[]; total: number }> {
     const response = await this.glpi.request<unknown>({
       method: "GET",
       path: `${GLPI_ENDPOINTS.SEARCH}/${GLPI_ENDPOINTS.TICKET}`,
@@ -424,13 +501,20 @@ export class TicketsGlpiRepository {
   }
 
   /**
-   * Listado paginado del Historial vía una sola búsqueda GLPI por página.
+
+   * Historial paginado con una búsqueda GLPI por página.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @param options - Parámetro `options`.
+   * @returns `Promise<ListTicketsResult>`
    */
   async listHistoryPage(
     sessionKey: string,
     filter: ListTicketsFilter,
     options: ListTicketsOptions = {},
-  ): Promise<ListTicketsResult> {
+  ): Promise<ListTicketsResult>  {
     const includeActors = options.includeActors ?? true;
     const start = (filter.page - 1) * filter.limit;
     const end = start + filter.limit - 1;
@@ -450,14 +534,25 @@ export class TicketsGlpiRepository {
     return { items: resultItems, total };
   }
 
-  /** Búsqueda GLPI aislada para Mi Sede e Indicadores (no alimenta otros cards). */
+  /**
+
+   * Página de tickets para métricas de sede o técnico.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @param rangeStart - Parámetro `rangeStart`.
+   * @param rangeEnd - Parámetro `rangeEnd`.
+   * @param fallbackTechnicianId - Parámetro `fallbackTechnicianId`.
+   * @returns `Promise<`
+   */
   private async searchScopedMetricsTicketsPage(
     sessionKey: string,
     filter: ScopedMetricsSearchFilter,
     rangeStart: number,
     rangeEnd: number,
     fallbackTechnicianId?: number,
-  ): Promise<{ items: DomainTicket[]; total: number }> {
+  ): Promise< { items: DomainTicket[]; total: number }> {
     const response = await this.glpi.request<unknown>({
       method: "GET",
       path: `${GLPI_ENDPOINTS.SEARCH}/${GLPI_ENDPOINTS.TICKET}`,
@@ -483,12 +578,23 @@ export class TicketsGlpiRepository {
     return { items, total };
   }
 
+  /**
+
+   * Pagina resultados de métricas hasta un máximo configurado.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @param maxResults - Parámetro `maxResults`.
+   * @param fallbackTechnicianId - Parámetro `fallbackTechnicianId`.
+   * @returns `Promise<DomainTicket[]>`
+   */
   private async paginateScopedMetricsTickets(
     sessionKey: string,
     filter: ScopedMetricsSearchFilter,
     maxResults: number,
     fallbackTechnicianId?: number,
-  ): Promise<DomainTicket[]> {
+  ): Promise<DomainTicket[]>  {
     const cappedMax = Math.max(1, Math.min(maxResults, METRICS_ASSIGNED_MAX));
     const all: DomainTicket[] = [];
     let rangeStart = 0;
@@ -515,13 +621,25 @@ export class TicketsGlpiRepository {
     return all;
   }
 
+  /**
+
+   * Página search para agregados de indicadores por actor.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param filter - Parámetro `filter`.
+   * @param rangeStart - Parámetro `rangeStart`.
+   * @param rangeEnd - Parámetro `rangeEnd`.
+   * @param fallbackTechnicianId - Parámetro `fallbackTechnicianId`.
+   * @returns `Promise<`
+   */
   private async searchTicketsForMetricsPage(
     sessionKey: string,
     filter: Pick<ListTicketsFilter, "technicianId" | "requesterId" | "status">,
     rangeStart: number,
     rangeEnd: number,
     fallbackTechnicianId?: number,
-  ): Promise<{ items: DomainTicket[]; total: number }> {
+  ): Promise< { items: DomainTicket[]; total: number }> {
     const listFilter: ListTicketsFilter = {
       page: 1,
       limit: rangeEnd - rangeStart + 1,
@@ -554,10 +672,19 @@ export class TicketsGlpiRepository {
     return { items, total };
   }
 
+  /**
+
+   * Construye DomainTicket mínimo desde fila de search GLPI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param row - Parámetro `row`.
+   * @param fallbackTechnicianId - Parámetro `fallbackTechnicianId`.
+   * @returns `DomainTicket | null`
+   */
   private static domainTicketFromSearchRow(
     row: Record<string, unknown>,
     fallbackTechnicianId?: number,
-  ): DomainTicket | null {
+  ): DomainTicket | null  {
     const id = extractSearchRowId(row, GLPI_TICKET_SEARCH_FIELDS.ID);
     if (!id) return null;
 
@@ -600,13 +727,30 @@ export class TicketsGlpiRepository {
     };
   }
 
-  private static parseSearchOptionalId(value: unknown): number | null {
+  /**
+
+   * Parsea ID opcional desde celda de búsqueda GLPI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param value - Parámetro `value`.
+   * @returns `number | null`
+   */
+  private static parseSearchOptionalId(value: unknown): number | null  {
     if (value === null || value === undefined || value === "") return null;
     const id = Number(value);
     return Number.isFinite(id) && id > 0 ? id : null;
   }
 
-  async findById(sessionKey: string, id: number): Promise<DomainTicket | null> {
+  /**
+
+   * Obtiene ticket por ID con actores Ticket_User.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param id - Parámetro `id`.
+   * @returns `Promise<DomainTicket | null>`
+   */
+  async findById(sessionKey: string, id: number): Promise<DomainTicket | null>  {
     try {
       const response = await this.glpi.request<GlpiTicketRaw>({
         method: "GET",
@@ -626,10 +770,19 @@ export class TicketsGlpiRepository {
     }
   }
 
+  /**
+
+   * Lee solicitante y técnico desde Ticket_User.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @returns `Promise<`
+   */
   async fetchTicketUsers(
     sessionKey: string,
     ticketId: number,
-  ): Promise<{ requesterId: number | null; technicianId: number | null }> {
+  ): Promise< { requesterId: number | null; technicianId: number | null }> {
     try {
       const response = await this.glpi.request<
         Array<{ tickets_id?: number; users_id?: number; type?: number | string }>
@@ -648,7 +801,16 @@ export class TicketsGlpiRepository {
     }
   }
 
-  async create(sessionKey: string, input: CreateTicketInput): Promise<DomainTicket> {
+  /**
+
+   * Crea ticket vía POST y finaliza indexación de actores y sede.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param input - Parámetro `input`.
+   * @returns `Promise<DomainTicket>`
+   */
+  async create(sessionKey: string, input: CreateTicketInput): Promise<DomainTicket>  {
     const glpiInput: Record<string, unknown> = {
       name: input.name,
       content: input.content,
@@ -689,9 +851,12 @@ export class TicketsGlpiRepository {
   }
 
   /**
-   * Tras POST /Ticket, GLPI deja solicitante/técnico pero la ubicación suele quedar
-   * sin indexar hasta un PUT explícito (como al editar en la UI). Refuerza enlaces
-   * Ticket_User y aplica locations_id para que búsquedas e historial de Asistia vean el ticket.
+   * Tras POST /Ticket, refuerza vínculos Ticket_User y sede para indexación GLPI.
+   * @param sessionKey - Clave de sesión GLPI.
+   * @param ticketId - ID del ticket creado.
+   * @param input - Input original de creación.
+   * @returns void
+   * @throws {GlpiException} Si GLPI rechaza algún PUT/POST de refuerzo.
    */
   private async finalizeTicketAfterApiCreate(
     sessionKey: string,
@@ -725,7 +890,16 @@ export class TicketsGlpiRepository {
     await this.ensureTicketIndexedForActors(sessionKey, ticketId, input);
   }
 
-  async getRawContent(sessionKey: string, ticketId: number): Promise<string | null> {
+  /**
+
+   * Obtiene descripción HTML cruda del ticket.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @returns `Promise<string | null>`
+   */
+  async getRawContent(sessionKey: string, ticketId: number): Promise<string | null>  {
     const response = await this.glpi.request<GlpiTicketRaw>({
       method: "GET",
       path: `${GLPI_ENDPOINTS.TICKET}/${ticketId}`,
@@ -736,12 +910,23 @@ export class TicketsGlpiRepository {
     return String(content);
   }
 
+  /**
+
+   * Actualiza estado y opcionalmente contenido vía PUT.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param statusGlpi - Parámetro `statusGlpi`.
+   * @param content - Parámetro `content`.
+   * @returns `Promise<void>`
+   */
   async updateStatus(
     sessionKey: string,
     ticketId: number,
     statusGlpi: number,
     content?: string,
-  ): Promise<void> {
+  ): Promise<void>  {
     const input: Record<string, unknown> = { id: ticketId, status: statusGlpi };
     if (content !== undefined) {
       input.content = content;
@@ -754,7 +939,16 @@ export class TicketsGlpiRepository {
     });
   }
 
-  async listAssignedTicketIds(sessionKey: string, technicianId: number): Promise<number[]> {
+  /**
+
+   * IDs de tickets asignados al técnico.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param technicianId - Parámetro `technicianId`.
+   * @returns `Promise<number[]>`
+   */
+  async listAssignedTicketIds(sessionKey: string, technicianId: number): Promise<number[]>  {
     return this.listTicketIdsForUser(
       sessionKey,
       technicianId,
@@ -763,13 +957,22 @@ export class TicketsGlpiRepository {
   }
 
   /**
+
    * Tickets asignados al técnico para agregados de indicadores.
    * Usa search GLPI (una fila por ticket) en lugar de GET /Ticket/:id por ID.
+   
+
+   * Tickets asignados para agregados de indicadores TI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param technicianId - Parámetro `technicianId`.
+   * @returns `Promise<DomainTicket[]>`
    */
   async listAssignedTicketsForMetrics(
     sessionKey: string,
     technicianId: number,
-  ): Promise<DomainTicket[]> {
+  ): Promise<DomainTicket[]>  {
     const all: DomainTicket[] = [];
     let rangeStart = 0;
 
@@ -796,12 +999,18 @@ export class TicketsGlpiRepository {
   }
 
   /**
-   * Tickets solicitados por el usuario para agregados de indicadores.
+
+   * Tickets del solicitante para indicadores.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<DomainTicket[]>`
    */
   async listRequesterTicketsForMetrics(
     sessionKey: string,
     requesterId: number,
-  ): Promise<DomainTicket[]> {
+  ): Promise<DomainTicket[]>  {
     const all: DomainTicket[] = [];
     let rangeStart = 0;
 
@@ -827,15 +1036,26 @@ export class TicketsGlpiRepository {
   }
 
   /**
+
    * Tickets abiertos de una sede exacta (card Mi Sede).
    * Consulta aislada: no comparte path con listAssignedTicketsForMetrics.
+   
+
+   * Tickets abiertos de sede exacta (card Mi Sede).
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param locationId - Parámetro `locationId`.
+   * @param openStatusGlpi - Parámetro `openStatusGlpi`.
+   * @param limit - Parámetro `limit`.
+   * @returns `Promise<DomainTicket[]>`
    */
   async listOpenTicketsForLocationMetrics(
     sessionKey: string,
     locationId: number,
     openStatusGlpi: number[],
     limit: number,
-  ): Promise<DomainTicket[]> {
+  ): Promise<DomainTicket[]>  {
     const normalizedLocationId = normalizeLocationId(locationId);
     if (normalizedLocationId == null) return [];
 
@@ -854,14 +1074,24 @@ export class TicketsGlpiRepository {
   }
 
   /**
+
    * Tickets abiertos globales (Indicadores: total por sede, sin filtro por técnico).
    * Consulta aislada: no altera el pool de Mis Tickets / Incidentes / Solicitudes.
+   
+
+   * Tickets abiertos globales por sede (Indicadores).
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param openStatusGlpi - Parámetro `openStatusGlpi`.
+   * @param limit - Parámetro `limit`.
+   * @returns `Promise<DomainTicket[]>`
    */
   async listAllOpenTicketsForLocationMetrics(
     sessionKey: string,
     openStatusGlpi: number[],
     limit: number,
-  ): Promise<DomainTicket[]> {
+  ): Promise<DomainTicket[]>  {
     const pool = await this.paginateScopedMetricsTickets(
       sessionKey,
       { status: openStatusGlpi },
@@ -872,43 +1102,91 @@ export class TicketsGlpiRepository {
     );
   }
 
-  async fetchTicketsByIds(sessionKey: string, ticketIds: number[]): Promise<DomainTicket[]> {
+  /**
+
+   * Obtiene tickets por lista de IDs.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketIds - Parámetro `ticketIds`.
+   * @returns `Promise<DomainTicket[]>`
+   */
+  async fetchTicketsByIds(sessionKey: string, ticketIds: number[]): Promise<DomainTicket[]>  {
     return this.fetchTicketsByIdsInternal(sessionKey, ticketIds);
   }
 
+  /**
+
+   * Asigna técnico y opcionalmente limpia cuenta de servicio.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param technicianId - Parámetro `technicianId`.
+   * @returns `Promise<void>`
+   */
   async assignTechnician(
     sessionKey: string,
     ticketId: number,
     technicianId: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     await this.ensureTechnicianLink(sessionKey, ticketId, technicianId);
     await this.maybeStripServiceAccountActor(sessionKey, ticketId, technicianId);
   }
 
+  /**
+
+   * Actualiza sede del ticket vía PUT.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param locationId - Parámetro `locationId`.
+   * @returns `Promise<void>`
+   */
   async updateLocation(
     sessionKey: string,
     ticketId: number,
     locationId: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     await this.applyTicketLocation(sessionKey, ticketId, locationId);
   }
 
-  /** Vínculo Ticket_User tipo solicitante (indexable en búsquedas GLPI). */
+  /**
+
+   * Garantiza vínculo Ticket_User de solicitante.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<void>`
+   */
   private async ensureRequesterLink(
     sessionKey: string,
     ticketId: number,
     requesterId: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     const links = await this.fetchTicketUsers(sessionKey, ticketId);
     if (links.requesterId === requesterId) return;
     await this.postTicketUserRequester(sessionKey, ticketId, requesterId);
   }
 
+  /**
+
+   * POST Ticket_User tipo solicitante.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<void>`
+   */
   private async postTicketUserRequester(
     sessionKey: string,
     ticketId: number,
     requesterId: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     await this.glpi.request<unknown>({
       method: "POST",
       path: GLPI_ENDPOINTS.TICKET_USER,
@@ -923,12 +1201,21 @@ export class TicketsGlpiRepository {
     });
   }
 
-  /** PUT explícito: GLPI registra e indexa la sede como al editar ubicación en la UI. */
+  /**
+
+   * PUT explícito de locations_id para indexación GLPI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param locationId - Parámetro `locationId`.
+   * @returns `Promise<void>`
+   */
   private async applyTicketLocation(
     sessionKey: string,
     ticketId: number,
     locationId: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     await this.glpi.request<unknown>({
       method: "PUT",
       path: `${GLPI_ENDPOINTS.TICKET}/${ticketId}`,
@@ -939,22 +1226,41 @@ export class TicketsGlpiRepository {
     });
   }
 
-  /** Verifica el vínculo Ticket_User indexable; fallback solo si `_users_id_assign` no lo creó. */
+  /**
+
+   * Garantiza vínculo Ticket_User de técnico.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param technicianId - Parámetro `technicianId`.
+   * @returns `Promise<void>`
+   */
   private async ensureTechnicianLink(
     sessionKey: string,
     ticketId: number,
     technicianId: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     const links = await this.fetchTicketUsers(sessionKey, ticketId);
     if (links.technicianId === technicianId) return;
     await this.postTicketUserAssignment(sessionKey, ticketId, technicianId);
   }
 
+  /**
+
+   * POST Ticket_User tipo asignado.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param technicianId - Parámetro `technicianId`.
+   * @returns `Promise<void>`
+   */
   private async postTicketUserAssignment(
     sessionKey: string,
     ticketId: number,
     technicianId: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     await this.glpi.request<unknown>({
       method: "POST",
       path: GLPI_ENDPOINTS.TICKET_USER,
@@ -969,12 +1275,23 @@ export class TicketsGlpiRepository {
     });
   }
 
+  /**
+
+   * Elimina auto-asignación de cuenta API si está habilitado.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param expectedTechnicianId - Parámetro `expectedTechnicianId`.
+   * @param intendedStatusGlpi - Parámetro `intendedStatusGlpi`.
+   * @returns `Promise<void>`
+   */
   private async maybeStripServiceAccountActor(
     sessionKey: string,
     ticketId: number,
     expectedTechnicianId?: number,
     intendedStatusGlpi?: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     if (!this.config.get("glpi.stripServiceAssignment", { infer: true })) return;
     const serviceUserId = await this.getSessionUserId(sessionKey);
     if (serviceUserId && expectedTechnicianId === serviceUserId) return;
@@ -987,14 +1304,24 @@ export class TicketsGlpiRepository {
   }
 
   /**
+
    * Tras POST /Ticket, GET /User/:id/Ticket_User puede ir detrás del vínculo creado.
    * Reintenta y, si hace falta, PUT benigno de status (mismo efecto que guardar en la UI GLPI).
+   
+
+   * Reintenta indexación de actores tras creación.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param input - Parámetro `input`.
+   * @returns `Promise<void>`
    */
   private async ensureTicketIndexedForActors(
     sessionKey: string,
     ticketId: number,
     input: CreateTicketInput,
-  ): Promise<void> {
+  ): Promise<void>  {
     const actors: Array<{ userId: number; type: number }> = [];
     if (input.requesters_id !== undefined) {
       actors.push({ userId: input.requesters_id, type: GLPI_TICKET_USER_TYPE.REQUESTER });
@@ -1015,12 +1342,23 @@ export class TicketsGlpiRepository {
     }
   }
 
+  /**
+
+   * Comprueba visibilidad del ticket en search por actor.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param userId - Parámetro `userId`.
+   * @param actorType - Parámetro `actorType`.
+   * @returns `Promise<boolean>`
+   */
   private async isTicketVisibleInActorSearch(
     sessionKey: string,
     ticketId: number,
     userId: number,
     actorType: number,
-  ): Promise<boolean> {
+  ): Promise<boolean>  {
     const actorField = TicketsGlpiRepository.resolveTicketActorSearchField(actorType);
     if (actorField === null) return false;
 
@@ -1032,6 +1370,19 @@ export class TicketsGlpiRepository {
     }
   }
 
+  /**
+
+   * Reintenta hasta que el ticket sea visible para el actor.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param userId - Parámetro `userId`.
+   * @param actorType - Parámetro `actorType`.
+   * @param statusGlpi - Parámetro `statusGlpi`.
+   * @param locationId - Parámetro `locationId`.
+   * @returns `Promise<void>`
+   */
   private async ensureTicketVisibleForUser(
     sessionKey: string,
     ticketId: number,
@@ -1039,7 +1390,7 @@ export class TicketsGlpiRepository {
     actorType: number,
     statusGlpi: number,
     locationId?: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     for (let attempt = 0; attempt < POST_CREATE_INDEX_ATTEMPTS; attempt += 1) {
       const links = await this.fetchTicketUsers(sessionKey, ticketId);
       const linkOk =
@@ -1074,13 +1425,23 @@ export class TicketsGlpiRepository {
     await this.touchTicketForHistorialIndex(sessionKey, ticketId, statusGlpi, locationId);
   }
 
-  /** PUT combinado (status + sede) para alinear índices GLPI con guardar en la UI. */
+  /**
+
+   * PUT benigno de status/sede para alinear índices GLPI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param statusGlpi - Parámetro `statusGlpi`.
+   * @param locationId - Parámetro `locationId`.
+   * @returns `Promise<void>`
+   */
   private async touchTicketForHistorialIndex(
     sessionKey: string,
     ticketId: number,
     statusGlpi: number,
     locationId?: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     const input: Record<string, unknown> = { id: ticketId, status: statusGlpi };
     if (locationId !== undefined) {
       input.locations_id = locationId;
@@ -1094,20 +1455,39 @@ export class TicketsGlpiRepository {
     });
   }
 
-  private static delay(ms: number): Promise<void> {
+  /**
+
+   * Espera asíncrona entre reintentos de indexación.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param ms - Parámetro `ms`.
+   * @returns `Promise<void>`
+   */
+  private static delay(ms: number): Promise<void>  {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
+
    * Parche legacy cuando la cuenta API tiene perfil técnico y GLPI la auto-asigna.
    * Desactivado por defecto: usar cuenta asistIA sin perfil técnico ni grupo TI.
+   
+
+   * Parche legacy: quita actor de cuenta de servicio auto-asignada.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param expectedTechnicianId - Parámetro `expectedTechnicianId`.
+   * @param intendedStatusGlpi - Parámetro `intendedStatusGlpi`.
+   * @returns `Promise<void>`
    */
   private async stripServiceAccountActor(
     sessionKey: string,
     ticketId: number,
     expectedTechnicianId?: number,
     intendedStatusGlpi?: number,
-  ): Promise<void> {
+  ): Promise<void>  {
     const serviceUserId = await this.getSessionUserId(sessionKey);
     if (!serviceUserId) return;
 
@@ -1137,7 +1517,15 @@ export class TicketsGlpiRepository {
     }
   }
 
-  private async getSessionUserId(sessionKey: string): Promise<number | null> {
+  /**
+
+   * Resuelve ID de usuario de la sesión API actual.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @returns `Promise<number | null>`
+   */
+  private async getSessionUserId(sessionKey: string): Promise<number | null>  {
     const configured = this.config.get("glpi.serviceUserId", { infer: true });
     if (configured) return configured;
 
@@ -1154,10 +1542,19 @@ export class TicketsGlpiRepository {
     }
   }
 
+  /**
+
+   * Lista entradas crudas de Ticket_User de un ticket.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @returns `Promise<Array<`
+   */
   private async listTicketUserLinkEntries(
     sessionKey: string,
     ticketId: number,
-  ): Promise<Array<{ id: number; users_id: number; type: number }>> {
+  ): Promise<Array< { id: number; users_id: number; type: number }>> {
     try {
       const response = await this.glpi.request<
         Array<{ id?: number; users_id?: number; type?: number | string; tickets_id?: number }>
@@ -1180,11 +1577,20 @@ export class TicketsGlpiRepository {
     }
   }
 
+  /**
+
+   * IDs de tickets bajo una sede vía search GLPI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param locationId - Parámetro `locationId`.
+   * @returns `Promise<number[]>`
+   */
   private async searchTicketIdsByLocation(
     sessionKey: string,
     locationId: number,
     maxResults = LOCATION_SEARCH_MAX,
-  ): Promise<number[]> {
+  ): Promise<number[]>  {
     const cappedMax = Math.max(1, Math.min(maxResults, LOCATION_SEARCH_MAX));
     const response = await this.glpi.request<unknown>({
       method: "GET",
@@ -1210,11 +1616,21 @@ export class TicketsGlpiRepository {
     ];
   }
 
+  /**
+
+   * IDs de tickets vinculados a usuario por tipo de actor.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param userId - Parámetro `userId`.
+   * @param type - Parámetro `type`.
+   * @returns `Promise<number[]>`
+   */
   private async listTicketIdsForUser(
     sessionKey: string,
     userId: number,
     type: number,
-  ): Promise<number[]> {
+  ): Promise<number[]>  {
     let fromUserLinks: number[] = [];
     try {
       fromUserLinks = await this.listTicketIdsFromUserTicketUserLinks(sessionKey, userId, type);
@@ -1235,12 +1651,21 @@ export class TicketsGlpiRepository {
     return [...new Set([...fromUserLinks, ...fromSearch])];
   }
 
-  /** GLPI expone los vínculos usuario↔ticket en GET /User/:id/Ticket_User (más fiable que searchText). */
+  /**
+
+   * IDs desde GET /User/:id/Ticket_User.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param userId - Parámetro `userId`.
+   * @param actorType - Parámetro `actorType`.
+   * @returns `Promise<number[]>`
+   */
   private async listTicketIdsFromUserTicketUserLinks(
     sessionKey: string,
     userId: number,
     actorType: number,
-  ): Promise<number[]> {
+  ): Promise<number[]>  {
     const response = await this.glpi.request<
       Array<{ tickets_id?: number; type?: number | string }>
     >({
@@ -1261,11 +1686,21 @@ export class TicketsGlpiRepository {
     ];
   }
 
+  /**
+
+   * IDs desde search GLPI por campo de actor.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param field - Parámetro `field`.
+   * @param userId - Parámetro `userId`.
+   * @returns `Promise<number[]>`
+   */
   private async searchTicketIdsByActor(
     sessionKey: string,
     field: number,
     userId: number,
-  ): Promise<number[]> {
+  ): Promise<number[]>  {
     const response = await this.glpi.request<unknown>({
       method: "GET",
       path: `${GLPI_ENDPOINTS.SEARCH}/${GLPI_ENDPOINTS.TICKET}`,
@@ -1289,7 +1724,15 @@ export class TicketsGlpiRepository {
     ];
   }
 
-  private static resolveTicketActorSearchField(type: number): number | null {
+  /**
+
+   * Mapea tipo Ticket_User al campo de búsqueda GLPI.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param type - Parámetro `type`.
+   * @returns `number | null`
+   */
+  private static resolveTicketActorSearchField(type: number): number | null  {
     if (type === GLPI_TICKET_USER_TYPE.REQUESTER) {
       return GLPI_TICKET_SEARCH_FIELDS.REQUESTER;
     }
@@ -1299,10 +1742,19 @@ export class TicketsGlpiRepository {
     return null;
   }
 
+  /**
+
+   * Carga tickets por ID con concurrencia limitada.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketIds - Parámetro `ticketIds`.
+   * @returns `Promise<DomainTicket[]>`
+   */
   private async fetchTicketsByIdsInternal(
     sessionKey: string,
     ticketIds: number[],
-  ): Promise<DomainTicket[]> {
+  ): Promise<DomainTicket[]>  {
     if (ticketIds.length === 0) return [];
 
     const rawTickets = await TicketsGlpiRepository.runWithConcurrency(
@@ -1327,10 +1779,19 @@ export class TicketsGlpiRepository {
     );
   }
 
+  /**
+
+   * Enriquece tickets con solicitante y técnico en lote.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param tickets - Parámetro `tickets`.
+   * @returns `Promise<DomainTicket[]>`
+   */
   private async attachTicketActors(
     sessionKey: string,
     tickets: DomainTicket[],
-  ): Promise<DomainTicket[]> {
+  ): Promise<DomainTicket[]>  {
     if (tickets.length === 0) return [];
 
     const links = await this.fetchTicketUsersBatch(
@@ -1348,10 +1809,19 @@ export class TicketsGlpiRepository {
     });
   }
 
+  /**
+
+   * Obtiene actores de múltiples tickets en paralelo.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketIds - Parámetro `ticketIds`.
+   * @returns `Promise<Map<number,`
+   */
   private async fetchTicketUsersBatch(
     sessionKey: string,
     ticketIds: number[],
-  ): Promise<Map<number, { requesterId: number | null; technicianId: number | null }>> {
+  ): Promise<Map<number,  { requesterId: number | null; technicianId: number | null }>> {
     const result = new Map<number, { requesterId: number | null; technicianId: number | null }>();
 
     if (ticketIds.length === 0) return result;
@@ -1372,6 +1842,14 @@ export class TicketsGlpiRepository {
     return result;
   }
 
+  /**
+   * Ejecuta worker con pool de concurrencia fija.
+   * @param items - Elementos a procesar.
+   * @param limit - Máximo de tareas concurrentes.
+   * @param worker - Función async por elemento.
+   * @returns Resultados en el mismo orden que items.
+   * @throws Propaga errores del worker.
+   */
   private static async runWithConcurrency<T, R>(
     items: T[],
     limit: number,
@@ -1396,6 +1874,11 @@ export class TicketsGlpiRepository {
     return results;
   }
 
+  /**
+   * Parsea enlaces Ticket_User a IDs de actores.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   */
   private static parseTicketUserLinks(
     entries: Array<{ tickets_id?: number; users_id?: number; type?: number | string }>,
     ticketId: number,
@@ -1422,10 +1905,19 @@ export class TicketsGlpiRepository {
     return { requesterId, technicianId };
   }
 
+  /**
+
+   * Aplica filtros locales sobre tickets ya cargados.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param items - Parámetro `items`.
+   * @param filter - Parámetro `filter`.
+   * @returns `DomainTicket[]`
+   */
   private static applyListFilters(
     items: DomainTicket[],
     filter: ListTicketsFilter,
-  ): DomainTicket[] {
+  ): DomainTicket[]  {
     let filtered = items;
 
     if (filter.status && filter.status.length > 0) {
@@ -1476,11 +1968,27 @@ export class TicketsGlpiRepository {
     return TicketsGlpiRepository.withoutTrashed(filtered);
   }
 
-  private static withoutTrashed(items: DomainTicket[]): DomainTicket[] {
+  /**
+
+   * Excluye tickets marcados como eliminados.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param items - Parámetro `items`.
+   * @returns `DomainTicket[]`
+   */
+  private static withoutTrashed(items: DomainTicket[]): DomainTicket[]  {
     return items.filter(isActiveTicket);
   }
 
-  private static parseTotal(contentRange?: string): number | null {
+  /**
+
+   * Parsea total desde encabezado Content-Range.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param contentRange - Parámetro `contentRange`.
+   * @returns `number | null`
+   */
+  private static parseTotal(contentRange?: string): number | null  {
     if (!contentRange) return null;
     const match = contentRange.match(/\/(\d+)$/);
     if (!match) return null;
@@ -1488,16 +1996,33 @@ export class TicketsGlpiRepository {
     return Number.isFinite(value) ? value : null;
   }
 
+  /**
+
+   * Extrae ID de ticket creado desde body o Location.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param data - Parámetro `data`.
+   * @param locationHeader - Parámetro `locationHeader`.
+   * @returns `number | null`
+   */
   private static extractCreatedTicketId(
     data: unknown,
     locationHeader?: string,
-  ): number | null {
+  ): number | null  {
     const fromBody = TicketsGlpiRepository.extractIdFromCreateBody(data);
     if (fromBody) return fromBody;
     return TicketsGlpiRepository.extractTicketIdFromLocation(locationHeader);
   }
 
-  private static extractIdFromCreateBody(data: unknown): number | null {
+  /**
+
+   * Busca ID en cuerpo de respuesta de creación.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param data - Parámetro `data`.
+   * @returns `number | null`
+   */
+  private static extractIdFromCreateBody(data: unknown): number | null  {
     if (!data) return null;
 
     if (Array.isArray(data)) {
@@ -1515,7 +2040,15 @@ export class TicketsGlpiRepository {
     return null;
   }
 
-  private static readCreateId(entry: unknown): number | null {
+  /**
+
+   * Lee ID numérico de un objeto de respuesta POST.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param entry - Parámetro `entry`.
+   * @returns `number | null`
+   */
+  private static readCreateId(entry: unknown): number | null  {
     if (!entry || typeof entry !== "object") return null;
     const record = entry as Record<string, unknown>;
     const rawId = record.id ?? record.ID;
@@ -1524,7 +2057,15 @@ export class TicketsGlpiRepository {
     return Number.isFinite(id) && id > 0 ? id : null;
   }
 
-  private static extractTicketIdFromLocation(locationHeader?: string): number | null {
+  /**
+
+   * Extrae ID desde cabecera Location de POST.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param locationHeader - Parámetro `locationHeader`.
+   * @returns `number | null`
+   */
+  private static extractTicketIdFromLocation(locationHeader?: string): number | null  {
     if (!locationHeader) return null;
     const match = locationHeader.match(/\/Ticket\/(\d+)\/?(?:\?.*)?$/i);
     if (!match) return null;
@@ -1532,10 +2073,19 @@ export class TicketsGlpiRepository {
     return Number.isFinite(id) && id > 0 ? id : null;
   }
 
+  /**
+
+   * Construye DomainTicket sintético tras creación.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param input - Parámetro `input`.
+   * @returns `DomainTicket`
+   */
   private static buildTicketFromCreateInput(
     ticketId: number,
     input: CreateTicketInput,
-  ): DomainTicket {
+  ): DomainTicket  {
     const description = input.content?.trim();
     return {
       id: ticketId,

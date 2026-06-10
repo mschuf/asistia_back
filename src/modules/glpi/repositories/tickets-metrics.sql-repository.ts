@@ -1,3 +1,7 @@
+/**
+ * @file tickets-metrics.sql-repository.ts
+ * @description Agregados SQL de indicadores de tickets (técnico, solicitante y sede).
+ */
 import { Injectable } from "@nestjs/common";
 import type { QueryValues } from "mysql2";
 import type { RowDataPacket } from "mysql2/promise";
@@ -79,12 +83,23 @@ const BASE_TICKET_WITH_REQUESTER_SQL = `
 `;
 
 @Injectable()
+/**
+ * Repositorio SQL de métricas e indicadores de tickets.
+ */
 export class TicketsMetricsSqlRepository {
   constructor(private readonly mysql: MysqlService) {}
 
+  /**
+
+   * Calcula indicadores completos para un técnico y sede opcional.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param input - Parámetro `input`.
+   * @returns `Promise<TicketMetricsResponseDto>`
+   */
   async getMetricsForTechnician(
     input: MetricsForTechnicianInput,
-  ): Promise<TicketMetricsResponseDto> {
+  ): Promise<TicketMetricsResponseDto>  {
     const technicianId = input.technicianId;
     const [myTickets, myIncidents, myRequests, mySite, openByLocationRows] = await Promise.all([
       this.aggregateMyTickets(technicianId),
@@ -114,7 +129,15 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
-  private async aggregateMyTickets(technicianId: number): Promise<{
+  /**
+
+   * Agrega Mis Tickets del técnico (en curso y porcentajes del mes).
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param technicianId - Parámetro `technicianId`.
+   * @returns `Promise<`
+   */
+  private async aggregateMyTickets(technicianId: number): Promise< {
     inProgress: number;
     openPercent: number;
     openThisMonth: number;
@@ -131,10 +154,19 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
+  /**
+
+   * Agrega incidentes o solicitudes asignadas al técnico.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param technicianId - Parámetro `technicianId`.
+   * @param typeGlpi - Parámetro `typeGlpi`.
+   * @returns `Promise<`
+   */
   private async aggregateTypeSlice(
     technicianId: number,
     typeGlpi: number,
-  ): Promise<{
+  ): Promise< {
     open: number;
     openPercent: number;
     openThisMonth: number;
@@ -151,10 +183,19 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
+  /**
+
+   * Ejecuta SQL de agregación por técnico y tipo opcional.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param technicianId - Parámetro `technicianId`.
+   * @param typeGlpi - Parámetro `typeGlpi`.
+   * @returns `Promise<AssignedAggregateRow | undefined>`
+   */
   private async queryAssignedAggregate(
     technicianId: number,
     typeGlpi: number | null,
-  ): Promise<AssignedAggregateRow | undefined> {
+  ): Promise<AssignedAggregateRow | undefined>  {
     const typeClause = typeGlpi != null ? "AND type_glpi = :typeGlpi" : "";
     const params: Record<string, unknown> = { technicianId };
     if (typeGlpi != null) params.typeGlpi = typeGlpi;
@@ -186,9 +227,17 @@ export class TicketsMetricsSqlRepository {
     return rows[0];
   }
 
+  /**
+
+   * Agrega tickets abiertos de una sede (Mi Sede).
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param locationId - Parámetro `locationId`.
+   * @returns `Promise<`
+   */
   private async aggregateSiteSlice(
     locationId: number,
-  ): Promise<{
+  ): Promise< {
     open: number;
     openPercent: number;
     openThisMonth: number;
@@ -236,9 +285,17 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
+  /**
+
+   * Calcula indicadores para un solicitante y sede opcional.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param input - Parámetro `input`.
+   * @returns `Promise<TicketMetricsResponseDto>`
+   */
   async getMetricsForRequester(
     input: MetricsForRequesterInput,
-  ): Promise<TicketMetricsResponseDto> {
+  ): Promise<TicketMetricsResponseDto>  {
     const requesterId = input.requesterId;
     const [myTickets, myIncidents, myRequests, mySite, openByLocationRows] = await Promise.all([
       this.aggregateRequesterMyTickets(requesterId),
@@ -268,7 +325,15 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
-  private async aggregateRequesterMyTickets(requesterId: number): Promise<{
+  /**
+
+   * Agrega tickets del solicitante en curso y del mes.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<`
+   */
+  private async aggregateRequesterMyTickets(requesterId: number): Promise< {
     inProgress: number;
     openPercent: number;
     openThisMonth: number;
@@ -285,10 +350,19 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
+  /**
+
+   * Agrega incidentes o solicitudes del solicitante.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param requesterId - Parámetro `requesterId`.
+   * @param typeGlpi - Parámetro `typeGlpi`.
+   * @returns `Promise<`
+   */
   private async aggregateRequesterTypeSlice(
     requesterId: number,
     typeGlpi: number,
-  ): Promise<{
+  ): Promise< {
     open: number;
     openPercent: number;
     openThisMonth: number;
@@ -305,10 +379,19 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
+  /**
+
+   * SQL de agregación por solicitante y tipo opcional.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param requesterId - Parámetro `requesterId`.
+   * @param typeGlpi - Parámetro `typeGlpi`.
+   * @returns `Promise<AssignedAggregateRow | undefined>`
+   */
   private async queryRequesterAggregate(
     requesterId: number,
     typeGlpi: number | null,
-  ): Promise<AssignedAggregateRow | undefined> {
+  ): Promise<AssignedAggregateRow | undefined>  {
     const typeClause = typeGlpi != null ? "AND type_glpi = :typeGlpi" : "";
     const params: Record<string, unknown> = { requesterId };
     if (typeGlpi != null) params.typeGlpi = typeGlpi;
@@ -340,10 +423,19 @@ export class TicketsMetricsSqlRepository {
     return rows[0];
   }
 
+  /**
+
+   * Agrega tickets abiertos del solicitante en una sede.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param requesterId - Parámetro `requesterId`.
+   * @param locationId - Parámetro `locationId`.
+   * @returns `Promise<`
+   */
   private async aggregateRequesterSiteSlice(
     requesterId: number,
     locationId: number,
-  ): Promise<{
+  ): Promise< {
     open: number;
     openPercent: number;
     openThisMonth: number;
@@ -392,10 +484,15 @@ export class TicketsMetricsSqlRepository {
     };
   }
 
-  /** Tickets abiertos del solicitante agrupados por sede. */
+  /**
+ Tickets abiertos del solicitante agrupados por sede.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<GlobalOpenByLocationRow[]>`
+   * @throws No lanza excepciones salvo errores de infraestructura.
+   */
   private async listRequesterOpenByLocation(
     requesterId: number,
-  ): Promise<GlobalOpenByLocationRow[]> {
+  ): Promise<GlobalOpenByLocationRow[]>  {
     return this.mysql.query<GlobalOpenByLocationRow>(
       `SELECT
          th.location_id,
@@ -414,8 +511,14 @@ export class TicketsMetricsSqlRepository {
     );
   }
 
-  /** Total global de tickets abiertos por sede (Indicadores; sin filtro por técnico). */
-  private async listGlobalOpenByLocation(): Promise<GlobalOpenByLocationRow[]> {
+  /**
+
+   * Total global de tickets abiertos por sede.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @returns `Promise<GlobalOpenByLocationRow[]>`
+   */
+  private async listGlobalOpenByLocation(): Promise<GlobalOpenByLocationRow[]>  {
     return this.mysql.query<GlobalOpenByLocationRow>(
       `SELECT
          loc.id AS location_id,

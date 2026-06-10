@@ -1,4 +1,8 @@
-﻿import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+﻿/**
+ * @file auth.service.ts
+ * @description Orquesta autenticación LDAP, resolución de perfil GLPI y emisión de JWT de sesión.
+ */
+import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { GlpiBootstrapService } from "../glpi/glpi-bootstrap.service";
@@ -22,10 +26,14 @@ import type {
 } from "../../common/types/authenticated-user";
 import type { AppConfig } from "../../config/configuration";
 
+/**
+ * Servicio de autenticación que valida credenciales LDAP y enriquece el perfil desde GLPI.
+ */
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  /** Inyecta configuración, JWT, cifrado, LDAP y repositorios GLPI. */
   constructor(
     private readonly config: ConfigService<AppConfig, true>,
     private readonly jwt: JwtService,
@@ -37,6 +45,13 @@ export class AuthService {
     private readonly usersProfilesSqlRepo: UsersProfilesSqlRepository,
   ) {}
 
+  /**
+   * Descifra la contraseña RSA-OAEP y delega el login con credenciales en texto plano.
+   * @param username - Nombre de usuario LDAP (sAMAccountName).
+   * @param encryptedPassword - Contraseña cifrada en base64.
+   * @returns Token JWT, expiración y usuario de sesión.
+   * @throws {BusinessException} Si el descifrado falla o las credenciales LDAP son inválidas.
+   */
   async loginWithEncryptedCredentials(
     username: string,
     encryptedPassword: string,
@@ -62,6 +77,14 @@ export class AuthService {
     return this.loginWithCredentials(username, password);
   }
 
+  /**
+   * Valida credenciales contra LDAP y completa el flujo de login en GLPI.
+   * @param username - Nombre de usuario LDAP.
+   * @param password - Contraseña en texto plano.
+   * @returns Token JWT, expiración y usuario de sesión.
+   * @throws {BusinessException} Si LDAP no resuelve la identidad o las credenciales son inválidas.
+   * @throws Error reenviado si la resolución LDAP falla por error de infraestructura.
+   */
   async loginWithCredentials(username: string, password: string): Promise<{
     accessToken: string;
     expiresIn: string;
@@ -92,10 +115,22 @@ export class AuthService {
     return this.completeLogin(resolution);
   }
 
+  /**
+   * Revoca la sesión del usuario autenticado (sin estado en servidor por ahora).
+   * @param _user - Usuario autenticado cuya sesión se cierra.
+   * @returns Promesa resuelta sin valor.
+   * @throws No lanza excepciones explícitas.
+   */
   async logout(_user: AuthenticatedUser): Promise<void> {
     return;
   }
 
+  /**
+   * Resuelve el usuario GLPI, determina rol y firma el JWT de sesión.
+   * @param resolution - Identidad resuelta por el proveedor LDAP.
+   * @returns Token JWT, expiración y usuario de sesión completo.
+   * @throws {BusinessException} Si el usuario no existe en GLPI o GLPI niega permisos de lectura.
+   */
   private async completeLogin(resolution: IdentityResolution): Promise<{
     accessToken: string;
     expiresIn: string;
@@ -144,6 +179,12 @@ export class AuthService {
     return { accessToken, expiresIn, user };
   }
 
+  /**
+   * Enriquece el usuario autenticado con datos actualizados desde GLPI.
+   * @param user - Usuario autenticado extraído del JWT.
+   * @returns Perfil de sesión con grupos, entidad y flags de super-admin.
+   * @throws {BusinessException} Si el usuario no existe en GLPI.
+   */
   async resolveProfile(user: AuthenticatedUser): Promise<SessionUser> {
     const domainUser = await this.bootstrap.withCatalogBootstrapSession((key) =>
       this.usersRepo.findById(key, user.id),
@@ -176,6 +217,12 @@ export class AuthService {
     };
   }
 
+  /**
+   * Determina si el usuario tiene perfil Super-Admin en alguna entidad GLPI.
+   * @param userId - Identificador numérico del usuario en GLPI.
+   * @returns `true` si posee perfil super-admin; `false` si no o ante error SQL.
+   * @throws No lanza excepciones explícitas; devuelve `false` ante fallos de consulta.
+   */
   private async resolveIsSuperAdmin(userId: number): Promise<boolean> {
     try {
       const profiles = await this.usersProfilesSqlRepo.listUserEntityProfiles(userId);
@@ -192,6 +239,12 @@ export class AuthService {
     }
   }
 
+  /**
+   * Obtiene el nombre legible de la entidad GLPI del usuario.
+   * @param entityId - Identificador de entidad GLPI o `null`.
+   * @returns Nombre de la entidad o `null` si no aplica o falla la consulta.
+   * @throws No lanza excepciones explícitas; devuelve `null` ante errores GLPI.
+   */
   private async resolveEntityName(entityId: number | null): Promise<string | null> {
     if (entityId === null || entityId === undefined) {
       return null;
@@ -208,6 +261,13 @@ export class AuthService {
     }
   }
 
+  /**
+   * Busca un usuario GLPI por login usando la sesión bootstrap del catálogo.
+   * @param login - Login LDAP/GLPI del usuario.
+   * @returns Usuario de dominio GLPI o `null` si no existe.
+   * @throws {BusinessException} Si GLPI responde forbidden por permisos insuficientes.
+   * @throws Error reenviado para otros fallos GLPI o de red.
+   */
   private async resolveGlpiUser(login: string): Promise<DomainUser | null> {
     try {
       return await this.bootstrap.withCatalogBootstrapSession((key) =>
@@ -231,6 +291,12 @@ export class AuthService {
     }
   }
 
+  /**
+   * Lista los identificadores de grupos GLPI a los que pertenece el usuario.
+   * @param userId - Identificador numérico del usuario en GLPI.
+   * @returns Arreglo de IDs de grupo; vacío si la consulta falla.
+   * @throws No lanza excepciones explícitas; devuelve arreglo vacío ante errores.
+   */
   private async resolveGroupIds(userId: number): Promise<number[]> {
     try {
       return await this.bootstrap.withCatalogBootstrapSession((key) =>
@@ -244,6 +310,12 @@ export class AuthService {
     }
   }
 
+  /**
+   * Determina el rol de aplicación según la pertenencia a grupos TI en GLPI.
+   * @param groupIds - IDs de grupos GLPI del usuario.
+   * @returns `technician` si pertenece a un grupo TI; `final_user` en caso contrario.
+   * @throws No lanza excepciones explícitas; devuelve `final_user` ante errores de catálogo.
+   */
   private async determineRole(groupIds: number[]): Promise<UserRole> {
     if (groupIds.length === 0) {
       this.logger.debug(`[AUTH] role signals -> user has NO groups, defaulting to final_user`);
@@ -269,6 +341,12 @@ export class AuthService {
     }
   }
 
+  /**
+   * Firma un JWT con los claims mínimos del usuario autenticado.
+   * @param user - Usuario autenticado con id, rol y ubicación.
+   * @returns Token JWT firmado de forma asíncrona.
+   * @throws Error de `JwtService` si la firma falla.
+   */
   private async signToken(user: AuthenticatedUser): Promise<string> {
     const payload: JwtPayload = {
       sub: user.id,
@@ -279,4 +357,5 @@ export class AuthService {
   }
 }
 
+/** Tipo de salida del flujo de login con credenciales en texto plano. */
 export type LoginOutput = Awaited<ReturnType<AuthService["loginWithCredentials"]>>;

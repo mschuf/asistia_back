@@ -1,10 +1,17 @@
-﻿import { ApiPropertyOptional } from "@nestjs/swagger";
+﻿/**
+ * @file list-tickets-query.dto.ts
+ * @description Parámetros de consulta para listado e historial de tickets.
+ */
+import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
 import { TICKET_STATUS, type TicketStatus } from "../domain/ticket-status";
 import { TICKET_TYPE, type TicketType } from "../domain/ticket-type";
 
+/**
+ * Filtros y paginación para GET /tickets y GET /tickets/history.
+ */
 export class ListTicketsQueryDto extends PaginationDto {
   @ApiPropertyOptional({ minimum: 1, maximum: 15, default: 15, description: "Tickets per page (historial)" })
   @IsOptional()

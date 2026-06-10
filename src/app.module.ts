@@ -1,4 +1,8 @@
-﻿import { Module } from "@nestjs/common";
+﻿/**
+ * @file app.module.ts
+ * @description Módulo raíz: configuración global, logging, guards, interceptores y módulos de dominio.
+ */
+import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR, Reflector } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { EventEmitterModule } from "@nestjs/event-emitter";
@@ -113,4 +117,7 @@ import { PromptsModule } from "./modules/prompts/prompts.module";
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
   ],
 })
+/**
+ * Módulo raíz de la aplicación asistIA API.
+ */
 export class AppModule {}

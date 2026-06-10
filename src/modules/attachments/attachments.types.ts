@@ -1,5 +1,10 @@
+/**
+ * @file attachments.types.ts
+ * @description Tipos de dominio y filas SQL para adjuntos de tickets en Postgres.
+ */
 import type { QueryResultRow } from "pg";
 
+/** Fila de la tabla `ticket_attachment` tal como la devuelve Postgres. */
 export interface TicketAttachmentRow extends QueryResultRow {
   id: string;
   ticket_id: number;
@@ -11,6 +16,7 @@ export interface TicketAttachmentRow extends QueryResultRow {
   created_at: Date;
 }
 
+/** Datos necesarios para insertar un nuevo adjunto en base de datos. */
 export interface CreateTicketAttachmentInput {
   ticketId: number;
   storageKey: string;

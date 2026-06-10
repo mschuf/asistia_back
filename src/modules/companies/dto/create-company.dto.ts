@@ -1,3 +1,7 @@
+/**
+ * @file create-company.dto.ts
+ * @description DTO de validación para la creación de una empresa.
+ */
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
 import {
@@ -13,6 +17,7 @@ import {
   MinLength,
 } from "class-validator";
 
+/** Cuerpo HTTP para crear una empresa con integración Microsoft y daemon. */
 export class CreateCompanyDto {
   @ApiProperty({ example: "Pettengill" })
   @IsString()

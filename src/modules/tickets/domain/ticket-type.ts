@@ -1,4 +1,8 @@
-﻿export const TICKET_TYPE = {
+﻿/**
+ * @file ticket-type.ts
+ * @description Tipos de ticket (incidente/solicitud) y sus etiquetas para la API.
+ */
+export const TICKET_TYPE = {
   INCIDENT: "incident",
   REQUEST: "request",
 } as const;

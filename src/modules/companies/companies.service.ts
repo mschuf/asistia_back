@@ -1,3 +1,7 @@
+/**
+ * @file companies.service.ts
+ * @description Orquesta el CRUD de empresas contra Postgres y aplica reglas de negocio.
+ */
 import { HttpStatus, Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../common/dto/pagination.dto";
 import { BusinessException } from "../../common/exceptions/business.exception";
@@ -13,10 +17,19 @@ import { UpdateCompanyDto } from "./dto/update-company.dto";
 import { mapCompanyRowToResponse } from "./mappers/company.mapper";
 import { CompaniesSqlRepository } from "./repositories/companies.sql-repository";
 
+/**
+ * Servicio de gestión de empresas con persistencia en Postgres.
+ */
 @Injectable()
 export class CompaniesService {
+  /** Inyecta el repositorio SQL de empresas. */
   constructor(private readonly repo: CompaniesSqlRepository) {}
 
+  /**
+   * Lista empresas paginadas aplicando búsqueda y filtro de activas.
+   * @param query - Parámetros de paginación, búsqueda y `activeOnly`.
+   * @returns Resultado paginado con DTOs de respuesta.
+   */
   async list(query: ListCompaniesQueryDto): Promise<PaginatedResult<CompanyResponseDto>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? DEFAULT_COMPANIES_PAGE_LIMIT;
@@ -35,6 +48,12 @@ export class CompaniesService {
     };
   }
 
+  /**
+   * Obtiene una empresa por su identificador.
+   * @param id - ID numérico de la empresa.
+   * @returns DTO de la empresa encontrada.
+   * @throws {BusinessException} Si la empresa no existe.
+   */
   async findById(id: number): Promise<CompanyResponseDto> {
     const company = await this.repo.findById(id);
     if (!company) {
@@ -48,6 +67,11 @@ export class CompaniesService {
     return mapCompanyRowToResponse(company);
   }
 
+  /**
+   * Crea una empresa con valores por defecto para integración Microsoft y daemon.
+   * @param dto - Datos de creación validados por el DTO.
+   * @returns DTO de la empresa creada.
+   */
   async create(dto: CreateCompanyDto): Promise<CompanyResponseDto> {
     const input: CreateCompanyInput = {
       name: dto.name.trim(),
@@ -66,6 +90,13 @@ export class CompaniesService {
     return mapCompanyRowToResponse(created);
   }
 
+  /**
+   * Actualiza parcialmente una empresa existente.
+   * @param id - ID de la empresa a modificar.
+   * @param dto - Campos a actualizar; los omitidos no se modifican.
+   * @returns DTO de la empresa actualizada.
+   * @throws {BusinessException} Si la empresa no existe.
+   */
   async update(id: number, dto: UpdateCompanyDto): Promise<CompanyResponseDto> {
     await this.ensureExists(id);
 
@@ -97,6 +128,12 @@ export class CompaniesService {
     return mapCompanyRowToResponse(updated);
   }
 
+  /**
+   * Desactiva una empresa (borrado lógico).
+   * @param id - ID de la empresa.
+   * @returns DTO de la empresa desactivada.
+   * @throws {BusinessException} Si la empresa no existe.
+   */
   async deactivate(id: number): Promise<CompanyResponseDto> {
     await this.ensureExists(id);
     const updated = await this.repo.softDelete(id);
@@ -111,6 +148,12 @@ export class CompaniesService {
     return mapCompanyRowToResponse(updated);
   }
 
+  /**
+   * Reactiva una empresa previamente desactivada.
+   * @param id - ID de la empresa.
+   * @returns DTO de la empresa activada.
+   * @throws {BusinessException} Si la empresa no existe.
+   */
   async activate(id: number): Promise<CompanyResponseDto> {
     await this.ensureExists(id);
     const updated = await this.repo.activate(id);
@@ -125,6 +168,12 @@ export class CompaniesService {
     return mapCompanyRowToResponse(updated);
   }
 
+  /**
+   * Elimina permanentemente una empresa de la base de datos.
+   * @param id - ID de la empresa.
+   * @returns Confirmación con el ID eliminado.
+   * @throws {BusinessException} Si la empresa no existe.
+   */
   async deletePermanent(id: number): Promise<{ id: number; deleted: true }> {
     await this.ensureExists(id);
     const deletedId = await this.repo.hardDelete(id);
@@ -139,6 +188,11 @@ export class CompaniesService {
     return { id: deletedId, deleted: true };
   }
 
+  /**
+   * Verifica que una empresa exista antes de operaciones de escritura.
+   * @param id - ID de la empresa a validar.
+   * @throws {BusinessException} Si la empresa no existe.
+   */
   private async ensureExists(id: number): Promise<void> {
     const company = await this.repo.findById(id);
     if (!company) {

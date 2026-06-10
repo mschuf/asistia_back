@@ -1,4 +1,8 @@
-﻿import { HttpService } from "@nestjs/axios";
+﻿/**
+ * @file glpi.client.ts
+ * @description Cliente HTTP de bajo nivel para la API REST de GLPI con reintentos y sesiones.
+ */
+import { HttpService } from "@nestjs/axios";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AxiosError, AxiosRequestConfig, AxiosResponse } from "axios";
@@ -34,21 +38,37 @@ export interface GlpiResponse<T> {
   headers: Record<string, string>;
 }
 
+/**
+ * Cliente HTTP centralizado para comunicarse con GLPI.
+ */
 @Injectable()
 export class GlpiClient {
   private readonly logger = new Logger(GlpiClient.name);
   private readonly maxRetries = 2;
 
+  /** Inyecta HTTP, configuración y administrador de sesiones. */
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService<AppConfig, true>,
     private readonly sessions: GlpiSessionManager,
   ) {}
 
+  /**
+   * Ejecuta una petición autenticada contra GLPI con reintentos.
+   * @param opts - Opciones de método, ruta, cuerpo y sesión.
+   * @returns Respuesta tipada con datos, estado y cabeceras.
+   * @throws {GlpiException} Si GLPI responde con error tras agotar reintentos.
+   */
   async request<T>(opts: GlpiRequestOptions): Promise<GlpiResponse<T>> {
     return this.executeWithRetry<T>(opts, 0);
   }
 
+  /**
+   * Inicia sesión en GLPI con token de usuario o credenciales.
+   * @param auth - Credenciales (`userToken` o `login`/`password`).
+   * @returns Respuesta con `session_token`.
+   * @throws {GlpiException} Si la autenticación falla.
+   */
   async initSession(auth: GlpiInitSessionAuth): Promise<GlpiResponse<GlpiInitSessionResponse>> {
     const appToken = this.config.get("glpi.appToken", { infer: true });
     const query: Record<string, string> = {};
@@ -70,6 +90,11 @@ export class GlpiClient {
     });
   }
 
+  /**
+   * Resuelve credenciales de bootstrap general desde configuración.
+   * @returns Objeto de autenticación con token o login/password.
+   * @throws No lanza excepciones.
+   */
   resolveBootstrapAuth(): GlpiInitSessionAuth {
     const userToken = this.config.get("glpi.bootstrapUserToken", { infer: true });
     const login = this.config.get("glpi.bootstrapLogin", { infer: true });
@@ -81,9 +106,11 @@ export class GlpiClient {
   }
 
   /**
-   * Cat├ílogo y listados administrativos requieren un perfil con READ en
+   * Catálogo y listados administrativos requieren un perfil con READ en
    * ITILCategory, Location, Group y User. Prioriza credenciales de servicio
-   * expl├¡citas y login/password sobre el user_token personal de desarrollo.
+   * explícitas y login/password sobre el user_token personal de desarrollo.
+   * @returns Objeto de autenticación para operaciones de catálogo.
+   * @throws No lanza excepciones.
    */
   resolveCatalogBootstrapAuth(): GlpiInitSessionAuth {
     const catalogToken = this.config.get("glpi.catalogBootstrapUserToken", { infer: true });
@@ -100,6 +127,13 @@ export class GlpiClient {
     return {};
   }
 
+  /**
+   * Ejecuta la petición con backoff exponencial ante errores transitorios.
+   * @param opts - Opciones de la petición GLPI.
+   * @param attempt - Número de intento actual (0-based).
+   * @returns Respuesta tipada de GLPI.
+   * @throws {GlpiException} Si el error no es reintentable o se agotan intentos.
+   */
   private async executeWithRetry<T>(
     opts: GlpiRequestOptions,
     attempt: number,
@@ -139,6 +173,12 @@ export class GlpiClient {
     }
   }
 
+  /**
+   * Enmascara cabeceras sensibles para logs de depuración.
+   * @param headers - Cabeceras HTTP de la petición.
+   * @returns Copia con tokens truncados.
+   * @throws No lanza excepciones.
+   */
   private maskHeadersForLog(
     headers: Record<string, string> | undefined,
   ): Record<string, string> {
@@ -149,7 +189,7 @@ export class GlpiClient {
       if (lower === "authorization" || lower === "app-token") {
         out[k] =
           typeof v === "string" && v.length > 10
-            ? `${v.slice(0, 12)}ÔÇª${v.slice(-2)} (len=${v.length})`
+            ? `${v.slice(0, 12)}…${v.slice(-2)} (len=${v.length})`
             : "<short>";
       } else {
         out[k] = String(v);
@@ -158,6 +198,12 @@ export class GlpiClient {
     return out;
   }
 
+  /**
+   * Construye la configuración Axios a partir de opciones GLPI.
+   * @param opts - Opciones de petición.
+   * @returns Configuración lista para `HttpService.request`.
+   * @throws No lanza excepciones.
+   */
   private buildAxiosConfig(opts: GlpiRequestOptions): AxiosRequestConfig {
     const baseUrl = this.config.get("glpi.baseUrl", { infer: true });
     const appToken = this.config.get("glpi.appToken", { infer: true });
@@ -187,12 +233,25 @@ export class GlpiClient {
     };
   }
 
+  /**
+   * Concatena URL base y ruta relativa de GLPI.
+   * @param baseUrl - URL base configurada.
+   * @param path - Ruta del endpoint.
+   * @returns URL absoluta sin barras duplicadas.
+   * @throws No lanza excepciones.
+   */
   private buildUrl(baseUrl: string, path: string): string {
     const trimmedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     const trimmedPath = path.startsWith("/") ? path.slice(1) : path;
     return `${trimmedBase}/${trimmedPath}`;
   }
 
+  /**
+   * Valida el estado HTTP y normaliza cabeceras de respuesta.
+   * @param response - Respuesta Axios cruda.
+   * @returns Objeto `GlpiResponse` o lanza AxiosError si status >= 400.
+   * @throws {AxiosError} Si el estado HTTP indica error de cliente.
+   */
   private toGlpiResponse<T>(response: AxiosResponse<T>): GlpiResponse<T> {
     if (response.status >= 400) {
       const error = new AxiosError(
@@ -214,6 +273,13 @@ export class GlpiClient {
     return { data: response.data, status: response.status, headers };
   }
 
+  /**
+   * Determina si un error de red o 5xx merece reintento.
+   * @param error - Error capturado.
+   * @param attempt - Número de intento actual.
+   * @returns `true` si debe reintentarse.
+   * @throws No lanza excepciones.
+   */
   private shouldRetry(error: unknown, attempt: number): boolean {
     if (attempt >= this.maxRetries) return false;
     if (!(error instanceof AxiosError)) return false;
@@ -225,6 +291,12 @@ export class GlpiClient {
     return false;
   }
 
+  /**
+   * Espera asíncrona entre reintentos.
+   * @param ms - Milisegundos a esperar.
+   * @returns Promesa que resuelve tras el delay.
+   * @throws No lanza excepciones.
+   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
