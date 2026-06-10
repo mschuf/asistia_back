@@ -16,6 +16,7 @@ import type { GlpiTicketRaw } from "../glpi.types";
 import { extractSearchRowId, parseGlpiSearchRows, parseGlpiSearchTotal } from "../glpi-search.utils";
 import { normalizeLocationId } from "../../tickets/domain/ticket-metrics.helpers";
 import type { AppConfig } from "../../../config/configuration";
+import type { HistorySortBy, HistorySortOrder } from "../../tickets/dto/list-tickets-query.dto";
 
 export interface ListTicketsFilter {
   status?: number[];
@@ -28,6 +29,8 @@ export interface ListTicketsFilter {
   search?: string;
   page: number;
   limit: number;
+  sortBy?: HistorySortBy;
+  sortOrder?: HistorySortOrder;
 }
 
 export interface ListTicketsResult {

@@ -4,10 +4,29 @@
  */
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
 import { TICKET_STATUS, type TicketStatus } from "../domain/ticket-status";
 import { TICKET_TYPE, type TicketType } from "../domain/ticket-type";
+
+/** Columnas ordenables en GET /tickets/history. */
+export const HISTORY_SORT_BY = [
+  "id",
+  "createdAt",
+  "requester",
+  "location",
+  "type",
+  "subject",
+  "status",
+  "technician",
+] as const;
+
+export type HistorySortBy = (typeof HISTORY_SORT_BY)[number];
+
+/** Dirección de ordenación del historial. */
+export const HISTORY_SORT_ORDER = ["asc", "desc"] as const;
+
+export type HistorySortOrder = (typeof HISTORY_SORT_ORDER)[number];
 
 /**
  * Filtros y paginación para GET /tickets y GET /tickets/history.
@@ -66,4 +85,14 @@ export class ListTicketsQueryDto extends PaginationDto {
   @IsInt()
   @Min(1)
   locationId?: number;
+
+  @ApiPropertyOptional({ enum: HISTORY_SORT_BY, description: "Column to sort history by" })
+  @IsOptional()
+  @IsIn(HISTORY_SORT_BY)
+  sortBy?: HistorySortBy;
+
+  @ApiPropertyOptional({ enum: HISTORY_SORT_ORDER, description: "Sort direction (asc or desc)" })
+  @IsOptional()
+  @IsIn(HISTORY_SORT_ORDER)
+  sortOrder?: HistorySortOrder;
 }

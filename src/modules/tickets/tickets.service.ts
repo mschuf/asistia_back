@@ -605,6 +605,8 @@ export class TicketsService {
         ? user.id
         : query.technicianId ?? undefined,
       locationId: query.locationId ?? undefined,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
     };
 
     const historySource = this.config.get("glpi.historySource", { infer: true });

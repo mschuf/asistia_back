@@ -7,6 +7,7 @@ import type { QueryValues } from "mysql2";
 import type { RowDataPacket } from "mysql2/promise";
 import { htmlToPlainText } from "../../../common/utils/html-text.utils";
 import type { ListTicketsFilter } from "./tickets.glpi-repository";
+import type { HistorySortBy } from "../../tickets/dto/list-tickets-query.dto";
 import { MysqlService } from "../../mysql/mysql.service";
 import type { TicketResponseDto } from "../../tickets/dto/ticket.response.dto";
 import type { TicketStatus } from "../../tickets/domain/ticket-status";
@@ -101,6 +102,28 @@ const HISTORY_SELECT_COLUMNS = `
   updated_at
 `;
 
+const HISTORY_STATUS_SORT_ORDER = `
+  CASE status_glpi
+    WHEN 6 THEN 1
+    WHEN 2 THEN 2
+    WHEN 3 THEN 3
+    WHEN 4 THEN 4
+    WHEN 1 THEN 5
+    WHEN 5 THEN 6
+    ELSE 99
+  END`;
+
+const HISTORY_SORT_EXPRESSIONS: Record<HistorySortBy, string> = {
+  id: "ticket_id",
+  createdAt: "created_at",
+  requester: "requester_name",
+  location: "COALESCE(location_name, location_name_short, '')",
+  type: "type_glpi",
+  subject: "subject",
+  status: HISTORY_STATUS_SORT_ORDER,
+  technician: "COALESCE(technician_name, '')",
+};
+
 /**
  * Repositorio SQL del historial de tickets materializado en vista MySQL.
  */
@@ -117,12 +140,13 @@ export class TicketsHistorySqlRepository {
    */
   async listHistoryPageAsResponse(filter: ListTicketsFilter): Promise<HistoryPageResponse> {
     const { whereSql, params } = this.buildWhereClause(filter);
+    const orderSql = this.buildOrderClause(filter);
 
     const rows = await this.mysql.query<HistoryRow>(
       `SELECT ${HISTORY_SELECT_COLUMNS}
        FROM v_asistia_ticket_history
        WHERE ${whereSql}
-       ORDER BY updated_at DESC
+       ${orderSql}
        LIMIT :limit OFFSET :offset`,
       params as QueryValues,
     );
@@ -222,6 +246,33 @@ export class TicketsHistorySqlRepository {
     }
 
     return { whereSql: whereClauses.join(" AND "), params };
+  }
+
+  /**
+   * Construye cláusula ORDER BY con whitelist de columnas.
+   * @param filter - Filtros de historial incluyendo sort opcional.
+   * @returns Fragmento SQL `ORDER BY ...`.
+   * @throws No lanza excepciones.
+   */
+  private buildOrderClause(filter: ListTicketsFilter): string {
+    if (!filter.sortBy) {
+      return "ORDER BY updated_at DESC";
+    }
+
+    const expression = HISTORY_SORT_EXPRESSIONS[filter.sortBy];
+    if (!expression) {
+      return "ORDER BY updated_at DESC";
+    }
+
+    const direction = filter.sortOrder === "desc" ? "DESC" : "ASC";
+    const nullPrefix =
+      filter.sortBy === "location"
+        ? "(location_name IS NULL AND (location_name_short IS NULL OR location_name_short = '')), "
+        : filter.sortBy === "technician"
+          ? "(technician_name IS NULL OR technician_name = ''), "
+          : "";
+
+    return `ORDER BY ${nullPrefix}${expression} ${direction}, updated_at DESC`;
   }
 
   /**
