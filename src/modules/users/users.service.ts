@@ -227,8 +227,51 @@ export class UsersService {
    * @returns Usuario encontrado o `null` si no existe.
    */
   async findById(id: number): Promise<DomainUser | null> {
+    const fromCache = await this.findInCachedUsers(id);
+    if (fromCache) {
+      return fromCache;
+    }
+
+    const usersSource = this.config.get("glpi.usersSource", { infer: true });
+    if (usersSource === "sql") {
+      try {
+        const fromSql = await this.techniciansSqlRepo.findById(id);
+        if (fromSql) {
+          return fromSql;
+        }
+      } catch (error) {
+        this.logger.warn(
+          {
+            usersFindByIdSource: "api-fallback",
+            configured: usersSource,
+            userId: id,
+            err: error,
+          },
+          `[users/findById] source=api-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
     return this.bootstrap.withCatalogBootstrapSession((key) =>
       this.repo.findById(key, id),
+    );
+  }
+
+  /**
+   * Busca un usuario en las listas cacheadas de usuarios activos o técnicos.
+   * @param id - ID numérico del usuario.
+   * @returns Usuario encontrado o `null`.
+   */
+  private async findInCachedUsers(id: number): Promise<DomainUser | null> {
+    const [activeUsers, technicians] = await Promise.all([
+      this.getCachedActiveUsers(),
+      this.getCachedTechnicians(),
+    ]);
+
+    return (
+      activeUsers.find((user) => user.id === id) ??
+      technicians.find((user) => user.id === id) ??
+      null
     );
   }
 
@@ -278,7 +321,7 @@ export class UsersService {
    */
   async isEligibleTechnician(userId: number): Promise<boolean> {
     const technicians = await this.getCachedTechnicians();
-    return technicians.some((user) => user.id === userId);
+    return technicians.some((user) => user.id === userId && user.isActive);
   }
 
   /**

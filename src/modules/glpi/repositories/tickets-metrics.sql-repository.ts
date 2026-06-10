@@ -523,9 +523,9 @@ export class TicketsMetricsSqlRepository {
       `SELECT
          loc.id AS location_id,
          COALESCE(NULLIF(TRIM(loc.completename), ''), loc.name) AS name,
-         COALESCE(open_counts.open_count, 0) AS open_count
+         open_counts.open_count AS open_count
        FROM glpi_locations loc
-       LEFT JOIN (
+       INNER JOIN (
          SELECT
            t.locations_id AS location_id,
            COUNT(*) AS open_count

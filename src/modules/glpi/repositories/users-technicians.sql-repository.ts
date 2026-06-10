@@ -33,6 +33,39 @@ export class UsersTechniciansSqlRepository {
   constructor(private readonly mysql: MysqlService) {}
 
   /**
+   * Busca un usuario por ID en MySQL (activo o inactivo).
+   * @param id - ID de usuario GLPI.
+   * @returns Usuario de dominio o `null` si no existe.
+   * @throws Error de base de datos si la consulta falla.
+   */
+  async findById(id: number): Promise<DomainUser | null> {
+    const rows = await this.mysql.query<SqlUserRow>(
+      `SELECT
+          u.id,
+          u.name,
+          u.firstname,
+          u.realname,
+          ue.email AS default_email,
+          u.phone,
+          u.mobile,
+          u.locations_id,
+          u.groups_id,
+          u.entities_id,
+          u.is_active,
+          COALESCE(u.is_deleted, 0) AS is_deleted
+       FROM glpi_users u
+       LEFT JOIN glpi_useremails ue
+         ON ue.users_id = u.id AND ue.is_default = 1
+       WHERE u.id = :id
+       LIMIT 1`,
+      { id } as QueryValues,
+    );
+
+    const row = rows[0];
+    return row ? this.toDomainUser(row) : null;
+  }
+
+  /**
    * Lista todos los usuarios activos no eliminados.
    * @returns Usuarios de dominio ordenados por nombre.
    * @throws Error de base de datos si la consulta falla.

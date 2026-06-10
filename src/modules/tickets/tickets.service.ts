@@ -225,6 +225,123 @@ export class TicketsService {
   }
 
   /**
+   * Carga previa a asignación o cambio de sede; con `GLPI_ASSIGN_SOURCE=sql` prioriza MySQL.
+   * @param id - ID del ticket.
+   * @returns Ticket o `null` si no existe en SQL ni GLPI.
+   * @throws Ninguno.
+   */
+  private async findTicketForMutation(id: number): Promise<DomainTicket | null> {
+    const assignSource = this.config.get("glpi.assignSource", { infer: true });
+    if (assignSource === "sql") {
+      const fromSql = await this.tryFindTicketFromSql(id);
+      if (fromSql) {
+        return fromSql;
+      }
+      return this.asService((key) => this.ticketsRepo.findById(key, id));
+    }
+    return this.findTicketById(id);
+  }
+
+  /**
+   * Refleja en memoria la asignación de técnico sin reconsultar GLPI/MySQL.
+   * @param ticket - Ticket cargado antes de persistir.
+   * @param technicianId - Técnico asignado.
+   * @returns Copia del ticket con técnico y estado actualizados.
+   * @throws Ninguno.
+   */
+  private patchTicketAfterAssign(ticket: DomainTicket, technicianId: number): DomainTicket {
+    return {
+      ...ticket,
+      technicianId,
+      status: ticket.status === TICKET_STATUS.NEW ? TICKET_STATUS.ASSIGNED : ticket.status,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Refleja en memoria el cambio de sede sin reconsultar GLPI/MySQL.
+   * @param ticket - Ticket cargado antes de persistir.
+   * @param locationId - Nueva sede.
+   * @returns Copia del ticket con sede actualizada.
+   * @throws Ninguno.
+   */
+  private patchTicketAfterLocationUpdate(
+    ticket: DomainTicket,
+    locationId: number,
+  ): DomainTicket {
+    return {
+      ...ticket,
+      locationId,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Emite correos de asignación/reasignación sin bloquear la respuesta HTTP.
+   * @param input - Actores y metadatos del ticket.
+   * @returns void
+   * @throws Ninguno; los errores se registran en log.
+   */
+  private emitAssignNotificationEmails(input: {
+    user: AuthenticatedUser;
+    ticket: DomainTicket;
+    technicianId: number;
+    previousTechnicianId: number | null;
+  }): void {
+    void (async () => {
+      try {
+        const userIds = new Set<number>([input.technicianId, input.user.id]);
+        if (input.previousTechnicianId != null) {
+          userIds.add(input.previousTechnicianId);
+        }
+
+        const usersById = await this.loadUsersByIds(userIds);
+        const technicianUser = usersById.get(input.technicianId);
+        const assignedBy =
+          usersById.get(input.user.id)?.fullName ?? `Usuario ${input.user.id}`;
+
+        if (technicianUser?.email) {
+          const payload: TicketAssignedEvent = {
+            ticketId: input.ticket.id,
+            subject: input.ticket.subject,
+            technicianName: technicianUser.fullName,
+            assignedBy,
+            recipients: [{ name: technicianUser.fullName, email: technicianUser.email }],
+          };
+          this.events.emit(MAIL_EVENTS.TICKET_ASSIGNED, payload);
+        }
+
+        const isReassignment =
+          input.previousTechnicianId != null &&
+          input.previousTechnicianId !== input.technicianId &&
+          input.previousTechnicianId !== input.user.id;
+
+        if (isReassignment && technicianUser) {
+          const previousTechnician = usersById.get(input.previousTechnicianId!);
+          if (previousTechnician?.email) {
+            const payload: TicketReassignedEvent = {
+              ticketId: input.ticket.id,
+              subject: input.ticket.subject,
+              previousTechnicianName: previousTechnician.fullName,
+              newTechnicianName: technicianUser.fullName,
+              reassignedBy: assignedBy,
+              recipients: [
+                { name: previousTechnician.fullName, email: previousTechnician.email },
+              ],
+            };
+            this.events.emit(MAIL_EVENTS.TICKET_REASSIGNED, payload);
+          }
+        }
+      } catch (error) {
+        this.logger.warn(
+          { ticketId: input.ticket.id, err: error },
+          `[assign] mail notification failed message=${(error as Error).message}`,
+        );
+      }
+    })();
+  }
+
+  /**
    * Obtiene métricas según rol (técnico o solicitante) y fuente configurada.
    * @param user - Usuario autenticado.
    * @returns Métricas agregadas del dashboard.
@@ -973,7 +1090,7 @@ export class TicketsService {
     technicianId: number,
   ): Promise<TicketResponseDto> {
     await this.assertTechnicianExists(technicianId);
-    const ticket = await this.asService((key) => this.ticketsRepo.findById(key, ticketId));
+    const ticket = await this.findTicketForMutation(ticketId);
     if (!ticket) {
       throw new BusinessException({
         message: `Ticket ${ticketId} not found`,
@@ -987,46 +1104,14 @@ export class TicketsService {
     const assignSource = await this.applyAssignTechnician(ticketId, technicianId);
     this.logger.info({ assignSource, ticketId, technicianId }, "[assign] technician assigned");
 
-    const refreshed = await this.findTicketById(ticketId);
-    const enriched = await this.enrichTicket(refreshed ?? ticket);
+    const enriched = await this.enrichTicket(this.patchTicketAfterAssign(ticket, technicianId));
 
-    const technicianUser = await this.asService((key) =>
-      this.usersRepo.findById(key, technicianId),
-    );
-    const assignedBy = await this.resolveActorDisplayName(user.id);
-
-    if (technicianUser?.email) {
-      const payload: TicketAssignedEvent = {
-        ticketId,
-        subject: ticket.subject,
-        technicianName: technicianUser.fullName,
-        assignedBy,
-        recipients: [{ name: technicianUser.fullName, email: technicianUser.email }],
-      };
-      this.events.emit(MAIL_EVENTS.TICKET_ASSIGNED, payload);
-    }
-
-    const isReassignment =
-      previousTechnicianId != null &&
-      previousTechnicianId !== technicianId &&
-      previousTechnicianId !== user.id;
-
-    if (isReassignment && technicianUser) {
-      const previousTechnician = await this.asService((key) =>
-        this.usersRepo.findById(key, previousTechnicianId),
-      );
-      if (previousTechnician?.email) {
-        const payload: TicketReassignedEvent = {
-          ticketId,
-          subject: ticket.subject,
-          previousTechnicianName: previousTechnician.fullName,
-          newTechnicianName: technicianUser.fullName,
-          reassignedBy: assignedBy,
-          recipients: [{ name: previousTechnician.fullName, email: previousTechnician.email }],
-        };
-        this.events.emit(MAIL_EVENTS.TICKET_REASSIGNED, payload);
-      }
-    }
+    this.emitAssignNotificationEmails({
+      user,
+      ticket,
+      technicianId,
+      previousTechnicianId,
+    });
 
     return enriched;
   }
@@ -1044,7 +1129,10 @@ export class TicketsService {
     ticketId: number,
     locationId: number,
   ): Promise<TicketResponseDto> {
-    const ticket = await this.asService((key) => this.ticketsRepo.findById(key, ticketId));
+    const [ticket, locations] = await Promise.all([
+      this.findTicketForMutation(ticketId),
+      this.catalogService.listLocations(),
+    ]);
     if (!ticket) {
       throw new BusinessException({
         message: `Ticket ${ticketId} not found`,
@@ -1053,14 +1141,12 @@ export class TicketsService {
       });
     }
 
-    const locations = await this.catalogService.listLocations();
     this.assertLocationInList(locations, locationId);
 
     const locationSource = await this.applyUpdateLocation(ticketId, locationId);
     this.logger.info({ locationSource, ticketId, locationId }, "[location] ticket location updated");
 
-    const refreshed = await this.findTicketById(ticketId);
-    return this.enrichTicket(refreshed ?? ticket);
+    return this.enrichTicket(this.patchTicketAfterLocationUpdate(ticket, locationId));
   }
 
   /**

@@ -280,7 +280,7 @@ export interface OpenByLocationMetricRow {
 }
 
 /**
- * Total global de abiertos por sede; incluye todas las sedes del catálogo con 0 si aplica.
+ * Total global de abiertos por sede; solo incluye sedes con al menos un ticket abierto.
  * @param tickets - Tickets abiertos a agregar.
  * @param locationNameById - Mapa sede → nombre para el resultado.
  * @returns Filas ordenadas por abiertos descendente y nombre.
@@ -299,11 +299,11 @@ export function buildOpenByLocationMetrics(
     openByLocationMap.set(locationId, (openByLocationMap.get(locationId) ?? 0) + 1);
   }
 
-  return [...locationNameById.entries()]
-    .map(([locationId, name]) => ({
+  return [...openByLocationMap.entries()]
+    .map(([locationId, open]) => ({
       locationId,
-      name,
-      open: openByLocationMap.get(locationId) ?? 0,
+      name: locationNameById.get(locationId) ?? `Sede #${locationId}`,
+      open,
     }))
     .sort(
       (left, right) =>
