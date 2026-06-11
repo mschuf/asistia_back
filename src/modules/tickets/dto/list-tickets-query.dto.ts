@@ -32,12 +32,12 @@ export type HistorySortOrder = (typeof HISTORY_SORT_ORDER)[number];
  * Filtros y paginación para GET /tickets y GET /tickets/history.
  */
 export class ListTicketsQueryDto extends PaginationDto {
-  @ApiPropertyOptional({ minimum: 1, maximum: 1000, default: 15, description: "Tickets per page (historial)" })
+  @ApiPropertyOptional({ minimum: 1, maximum: 50_000, default: 15, description: "Tickets per page (historial)" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(1000)
+  @Max(50_000)
   declare limit?: number;
 
   @ApiPropertyOptional({ enum: Object.values(TICKET_STATUS) })

@@ -20,7 +20,7 @@ export class UpdateTicketStatusDto {
   @ApiPropertyOptional({
     example: "Se reinstaló Outlook y se verificó el acceso al buzón.",
     description:
-      "Texto de lo realizado (técnicos al marcar resuelto). Se concatena tras // en GLPI.",
+      "Nota al marcar resuelto (técnicos) o cerrar (técnicos y solicitantes). Se concatena tras // en GLPI.",
     minLength: RESOLUTION_NOTE_MIN_LENGTH,
   })
   @IsOptional()

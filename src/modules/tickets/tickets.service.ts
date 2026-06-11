@@ -73,7 +73,7 @@ const TICKETS_LIST_MAX_PAGE_SIZE = 15;
 
 /** Tamaño por defecto y máximo del historial paginado vía SQL. */
 const TICKETS_HISTORY_DEFAULT_PAGE_SIZE = 15;
-const TICKETS_HISTORY_MAX_PAGE_SIZE = 1000;
+const TICKETS_HISTORY_MAX_PAGE_SIZE = 50_000;
 
 /** Estados por defecto en Historial cuando no hay filtro explícito. */
 const DEFAULT_HISTORY_STATUSES: TicketStatus[] = [
@@ -935,6 +935,7 @@ export class TicketsService {
     }
 
     const technicianResolving = user.role === "technician" && status === TICKET_STATUS.SOLVED;
+    const closingTicket = status === TICKET_STATUS.CLOSED;
     if (technicianResolving) {
       const trimmedNote = resolutionNote?.trim() ?? "";
       if (trimmedNote.length < RESOLUTION_NOTE_MIN_LENGTH) {
@@ -946,9 +947,21 @@ export class TicketsService {
       }
     }
 
+    if (closingTicket) {
+      const trimmedNote = resolutionNote?.trim() ?? "";
+      if (trimmedNote.length < RESOLUTION_NOTE_MIN_LENGTH) {
+        throw new BusinessException({
+          message: `Al cerrar el ticket debe indicar una nota (mínimo ${RESOLUTION_NOTE_MIN_LENGTH} caracteres).`,
+          code: API_ERROR_CODE.VALIDATION,
+          status: HttpStatus.BAD_REQUEST,
+        });
+      }
+    }
+
     const previousStatus = ticket.status;
     const statusGlpi = TicketMapper.mapStatusToGlpi(status);
-    const resolutionNoteToAppend = technicianResolving ? resolutionNote!.trim() : null;
+    const resolutionNoteToAppend =
+      technicianResolving || closingTicket ? resolutionNote!.trim() : null;
 
     const statusUpdateSource = await this.applyStatusUpdate(id, statusGlpi, resolutionNoteToAppend);
 
