@@ -13,6 +13,7 @@ export interface TicketCreatedLogBaseFilters {
   createdTo?: string;
   categoryName?: string;
   companyId?: number;
+  locationId?: number;
   sortBy?: TicketCreatedLogSortBy;
   sortOrder?: TicketCreatedLogSortOrder;
 }
@@ -41,4 +42,6 @@ export interface TicketCreatedLogRow {
   category: string | null;
   mail_sent: string | null;
   http_status: string | null;
+  requester_location_id?: number | null;
+  requester_location?: string | null;
 }

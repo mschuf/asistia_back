@@ -1157,6 +1157,46 @@ export class TicketsGlpiRepository {
 
   /**
 
+   * Actualiza el solicitante del ticket vía PUT o POST en Ticket_User.
+   * @returns Resultado de la operación.
+   * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.
+   * @param sessionKey - Parámetro `sessionKey`.
+   * @param ticketId - Parámetro `ticketId`.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<void>`
+   */
+  async updateRequester(
+    sessionKey: string,
+    ticketId: number,
+    requesterId: number,
+  ): Promise<void>  {
+    const links = await this.listTicketUserLinkEntries(sessionKey, ticketId);
+    const requesterLinks = links
+      .filter((link) => link.type === GLPI_TICKET_USER_TYPE.REQUESTER)
+      .sort((left, right) => left.id - right.id);
+    const primary = requesterLinks[0];
+
+    if (primary) {
+      if (primary.users_id === requesterId) return;
+      await this.glpi.request<unknown>({
+        method: "PUT",
+        path: `${GLPI_ENDPOINTS.TICKET_USER}/${primary.id}`,
+        sessionKey,
+        body: {
+          input: {
+            id: primary.id,
+            users_id: requesterId,
+          },
+        },
+      });
+      return;
+    }
+
+    await this.postTicketUserRequester(sessionKey, ticketId, requesterId);
+  }
+
+  /**
+
    * Garantiza vínculo Ticket_User de solicitante.
    * @returns Resultado de la operación.
    * @throws {GlpiException} Si GLPI rechaza la petición; {Error} en creación sin ID.

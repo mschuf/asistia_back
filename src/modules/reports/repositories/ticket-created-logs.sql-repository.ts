@@ -42,6 +42,7 @@ const TICKET_CREATED_LOG_SORT_EXPRESSIONS: Record<TicketCreatedLogSortBy, string
   subject: "m.subject",
   fromAddress: "m.from_address",
   requesterEmail: "l.details -> 'request' ->> 'email'",
+  requesterLocation: "c.name",
   type: "l.details -> 'request' ->> 'type'",
   category: "l.details ->> 'category_name'",
   mailSent: "l.details ->> 'mail_sent'",

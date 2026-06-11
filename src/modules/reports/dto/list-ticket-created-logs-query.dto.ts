@@ -14,6 +14,7 @@ export const TICKET_CREATED_LOG_SORT_BY = [
   "subject",
   "fromAddress",
   "requesterEmail",
+  "requesterLocation",
   "type",
   "category",
   "mailSent",
@@ -71,6 +72,16 @@ export class ListTicketCreatedLogsQueryDto extends PaginationDto {
   @IsInt()
   @Min(1)
   companyId?: number;
+
+  @ApiPropertyOptional({
+    type: Number,
+    description: "Filter by requester GLPI location id (resolved after enrich)",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  locationId?: number;
 
   @ApiPropertyOptional({ enum: TICKET_CREATED_LOG_SORT_BY, description: "Column to sort by" })
   @IsOptional()

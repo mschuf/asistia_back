@@ -32,6 +32,7 @@ import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { UpdateTicketStatusDto } from "./dto/update-ticket-status.dto";
 import { AssignTechnicianDto } from "./dto/assign-technician.dto";
 import { UpdateTicketLocationDto } from "./dto/update-ticket-location.dto";
+import { UpdateTicketRequesterDto } from "./dto/update-ticket-requester.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
 import {
   CreateTicketResponseDto,
@@ -207,5 +208,26 @@ export class TicketsController {
     @Body() dto: UpdateTicketLocationDto,
   ): Promise<TicketResponseDto> {
     return this.ticketsService.updateLocation(user, id, dto.locationId);
+  }
+
+  /**
+   * Actualiza el solicitante del ticket (solo rol technician).
+   * @param user - Técnico autenticado.
+   * @param id - ID del ticket.
+   * @param dto - Nuevo solicitante.
+   * @returns Ticket enriquecido con el solicitante actualizado.
+   * @throws {BusinessException} Si el ticket o el usuario no son válidos.
+   */
+  @Patch(":id/requester")
+  @Roles("technician")
+  @ApiOperation({ summary: "Update the requester of a ticket" })
+  @ApiResponse({ status: 200, type: TicketResponseDto })
+  @ResponseMessage("Ticket requester updated")
+  async updateRequester(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: UpdateTicketRequesterDto,
+  ): Promise<TicketResponseDto> {
+    return this.ticketsService.updateRequester(user, id, dto.requesterId);
   }
 }

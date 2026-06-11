@@ -26,5 +26,6 @@ export function mapTicketCreatedLogRowToResponse(
     category: row.category?.trim() || null,
     mailSent: row.mail_sent?.trim() || null,
     httpStatus: row.http_status?.trim() || null,
+    requesterLocation: row.requester_location?.trim() || null,
   };
 }

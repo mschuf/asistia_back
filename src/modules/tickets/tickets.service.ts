@@ -91,6 +91,7 @@ type StatusUpdateSource = "mysql" | "glpi-api";
 type TicketCreateSource = "mysql" | "glpi-api";
 type TicketAssignSource = "mysql" | "glpi-api";
 type TicketLocationSource = "mysql" | "glpi-api";
+type TicketRequesterSource = "mysql" | "glpi-api";
 type TicketAutoAssignStrategy = "manual" | "site-last" | "global-last" | "fallback-asistia";
 
 interface ResolvedTicketAssignment {
@@ -276,6 +277,24 @@ export class TicketsService {
     return {
       ...ticket,
       locationId,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Refleja en memoria el cambio de solicitante sin reconsultar GLPI/MySQL.
+   * @param ticket - Ticket cargado antes de persistir.
+   * @param requesterId - Nuevo solicitante.
+   * @returns Copia del ticket con solicitante actualizado.
+   * @throws Ninguno.
+   */
+  private patchTicketAfterRequesterUpdate(
+    ticket: DomainTicket,
+    requesterId: number,
+  ): DomainTicket {
+    return {
+      ...ticket,
+      requesterId,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -1169,6 +1188,39 @@ export class TicketsService {
   }
 
   /**
+   * Actualiza el solicitante del ticket validando que el usuario exista en GLPI.
+   * @param user - Técnico autenticado.
+   * @param ticketId - ID del ticket.
+   * @param requesterId - Nuevo solicitante.
+   * @returns Ticket enriquecido con el solicitante actualizado.
+   * @throws {BusinessException} Si el ticket o el usuario no son válidos.
+   */
+  async updateRequester(
+    user: AuthenticatedUser,
+    ticketId: number,
+    requesterId: number,
+  ): Promise<TicketResponseDto> {
+    const ticket = await this.findTicketForMutation(ticketId);
+    if (!ticket) {
+      throw new BusinessException({
+        message: `Ticket ${ticketId} not found`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    await this.assertRequesterExists(requesterId);
+
+    const requesterSource = await this.applyUpdateRequester(ticketId, requesterId);
+    this.logger.info(
+      { requesterSource, ticketId, requesterId },
+      "[requester] ticket requester updated",
+    );
+
+    return this.enrichTicket(this.patchTicketAfterRequesterUpdate(ticket, requesterId));
+  }
+
+  /**
    * Persiste un ticket nuevo en SQL o GLPI según `GLPI_CREATE_SOURCE`.
    * @param input - Payload de creación en formato GLPI.
    * @returns Ticket creado y origen de escritura.
@@ -1271,6 +1323,41 @@ export class TicketsService {
     }
 
     await this.asService((key) => this.ticketsRepo.updateLocation(key, ticketId, locationId));
+    return "glpi-api";
+  }
+
+  /**
+   * Actualiza solicitante en SQL o GLPI reutilizando `GLPI_ASSIGN_SOURCE`.
+   * @param ticketId - ID del ticket.
+   * @param requesterId - Nuevo solicitante.
+   * @returns Origen efectivo (`mysql` o `glpi-api`).
+   * @throws Propaga errores de API GLPI si SQL no actualiza filas.
+   */
+  private async applyUpdateRequester(
+    ticketId: number,
+    requesterId: number,
+  ): Promise<TicketRequesterSource> {
+    const assignSource = this.config.get("glpi.assignSource", { infer: true });
+
+    if (assignSource === "sql") {
+      try {
+        const updated = await this.createSqlRepo.updateRequester(ticketId, requesterId);
+        if (updated) {
+          return "mysql";
+        }
+        this.logger.warn(
+          { requesterSource: "glpi-fallback", reason: "sql_no_rows", ticketId, requesterId },
+          "[requester] source=glpi-fallback reason=sql_no_rows",
+        );
+      } catch (error) {
+        this.logger.warn(
+          { requesterSource: "glpi-fallback", reason: "sql_error", ticketId, err: error },
+          `[requester] source=glpi-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
+    await this.asService((key) => this.ticketsRepo.updateRequester(key, ticketId, requesterId));
     return "glpi-api";
   }
 
@@ -1456,6 +1543,23 @@ export class TicketsService {
       throw new BusinessException({
         message: `Technician ${technicianId} is not valid`,
         code: API_ERROR_CODE.INVALID_TECHNICIAN,
+      });
+    }
+  }
+
+  /**
+   * Verifica que el ID corresponda a un usuario existente en GLPI.
+   * @param requesterId - ID del solicitante.
+   * @returns Nada si existe.
+   * @throws {BusinessException} Si el usuario no existe.
+   */
+  private async assertRequesterExists(requesterId: number): Promise<void> {
+    const target = await this.asService((key) => this.usersRepo.findById(key, requesterId));
+    if (!target) {
+      throw new BusinessException({
+        message: `Requester ${requesterId} not found`,
+        code: API_ERROR_CODE.AUTH_USER_NOT_FOUND,
+        status: HttpStatus.BAD_REQUEST,
       });
     }
   }

@@ -7,12 +7,12 @@ import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import type { ExportTicketCreatedLogsQueryDto } from "./dto/export-ticket-created-logs-query.dto";
 import { mapTicketCreatedLogRowToResponse } from "./mappers/ticket-created-log.mapper";
-import { TicketCreatedLogsSqlRepository } from "./repositories/ticket-created-logs.sql-repository";
 import type { TicketCreatedLogExportResult, TicketCreatedLogRow } from "./reports.types";
 
 const EXPORT_HEADERS = [
   "Fecha creación",
   "Empresa",
+  "Sede",
   "Asunto",
   "Remitente",
   "Solicitante",
@@ -28,15 +28,16 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const PDF_COLUMNS: Array<{ label: string; width: number }> = [
-  { label: "Fecha creación", width: 68 },
-  { label: "Empresa", width: 56 },
-  { label: "Asunto", width: 108 },
-  { label: "Remitente", width: 102 },
-  { label: "Solicitante", width: 102 },
-  { label: "Tipo", width: 46 },
-  { label: "Categoría", width: 128 },
-  { label: "Correo env.", width: 40 },
-  { label: "HTTP", width: 30 },
+  { label: "Fecha creación", width: 64 },
+  { label: "Empresa", width: 52 },
+  { label: "Sede", width: 72 },
+  { label: "Asunto", width: 96 },
+  { label: "Remitente", width: 92 },
+  { label: "Solicitante", width: 92 },
+  { label: "Tipo", width: 42 },
+  { label: "Categoría", width: 116 },
+  { label: "Correo env.", width: 38 },
+  { label: "HTTP", width: 28 },
 ];
 
 const PDF_TABLE_WIDTH = PDF_COLUMNS.reduce((sum, column) => sum + column.width, 0);
@@ -48,39 +49,29 @@ const PDF_ROW_GAP = 2;
 @Injectable()
 export class TicketCreatedLogsExportService {
   /**
-   * Inyecta el repositorio SQL de logs.
-   * @param repo - Repositorio Postgres del reporte.
-   */
-  constructor(private readonly repo: TicketCreatedLogsSqlRepository) {}
-
-  /**
-   * Genera archivo PDF o Excel según filtros de consulta.
-   * @param query - Filtros y formato de exportación.
+   * Genera archivo PDF o Excel desde filas ya enriquecidas.
+   * @param rows - Filas del reporte con sede resuelta.
+   * @param query - Formato de exportación.
    * @returns Buffer, nombre de archivo y MIME type.
    */
-  async export(query: ExportTicketCreatedLogsQueryDto): Promise<TicketCreatedLogExportResult> {
-    const { items, total } = await this.repo.findAllForExport({
-      createdFrom: query.createdFrom,
-      createdTo: query.createdTo,
-      categoryName: query.categoryName,
-      companyId: query.companyId,
-      sortBy: query.sortBy,
-      sortOrder: query.sortOrder,
-    });
-
-    const rows = items.map((row) => this.toExportRow(row));
+  async exportFromRows(
+    rows: TicketCreatedLogRow[],
+    query: ExportTicketCreatedLogsQueryDto,
+  ): Promise<TicketCreatedLogExportResult> {
+    const exportRows = rows.map((row) => this.toExportRow(row));
     const stamp = this.buildFilenameStamp();
+    const total = rows.length;
 
     if (query.format === "xlsx") {
       return {
-        buffer: await this.buildExcel(rows, total),
+        buffer: await this.buildExcel(exportRows, total),
         filename: `tickets-creados-${stamp}.xlsx`,
         mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       };
     }
 
     return {
-      buffer: await this.buildPdf(rows, total),
+      buffer: await this.buildPdf(exportRows, total),
       filename: `tickets-creados-${stamp}.pdf`,
       mimeType: "application/pdf",
     };
@@ -88,7 +79,7 @@ export class TicketCreatedLogsExportService {
 
   /**
    * Convierte fila SQL en arreglo de celdas para exportación.
-   * @param row - Fila cruda Postgres.
+   * @param row - Fila enriquecida del reporte.
    * @returns Valores ordenados para PDF/Excel.
    */
   private toExportRow(row: TicketCreatedLogRow): string[] {
@@ -96,6 +87,7 @@ export class TicketCreatedLogsExportService {
     return [
       this.formatDateTime(mapped.createdAt),
       mapped.company,
+      mapped.requesterLocation ?? "",
       mapped.subject ?? "",
       mapped.fromAddress ?? "",
       mapped.requesterEmail ?? "",
@@ -163,6 +155,7 @@ export class TicketCreatedLogsExportService {
     sheet.columns = [
       { width: 20 },
       { width: 22 },
+      { width: 28 },
       { width: 36 },
       { width: 28 },
       { width: 28 },

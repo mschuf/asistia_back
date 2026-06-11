@@ -12,6 +12,9 @@ export class TicketCreatedLogResponseDto {
   @ApiProperty({ example: "Pettengill" })
   company!: string;
 
+  @ApiProperty({ nullable: true, example: "Asunción > Sede Central" })
+  requesterLocation!: string | null;
+
   @ApiProperty({ nullable: true, example: "Problema con impresora" })
   subject!: string | null;
 
