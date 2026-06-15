@@ -23,6 +23,7 @@ export interface ListTicketsFilter {
   type?: number;
   requesterId?: number;
   technicianId?: number;
+  involvingUserId?: number;
   locationId?: number;
   createdFrom?: string;
   createdTo?: string;

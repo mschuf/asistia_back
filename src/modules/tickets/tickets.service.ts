@@ -613,17 +613,32 @@ export class TicketsService {
       );
     }
 
+    const useInvolvingMe =
+      user.role === "technician" &&
+      query.involvingMe &&
+      !query.technicianId &&
+      !query.requesterId;
+
     const filter = {
       page: query.page ?? 1,
       limit,
       status: statusFilter,
       type: query.type ? TicketMapper.mapTypeToGlpi(query.type) : undefined,
       search: query.search,
-      requesterId: user.role === "technician" ? undefined : user.id,
-      technicianId: query.assignedToMe
-        ? user.id
-        : query.technicianId ?? undefined,
+      involvingUserId: useInvolvingMe ? user.id : undefined,
+      requesterId: useInvolvingMe
+        ? undefined
+        : user.role === "technician"
+          ? query.requesterId ?? undefined
+          : user.id,
+      technicianId: useInvolvingMe
+        ? undefined
+        : query.assignedToMe
+          ? user.id
+          : query.technicianId ?? undefined,
       locationId: query.locationId ?? undefined,
+      createdFrom: query.createdFrom,
+      createdTo: query.createdTo,
       sortBy: query.sortBy,
       sortOrder: query.sortOrder,
     };

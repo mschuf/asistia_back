@@ -198,13 +198,20 @@ export class TicketsHistorySqlRepository {
       offset: (filter.page - 1) * filter.limit,
     };
 
-    if (filter.requesterId !== undefined) {
-      whereClauses.push("requester_id = :requesterId");
-      params.requesterId = filter.requesterId;
-    }
-    if (filter.technicianId !== undefined) {
-      whereClauses.push("technician_id = :technicianId");
-      params.technicianId = filter.technicianId;
+    if (filter.involvingUserId !== undefined) {
+      whereClauses.push(
+        "(technician_id = :involvingUserId OR requester_id = :involvingUserId)",
+      );
+      params.involvingUserId = filter.involvingUserId;
+    } else {
+      if (filter.requesterId !== undefined) {
+        whereClauses.push("requester_id = :requesterId");
+        params.requesterId = filter.requesterId;
+      }
+      if (filter.technicianId !== undefined) {
+        whereClauses.push("technician_id = :technicianId");
+        params.technicianId = filter.technicianId;
+      }
     }
     if (filter.type !== undefined) {
       whereClauses.push("type_glpi = :typeGlpi");

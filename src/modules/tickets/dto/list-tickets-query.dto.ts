@@ -4,7 +4,7 @@
  */
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform, Type } from "class-transformer";
-import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsBoolean, IsEnum, IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, Min } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
 import { TICKET_STATUS, type TicketStatus } from "../domain/ticket-status";
 import { TICKET_TYPE, type TicketType } from "../domain/ticket-type";
@@ -72,6 +72,15 @@ export class ListTicketsQueryDto extends PaginationDto {
   @IsBoolean()
   assignedToMe?: boolean;
 
+  @ApiPropertyOptional({
+    description: "When true (technicians only), tickets where the user is assignee OR requester.",
+    type: Boolean,
+  })
+  @IsOptional()
+  @Transform(({ value }) => ["true", "1", "yes", true].includes(value))
+  @IsBoolean()
+  involvingMe?: boolean;
+
   @ApiPropertyOptional({ type: Number, example: 47 })
   @IsOptional()
   @Type(() => Number)
@@ -79,12 +88,29 @@ export class ListTicketsQueryDto extends PaginationDto {
   @Min(1)
   technicianId?: number;
 
+  @ApiPropertyOptional({ type: Number, example: 42, description: "Filter by ticket requester" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  requesterId?: number;
+
   @ApiPropertyOptional({ type: Number, example: 12, description: "Filter by ticket location (sede)" })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   locationId?: number;
+
+  @ApiPropertyOptional({ description: "Filter tickets created on or after this ISO date" })
+  @IsOptional()
+  @IsISO8601()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ description: "Filter tickets created on or before this ISO date" })
+  @IsOptional()
+  @IsISO8601()
+  createdTo?: string;
 
   @ApiPropertyOptional({ enum: HISTORY_SORT_BY, description: "Column to sort history by" })
   @IsOptional()
