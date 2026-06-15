@@ -607,7 +607,7 @@ export class TicketsService {
     );
     const trimmedSearch = query.search?.trim();
     let statusFilter = TicketsService.resolveListStatusFilter(query);
-    if (!statusFilter && !trimmedSearch) {
+    if (!statusFilter && !trimmedSearch && !query.allStatuses) {
       statusFilter = DEFAULT_HISTORY_STATUSES.map((status) =>
         TicketMapper.mapStatusToGlpi(status),
       );

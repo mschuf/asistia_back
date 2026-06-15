@@ -121,4 +121,13 @@ export class ListTicketsQueryDto extends PaginationDto {
   @IsOptional()
   @IsIn(HISTORY_SORT_ORDER)
   sortOrder?: HistorySortOrder;
+
+  @ApiPropertyOptional({
+    description: "When true, do not apply default open-status filter on history.",
+    type: Boolean,
+  })
+  @IsOptional()
+  @Transform(({ value }) => ["true", "1", "yes", true].includes(value))
+  @IsBoolean()
+  allStatuses?: boolean;
 }
