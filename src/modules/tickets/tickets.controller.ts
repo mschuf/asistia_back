@@ -17,6 +17,7 @@ import {
 import type { Response } from "express";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
+import { TicketsAccessGuard } from "../../common/guards/tickets-access.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
@@ -47,7 +48,7 @@ import { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
  */
 @ApiTags("tickets")
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, TicketsAccessGuard, RolesGuard)
 @Controller("tickets")
 export class TicketsController {
   /** Inyecta el servicio de orquestación de tickets. */

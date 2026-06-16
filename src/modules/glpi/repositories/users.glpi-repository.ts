@@ -19,6 +19,7 @@ import type {
   GlpiProfileUserRaw,
   GlpiUserEmailRaw,
   GlpiUserRaw,
+  GlpiUserTitleRaw,
 } from "../glpi.types";
 import {
   isOperationalItProfileName,
@@ -62,7 +63,17 @@ export class UsersGlpiRepository {
         sessionKey,
         query: { expand_dropdowns: false },
       });
-      const user = UserMapper.toDomain(response.data);
+      const raw = response.data;
+      let user = UserMapper.toDomain(raw);
+      if (!user.userTitle) {
+        const titleId = UserMapper.toOptionalId(raw.usertitles_id);
+        if (titleId) {
+          const userTitle = await this.findUserTitleName(sessionKey, titleId);
+          if (userTitle) {
+            user = { ...user, userTitle };
+          }
+        }
+      }
       if (user.email) {
         return user;
       }
@@ -200,6 +211,7 @@ export class UsersGlpiRepository {
    * @returns `Promise<DomainUser[]>`
    */
   async fetchAllActiveUsers(sessionKey: string): Promise<DomainUser[]>  {
+    const titleById = await this.fetchUserTitleMap(sessionKey);
     const all: DomainUser[] = [];
     let start = 0;
     let total: number | null = null;
@@ -226,7 +238,9 @@ export class UsersGlpiRepository {
         if (!user.isActive) {
           continue;
         }
-        all.push(user);
+        const titleId = UserMapper.toOptionalId(raw.usertitles_id);
+        const userTitle = user.userTitle ?? (titleId ? titleById.get(titleId) ?? null : null);
+        all.push(userTitle ? { ...user, userTitle } : user);
       }
 
       const fetchedThrough = start + list.length;
@@ -268,6 +282,54 @@ export class UsersGlpiRepository {
       page: filter.page,
       limit: filter.limit,
     };
+  }
+
+  /**
+   * Resuelve nombre de título de usuario GLPI por ID.
+   * @param sessionKey - Token de sesión GLPI.
+   * @param userTitleId - ID del título de usuario.
+   * @returns Nombre del título o `null`.
+   */
+  async findUserTitleName(sessionKey: string, userTitleId: number): Promise<string | null> {
+    try {
+      const response = await this.glpi.request<GlpiUserTitleRaw>({
+        method: "GET",
+        path: `${GLPI_ENDPOINTS.USER_TITLE}/${userTitleId}`,
+        sessionKey,
+        query: { expand_dropdowns: false },
+      });
+      const candidate = (response.data?.name ?? "").toString().trim();
+      return candidate.length > 0 ? candidate : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Carga el catálogo de títulos de usuario GLPI indexado por ID.
+   * @param sessionKey - Token de sesión GLPI.
+   * @returns Mapa id → nombre de título.
+   */
+  private async fetchUserTitleMap(sessionKey: string): Promise<Map<number, string>> {
+    const titleById = new Map<number, string>();
+    try {
+      const response = await this.glpi.request<GlpiUserTitleRaw[]>({
+        method: "GET",
+        path: GLPI_ENDPOINTS.USER_TITLE,
+        sessionKey,
+        query: { range: "0-999" },
+      });
+      const items = Array.isArray(response.data) ? response.data : [];
+      for (const item of items) {
+        const name = (item.name ?? "").toString().trim();
+        if (name.length > 0) {
+          titleById.set(Number(item.id), name);
+        }
+      }
+    } catch {
+      return titleById;
+    }
+    return titleById;
   }
 
   /**

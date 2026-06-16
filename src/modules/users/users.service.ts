@@ -227,11 +227,6 @@ export class UsersService {
    * @returns Usuario encontrado o `null` si no existe.
    */
   async findById(id: number): Promise<DomainUser | null> {
-    const fromCache = await this.findInCachedUsers(id);
-    if (fromCache) {
-      return fromCache;
-    }
-
     const usersSource = this.config.get("glpi.usersSource", { infer: true });
     if (usersSource === "sql") {
       try {
@@ -252,9 +247,14 @@ export class UsersService {
       }
     }
 
-    return this.bootstrap.withCatalogBootstrapSession((key) =>
+    const fromApi = await this.bootstrap.withCatalogBootstrapSession((key) =>
       this.repo.findById(key, id),
     );
+    if (fromApi) {
+      return fromApi;
+    }
+
+    return this.findInCachedUsers(id);
   }
 
   /**

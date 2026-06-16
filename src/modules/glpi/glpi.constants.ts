@@ -18,6 +18,7 @@ export const GLPI_ENDPOINTS = {
   GET_FULL_SESSION: "getFullSession",
   USER: "User",
   USER_EMAIL: "UserEmail",
+  USER_TITLE: "UserTitle",
   GROUP: "Group",
   GROUP_USER: "Group_User",
   PROFILE: "Profile",

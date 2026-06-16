@@ -20,6 +20,7 @@ interface SqlUserRow extends RowDataPacket {
   locations_id: number | null;
   groups_id: number | null;
   entities_id: number | null;
+  user_title: string | null;
   is_active: number;
   is_deleted: number;
 }
@@ -51,11 +52,14 @@ export class UsersTechniciansSqlRepository {
           u.locations_id,
           u.groups_id,
           u.entities_id,
+          ut.name AS user_title,
           u.is_active,
           COALESCE(u.is_deleted, 0) AS is_deleted
        FROM glpi_users u
        LEFT JOIN glpi_useremails ue
          ON ue.users_id = u.id AND ue.is_default = 1
+       LEFT JOIN glpi_usertitles ut
+         ON ut.id = u.usertitles_id
        WHERE u.id = :id
        LIMIT 1`,
       { id } as QueryValues,
@@ -83,11 +87,14 @@ export class UsersTechniciansSqlRepository {
           u.locations_id,
           u.groups_id,
           u.entities_id,
+          ut.name AS user_title,
           u.is_active,
           COALESCE(u.is_deleted, 0) AS is_deleted
        FROM glpi_users u
        LEFT JOIN glpi_useremails ue
          ON ue.users_id = u.id AND ue.is_default = 1
+       LEFT JOIN glpi_usertitles ut
+         ON ut.id = u.usertitles_id
        WHERE u.is_active = 1
          AND COALESCE(u.is_deleted, 0) = 0`,
     );
@@ -162,11 +169,14 @@ export class UsersTechniciansSqlRepository {
           u.locations_id,
           u.groups_id,
           u.entities_id,
+          ut.name AS user_title,
           u.is_active,
           COALESCE(u.is_deleted, 0) AS is_deleted
        FROM glpi_users u
        LEFT JOIN glpi_useremails ue
          ON ue.users_id = u.id AND ue.is_default = 1
+       LEFT JOIN glpi_usertitles ut
+         ON ut.id = u.usertitles_id
        LEFT JOIN glpi_groups_users gu
          ON gu.users_id = u.id
        LEFT JOIN glpi_profiles_users pu
@@ -260,6 +270,7 @@ export class UsersTechniciansSqlRepository {
       locationId: this.toOptionalPositiveNumber(row.locations_id),
       primaryGroupId: this.toOptionalPositiveNumber(row.groups_id),
       entityId: this.toOptionalPositiveNumber(row.entities_id),
+      userTitle: this.toOptionalString(row.user_title),
       isActive: Number(row.is_active) === 1 && Number(row.is_deleted) !== 1,
     } satisfies DomainUser;
   }

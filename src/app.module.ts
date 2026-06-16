@@ -32,6 +32,8 @@ import { AiModule } from "./modules/ai/ai.module";
 import { CompaniesModule } from "./modules/companies/companies.module";
 import { PromptsModule } from "./modules/prompts/prompts.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { PersonasModule } from "./modules/personas/personas.module";
+import { VisitasModule } from "./modules/visitas/visitas.module";
 
 @Module({
   imports: [
@@ -109,6 +111,8 @@ import { ReportsModule } from "./modules/reports/reports.module";
     CompaniesModule,
     PromptsModule,
     ReportsModule,
+    PersonasModule,
+    VisitasModule,
   ],
   providers: [
     Reflector,

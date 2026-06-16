@@ -16,6 +16,7 @@ export interface DomainUser {
   locationId: number | null;
   primaryGroupId: number | null;
   entityId: number | null;
+  userTitle: string | null;
   isActive: boolean;
 }
 
@@ -61,8 +62,35 @@ export class UserMapper {
       locationId: UserMapper.toOptionalId(raw.locations_id),
       primaryGroupId: raw.groups_id ?? null,
       entityId: raw.entities_id ?? null,
+      userTitle: UserMapper.extractUserTitle(raw),
       isActive: raw.is_active !== 0 && raw.is_deleted !== 1,
     };
+  }
+
+  /**
+   * Extrae el título de usuario GLPI cuando la API lo devuelve expandido como texto.
+   * @param raw - Registro crudo del usuario.
+   * @returns Nombre del título o `null` si solo hay ID numérico.
+   */
+  private static extractUserTitle(raw: GlpiUserRaw): string | null {
+    const value = raw.usertitles_id;
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        return null;
+      }
+      const asNumber = Number(trimmed);
+      if (Number.isFinite(asNumber) && String(asNumber) === trimmed) {
+        return null;
+      }
+      return trimmed;
+    }
+
+    return null;
   }
 
   /**
@@ -72,7 +100,7 @@ export class UserMapper {
    * @returns ID positivo o `null`.
    * @throws No lanza excepciones.
    */
-  private static toOptionalId(value: unknown): number | null {
+  static toOptionalId(value: unknown): number | null {
     if (value === null || value === undefined || value === "") return null;
     const id = Number(value);
     return Number.isFinite(id) && id > 0 ? id : null;

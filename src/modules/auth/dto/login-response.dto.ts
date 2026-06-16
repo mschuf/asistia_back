@@ -37,6 +37,12 @@ export class AuthenticatedUserResponseDto {
     example: false,
   })
   isSuperAdmin!: boolean;
+
+  @ApiProperty({
+    description: "Indica si el usuario pertenece al grupo GLPI de portería",
+    example: false,
+  })
+  isPorteriaUser!: boolean;
 }
 
 /**

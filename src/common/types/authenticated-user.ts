@@ -26,6 +26,7 @@ export interface UserProfile {
   entityId: number | null;
   entityName: string | null;
   isSuperAdmin: boolean;
+  isPorteriaUser: boolean;
 }
 
 /**

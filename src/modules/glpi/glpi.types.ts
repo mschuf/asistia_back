@@ -28,6 +28,12 @@ export interface GlpiUserRaw {
   _useremails?: Array<{ email?: string } | string> | string[];
   default_email?: string | null;
   picture?: string | null;
+  usertitles_id?: number | string | null;
+}
+
+export interface GlpiUserTitleRaw {
+  id: number;
+  name?: string | null;
 }
 
 export interface GlpiEntityRaw {

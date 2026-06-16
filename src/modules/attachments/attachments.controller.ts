@@ -26,6 +26,7 @@ import {
 import type { Response } from "express";
 import { unlink } from "fs/promises";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
+import { TicketsAccessGuard } from "../../common/guards/tickets-access.guard";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ResponseMessage, SkipResponseEnvelope } from "../../common/interceptors/response-message.decorator";
 import { BusinessException } from "../../common/exceptions/business.exception";
@@ -39,7 +40,7 @@ import { TicketAttachmentResponseDto } from "./dto/attachment.response.dto";
  */
 @ApiTags("attachments")
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, TicketsAccessGuard)
 @Controller("tickets/:id/attachments")
 export class AttachmentsController {
   /**

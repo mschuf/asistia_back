@@ -26,6 +26,7 @@ function technician(
     locationId: partial.locationId,
     primaryGroupId: null,
     entityId: null,
+    userTitle: null,
     isActive: partial.isActive,
   };
 }
