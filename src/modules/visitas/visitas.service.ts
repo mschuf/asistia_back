@@ -22,6 +22,8 @@ import {
   zonasMatchTarjetaColor,
   type VisitaTarjetaColor,
 } from "./domain/visita-tarjeta-color";
+import { requiresTarjetaDisponibilidad } from "./domain/visita-tarjeta-disponibilidad";
+import type { VisitaEstado } from "./domain/visita-estado";
 import type { VisitaZona } from "./domain/visita-zona";
 import { mapVisitaRowToResponse } from "./mappers/visita.mapper";
 import { VisitasSqlRepository } from "./repositories/visitas.sql-repository";
@@ -53,6 +55,37 @@ export class VisitasService {
     return isVisitaTarjetaColor(currentColor) ? currentColor : null;
   }
 
+  private async assertCredencialNumeroDisponible(
+    credencialNumero: string,
+    excludeVisitaId?: number,
+  ): Promise<void> {
+    const normalized = credencialNumero.trim();
+    if (!normalized) return;
+
+    const conflict = await this.repo.findActiveByCredencialNumero(normalized, excludeVisitaId);
+    if (!conflict) return;
+
+    throw new BusinessException({
+      message: `La tarjeta Nº ${normalized} ya está en uso por ${conflict.visitante} (visita #${conflict.id}).`,
+      code: API_ERROR_CODE.CONFLICT,
+      status: HttpStatus.CONFLICT,
+    });
+  }
+
+  private async assertPersonaSinVisitaActiva(
+    personaId: number,
+    excludeVisitaId?: number,
+  ): Promise<void> {
+    const conflict = await this.repo.findActiveByPersonaId(personaId, excludeVisitaId);
+    if (!conflict) return;
+
+    throw new BusinessException({
+      message: `El visitante ${conflict.visitante} ya tiene una visita activa (visita #${conflict.id}).`,
+      code: API_ERROR_CODE.CONFLICT,
+      status: HttpStatus.CONFLICT,
+    });
+  }
+
   /**
    * Obtiene métricas agregadas de visitas para las cards de Portería.
    * @returns Contadores de visitas por mes, día y zonas activas.
@@ -63,8 +96,10 @@ export class VisitasService {
     return {
       monthVisits: Number(row.month_visits ?? 0),
       dayVisits: Number(row.day_visits ?? 0),
-      plantVisitors: Number(row.plant_visitors ?? 0),
-      adminVisitors: Number(row.admin_visitors ?? 0),
+      activeOnlyAdmin: Number(row.active_only_admin ?? 0),
+      activeOnlyFactory: Number(row.active_only_factory ?? 0),
+      activeBothZones: Number(row.active_both_zones ?? 0),
+      activeStaleWithoutCheckout: Number(row.active_stale_without_checkout ?? 0),
     };
   }
 
@@ -148,14 +183,25 @@ export class VisitasService {
       this.rejectInconsistentZonas(dto.tarjetaColor, dto.zonasPermitidas);
     }
 
+    const estado = dto.estado ?? "activa";
+    const credencialNumero = dto.credencialNumero?.trim() || null;
+
+    if (requiresTarjetaDisponibilidad(estado) && credencialNumero) {
+      await this.assertCredencialNumeroDisponible(credencialNumero);
+    }
+
+    if (requiresTarjetaDisponibilidad(estado)) {
+      await this.assertPersonaSinVisitaActiva(dto.personaId);
+    }
+
     const input: CreateVisitaInput = {
       personaId: dto.personaId,
       motivo: dto.motivo.trim(),
       responsableNombre: dto.responsableNombre.trim(),
-      estado: dto.estado ?? "activa",
-      estadoSeguimiento: dto.estadoSeguimiento ?? (dto.estado === "activa" ? "activo" : null),
+      estado,
+      estadoSeguimiento: dto.estadoSeguimiento ?? (estado === "activa" ? "activo" : null),
       zonasPermitidas,
-      credencialNumero: dto.credencialNumero?.trim() || null,
+      credencialNumero,
       tarjetaColor: dto.tarjetaColor,
       entradaAt: dto.entradaAt ? new Date(dto.entradaAt) : new Date(),
       salidaAt: dto.salidaAt ? new Date(dto.salidaAt) : null,
@@ -202,6 +248,20 @@ export class VisitasService {
 
     const input: UpdateVisitaInput = {};
     const nextTarjetaColor = this.resolveCurrentTarjetaColor(current.tarjeta_color, dto.tarjetaColor);
+    const nextEstado = (dto.estado ?? current.estado) as VisitaEstado;
+    const nextPersonaId = dto.personaId ?? Number(current.persona_id);
+    const nextCredencialNumero =
+      dto.credencialNumero !== undefined
+        ? dto.credencialNumero?.trim() || null
+        : current.credencial_numero?.trim() || null;
+
+    if (requiresTarjetaDisponibilidad(nextEstado) && nextCredencialNumero) {
+      await this.assertCredencialNumeroDisponible(nextCredencialNumero, id);
+    }
+
+    if (requiresTarjetaDisponibilidad(nextEstado)) {
+      await this.assertPersonaSinVisitaActiva(nextPersonaId, id);
+    }
 
     if (dto.personaId !== undefined) input.personaId = dto.personaId;
     if (dto.motivo !== undefined) input.motivo = dto.motivo.trim();

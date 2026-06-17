@@ -27,6 +27,8 @@ import type {
 } from "./dto/visit-candidate.response.dto";
 import type { GlpiPersonaPreviewResponseDto } from "./dto/glpi-persona-preview.response.dto";
 import { mapPersonaRowToResponse } from "./mappers/persona.mapper";
+import { processPersonaPhoto } from "./persona-photo.processor";
+import { validatePersonaPhotoUpload } from "./persona-photo-validation";
 import { PersonasSqlRepository } from "./repositories/personas.sql-repository";
 
 /** Servicio de gestión de personas con persistencia en Postgres. */
@@ -315,6 +317,87 @@ export class PersonasService {
     }
 
     return { id: deletedId, deleted: true };
+  }
+
+  /**
+   * Procesa y guarda la foto de una persona existente.
+   * @param id - ID de la persona.
+   * @param file - Archivo recibido por Multer en memoria.
+   * @returns DTO de la persona actualizada.
+   */
+  async setPhoto(
+    id: number,
+    file: Pick<Express.Multer.File, "buffer" | "mimetype" | "originalname" | "size">,
+  ): Promise<PersonaResponseDto> {
+    await this.ensureExists(id);
+
+    validatePersonaPhotoUpload({
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+    });
+
+    if (!file.buffer?.length) {
+      throw new BusinessException({
+        message: "No file received under field 'file'",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    const processed = await processPersonaPhoto(file.buffer);
+    const updated = await this.repo.updatePhoto(id, processed.buffer, processed.mimeType);
+    if (!updated) {
+      throw new BusinessException({
+        message: `Persona ${id} not found`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    return mapPersonaRowToResponse(updated);
+  }
+
+  /**
+   * Elimina la foto almacenada de una persona.
+   * @param id - ID de la persona.
+   * @returns DTO de la persona actualizada.
+   */
+  async removePhoto(id: number): Promise<PersonaResponseDto> {
+    await this.ensureExists(id);
+    const updated = await this.repo.clearPhoto(id);
+    if (!updated) {
+      throw new BusinessException({
+        message: `Persona ${id} not found`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    return mapPersonaRowToResponse(updated);
+  }
+
+  /**
+   * Resuelve la foto almacenada para descarga binaria.
+   * @param id - ID de la persona.
+   * @returns Buffer, MIME type y tamaño en bytes.
+   */
+  async getPhoto(id: number): Promise<{ buffer: Buffer; mimeType: string; size: number }> {
+    await this.ensureExists(id);
+    const photo = await this.repo.findPhotoById(id);
+    if (!photo) {
+      throw new BusinessException({
+        message: `Persona ${id} does not have a photo`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    return {
+      buffer: photo.foto,
+      mimeType: photo.foto_mime_type || "image/jpeg",
+      size: photo.foto.length,
+    };
   }
 
   /**

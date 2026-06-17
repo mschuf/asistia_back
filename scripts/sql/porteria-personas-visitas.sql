@@ -7,16 +7,12 @@ CREATE TABLE IF NOT EXISTS public.persona (
   nombre          TEXT NOT NULL,
   documento       TEXT NOT NULL,
   empresa         TEXT,
-  tipo            TEXT NOT NULL,
   email           TEXT,
   telefono        TEXT,
   glpi_user_id    BIGINT UNIQUE,
   activo          BOOLEAN NOT NULL DEFAULT true,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT persona_tipo_check CHECK (
-    tipo IN ('cliente', 'proveedor', 'contratista', 'tecnico', 'empleado')
-  )
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_persona_nombre
@@ -24,9 +20,6 @@ CREATE INDEX IF NOT EXISTS idx_persona_nombre
 
 CREATE INDEX IF NOT EXISTS idx_persona_empresa
   ON public.persona (empresa);
-
-CREATE INDEX IF NOT EXISTS idx_persona_tipo
-  ON public.persona (tipo);
 
 CREATE INDEX IF NOT EXISTS idx_persona_activo
   ON public.persona (activo);

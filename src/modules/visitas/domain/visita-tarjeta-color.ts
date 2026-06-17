@@ -8,6 +8,13 @@ export const VISITA_TARJETA_COLOR = ["rojo", "amarillo", "verde"] as const;
 
 export type VisitaTarjetaColor = (typeof VISITA_TARJETA_COLOR)[number];
 
+/** Etiquetas legibles para mensajes de error y logs. */
+export const VISITA_TARJETA_COLOR_LABELS: Record<VisitaTarjetaColor, string> = {
+  rojo: "Roja",
+  amarillo: "Amarilla",
+  verde: "Verde",
+};
+
 /** Indica si un valor es un color de tarjeta válido. */
 export function isVisitaTarjetaColor(value: unknown): value is VisitaTarjetaColor {
   return typeof value === "string" && (VISITA_TARJETA_COLOR as readonly string[]).includes(value);

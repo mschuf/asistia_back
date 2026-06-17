@@ -14,6 +14,7 @@ import type {
   VisitaRow,
 } from "../visitas.types";
 import type { VisitaSortBy, VisitaSortOrder } from "../dto/list-visitas-query.dto";
+import type { VisitaTarjetaColor } from "../domain/visita-tarjeta-color";
 
 const VISITA_SORT_EXPRESSIONS: Record<VisitaSortBy, string> = {
   id: "v.id",
@@ -113,11 +114,43 @@ export class VisitasSqlRepository {
               AND estado <> 'cancelada'
           )::text AS day_visits,
           COUNT(*) FILTER (
-            WHERE estado = 'activa' AND zonas_permitidas @> '["fábrica"]'::jsonb
-          )::text AS plant_visitors,
+            WHERE estado = 'activa'
+              AND (
+                tarjeta_color = 'rojo'
+                OR (
+                  tarjeta_color IS NULL
+                  AND zonas_permitidas @> '["administración"]'::jsonb
+                  AND NOT zonas_permitidas @> '["fábrica"]'::jsonb
+                )
+              )
+          )::text AS active_only_admin,
           COUNT(*) FILTER (
-            WHERE estado = 'activa' AND zonas_permitidas @> '["administración"]'::jsonb
-          )::text AS admin_visitors
+            WHERE estado = 'activa'
+              AND (
+                tarjeta_color = 'amarillo'
+                OR (
+                  tarjeta_color IS NULL
+                  AND zonas_permitidas @> '["fábrica"]'::jsonb
+                  AND NOT zonas_permitidas @> '["administración"]'::jsonb
+                )
+              )
+          )::text AS active_only_factory,
+          COUNT(*) FILTER (
+            WHERE estado = 'activa'
+              AND (
+                tarjeta_color = 'verde'
+                OR (
+                  tarjeta_color IS NULL
+                  AND zonas_permitidas @> '["administración"]'::jsonb
+                  AND zonas_permitidas @> '["fábrica"]'::jsonb
+                )
+              )
+          )::text AS active_both_zones,
+          COUNT(*) FILTER (
+            WHERE estado = 'activa'
+              AND entrada_at >= date_trunc('month', CURRENT_TIMESTAMP)
+              AND entrada_at < date_trunc('day', CURRENT_TIMESTAMP)
+          )::text AS active_stale_without_checkout
        FROM public.visita`,
     );
 
@@ -125,8 +158,10 @@ export class VisitasSqlRepository {
       rows[0] ?? {
         month_visits: "0",
         day_visits: "0",
-        plant_visitors: "0",
-        admin_visitors: "0",
+        active_only_admin: "0",
+        active_only_factory: "0",
+        active_both_zones: "0",
+        active_stale_without_checkout: "0",
       }
     );
   }
@@ -142,6 +177,78 @@ export class VisitasSqlRepository {
        ${VISITA_FROM_JOIN}
        WHERE v.id = $1`,
       [id],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Busca una visita activa que use el color de tarjeta indicado.
+   * @param tarjetaColor - Color de tarjeta a comprobar.
+   * @param excludeVisitaId - ID de visita a excluir (p. ej. la que se está editando).
+   * @returns Fila encontrada o `null` si la tarjeta está libre.
+   */
+  async findActiveByTarjetaColor(
+    tarjetaColor: VisitaTarjetaColor,
+    excludeVisitaId?: number,
+  ): Promise<VisitaListRow | null> {
+    const rows = await this.postgres.query<VisitaListRow>(
+      `SELECT ${VISITA_SELECT_COLUMNS}
+       ${VISITA_FROM_JOIN}
+       WHERE v.estado = 'activa'
+         AND v.tarjeta_color = $1
+         AND ($2::bigint IS NULL OR v.id <> $2)
+       LIMIT 1`,
+      [tarjetaColor, excludeVisitaId ?? null],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Busca una visita activa que use el número de tarjeta indicado.
+   * @param credencialNumero - Número de tarjeta a comprobar.
+   * @param excludeVisitaId - ID de visita a excluir (p. ej. la que se está editando).
+   * @returns Fila encontrada o `null` si el número está libre.
+   */
+  async findActiveByCredencialNumero(
+    credencialNumero: string,
+    excludeVisitaId?: number,
+  ): Promise<VisitaListRow | null> {
+    const normalized = credencialNumero.trim();
+    if (!normalized) return null;
+
+    const rows = await this.postgres.query<VisitaListRow>(
+      `SELECT ${VISITA_SELECT_COLUMNS}
+       ${VISITA_FROM_JOIN}
+       WHERE v.estado = 'activa'
+         AND trim(v.credencial_numero) = $1
+         AND ($2::bigint IS NULL OR v.id <> $2)
+       LIMIT 1`,
+      [normalized, excludeVisitaId ?? null],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Busca una visita activa de la persona indicada.
+   * @param personaId - ID de la persona visitante.
+   * @param excludeVisitaId - ID de visita a excluir (p. ej. la que se está editando).
+   * @returns Fila encontrada o `null` si la persona no tiene visita activa.
+   */
+  async findActiveByPersonaId(
+    personaId: number,
+    excludeVisitaId?: number,
+  ): Promise<VisitaListRow | null> {
+    const rows = await this.postgres.query<VisitaListRow>(
+      `SELECT ${VISITA_SELECT_COLUMNS}
+       ${VISITA_FROM_JOIN}
+       WHERE v.estado = 'activa'
+         AND v.persona_id = $1
+         AND ($2::bigint IS NULL OR v.id <> $2)
+       LIMIT 1`,
+      [personaId, excludeVisitaId ?? null],
     );
 
     return rows[0] ?? null;

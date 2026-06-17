@@ -6,15 +6,24 @@ import { ApiProperty } from "@nestjs/swagger";
 
 /** Contadores de visitas para el dashboard de Portería. */
 export class VisitaMetricsResponseDto {
-  @ApiProperty({ example: 30, description: "Visitas con entrada en el mes actual (excluye canceladas)" })
+  @ApiProperty({ example: 30, description: "Ingresos registrados en el mes actual (excluye canceladas)" })
   monthVisits!: number;
 
-  @ApiProperty({ example: 12, description: "Visitas con entrada en el día actual (excluye canceladas)" })
+  @ApiProperty({ example: 12, description: "Ingresos registrados en el día actual (excluye canceladas)" })
   dayVisits!: number;
 
-  @ApiProperty({ example: 5, description: "Visitas activas con permiso de fabrica" })
-  plantVisitors!: number;
+  @ApiProperty({ example: 2, description: "Visitas activas con tarjeta roja (solo administración)" })
+  activeOnlyAdmin!: number;
 
-  @ApiProperty({ example: 2, description: "Visitas activas con permiso de administracion" })
-  adminVisitors!: number;
+  @ApiProperty({ example: 1, description: "Visitas activas con tarjeta amarilla (solo fábrica)" })
+  activeOnlyFactory!: number;
+
+  @ApiProperty({ example: 2, description: "Visitas activas con tarjeta verde (fábrica y administración)" })
+  activeBothZones!: number;
+
+  @ApiProperty({
+    example: 0,
+    description: "Visitas activas del mes cuyo ingreso fue en un día anterior (sin salida registrada)",
+  })
+  activeStaleWithoutCheckout!: number;
 }

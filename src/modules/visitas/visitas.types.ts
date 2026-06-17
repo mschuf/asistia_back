@@ -70,8 +70,10 @@ export interface CreateVisitaInput {
 export interface VisitaMetricsRow extends QueryResultRow {
   month_visits: string;
   day_visits: string;
-  plant_visitors: string;
-  admin_visitors: string;
+  active_only_admin: string;
+  active_only_factory: string;
+  active_both_zones: string;
+  active_stale_without_checkout: string;
 }
 
 /** Payload parcial de actualización de visita para el repositorio. */

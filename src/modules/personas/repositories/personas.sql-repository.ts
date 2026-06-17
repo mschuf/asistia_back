@@ -8,6 +8,7 @@ import { PostgresService } from "../../postgres/postgres.service";
 import type {
   CreatePersonaInput,
   PersonaListFilters,
+  PersonaPhotoRow,
   PersonaRow,
   UpdatePersonaInput,
 } from "../personas.types";
@@ -30,6 +31,7 @@ const PERSONA_SELECT_COLUMNS = `
   telefono,
   glpi_user_id,
   activo,
+  (foto IS NOT NULL) AS has_foto,
   created_at,
   updated_at
 `;
@@ -260,6 +262,63 @@ export class PersonasSqlRepository {
 
     const deletedId = rows[0]?.id;
     return deletedId != null ? Number(deletedId) : null;
+  }
+
+  /**
+   * Obtiene el blob de foto de una persona.
+   * @param id - ID de la persona.
+   * @returns Buffer y MIME type o `null` si no hay foto.
+   */
+  async findPhotoById(id: number): Promise<PersonaPhotoRow | null> {
+    const rows = await this.postgres.query<PersonaPhotoRow>(
+      `SELECT foto, foto_mime_type
+       FROM public.persona
+       WHERE id = $1
+         AND foto IS NOT NULL`,
+      [id],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Persiste o reemplaza la foto de una persona.
+   * @param id - ID de la persona.
+   * @param foto - Imagen procesada.
+   * @param mimeType - MIME type final de la imagen.
+   * @returns Fila actualizada o `null` si no existe la persona.
+   */
+  async updatePhoto(id: number, foto: Buffer, mimeType: string): Promise<PersonaRow | null> {
+    const rows = await this.postgres.query<PersonaRow>(
+      `UPDATE public.persona
+       SET foto = $1,
+           foto_mime_type = $2,
+           updated_at = now()
+       WHERE id = $3
+       RETURNING ${PERSONA_SELECT_COLUMNS}`,
+      [foto, mimeType, id],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Elimina la foto almacenada de una persona.
+   * @param id - ID de la persona.
+   * @returns Fila actualizada o `null` si no existe la persona.
+   */
+  async clearPhoto(id: number): Promise<PersonaRow | null> {
+    const rows = await this.postgres.query<PersonaRow>(
+      `UPDATE public.persona
+       SET foto = NULL,
+           foto_mime_type = NULL,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING ${PERSONA_SELECT_COLUMNS}`,
+      [id],
+    );
+
+    return rows[0] ?? null;
   }
 
   /**
