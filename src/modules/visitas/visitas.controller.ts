@@ -15,9 +15,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { PorteriaGuard } from "../../common/guards/porteria.guard";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
+import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { VisitasService } from "./visitas.service";
 import { CreateVisitaDto } from "./dto/create-visita.dto";
 import { ListVisitasQueryDto } from "./dto/list-visitas-query.dto";
@@ -82,8 +84,11 @@ export class VisitasController {
   @ApiOperation({ summary: "Create visita" })
   @ApiResponse({ status: 201, type: VisitaResponseDto })
   @ResponseMessage("Visita created")
-  async create(@Body() dto: CreateVisitaDto): Promise<VisitaResponseDto> {
-    return this.visitasService.create(dto);
+  async create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateVisitaDto,
+  ): Promise<VisitaResponseDto> {
+    return this.visitasService.create(user.id, dto);
   }
 
   /**
@@ -97,10 +102,11 @@ export class VisitasController {
   @ApiResponse({ status: 200, type: VisitaResponseDto })
   @ResponseMessage("Visita updated")
   async update(
+    @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseIntPipe) id: number,
     @Body() dto: UpdateVisitaDto,
   ): Promise<VisitaResponseDto> {
-    return this.visitasService.update(id, dto);
+    return this.visitasService.update(user.id, id, dto);
   }
 
   /**
@@ -112,8 +118,9 @@ export class VisitasController {
   @ApiOperation({ summary: "Permanently delete visita" })
   @ResponseMessage("Visita deleted")
   async deletePermanent(
+    @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    return this.visitasService.deletePermanent(id);
+    return this.visitasService.deletePermanent(user.id, id);
   }
 }

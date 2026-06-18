@@ -11,8 +11,10 @@ import { SuperAdminGuard } from "../../common/guards/super-admin.guard";
 import { ResponseMessage, SkipResponseEnvelope } from "../../common/interceptors/response-message.decorator";
 import { ExportTicketCreatedLogsQueryDto } from "./dto/export-ticket-created-logs-query.dto";
 import { ExportVisitasReportQueryDto } from "./dto/export-visitas-report-query.dto";
+import { ListPorteriaAuditQueryDto } from "./dto/list-porteria-audit-query.dto";
 import { ListTicketCreatedLogsQueryDto } from "./dto/list-ticket-created-logs-query.dto";
 import { ListVisitasReportQueryDto } from "./dto/list-visitas-report-query.dto";
+import { PorteriaAuditLogListResponseDto } from "./dto/porteria-audit.response.dto";
 import { TicketCreatedLogListResponseDto } from "./dto/ticket-created-log.response.dto";
 import { VisitaReportLogListResponseDto } from "./dto/visita-report.response.dto";
 import { ReportsService } from "./reports.service";
@@ -82,6 +84,21 @@ export class ReportsController {
     @Query() query: ListVisitasReportQueryDto,
   ): Promise<VisitaReportLogListResponseDto> {
     return this.reportsService.listVisitasReport(query);
+  }
+
+  /**
+   * Lista eventos de auditoría completa de portería.
+   * @param query - Filtros, paginación, orden y búsqueda general.
+   * @returns Lista paginada de eventos de auditoría.
+   */
+  @Get("porteria-audit")
+  @ApiOperation({ summary: "Paginated porteria audit logs report (super admin)" })
+  @ApiResponse({ status: 200, type: PorteriaAuditLogListResponseDto })
+  @ResponseMessage("Porteria audit report retrieved")
+  async listPorteriaAuditLogs(
+    @Query() query: ListPorteriaAuditQueryDto,
+  ): Promise<PorteriaAuditLogListResponseDto> {
+    return this.reportsService.listPorteriaAuditLogs(query);
   }
 
   /**

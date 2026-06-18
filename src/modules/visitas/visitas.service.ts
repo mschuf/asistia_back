@@ -23,11 +23,21 @@ import {
   zonasMatchTarjetaColor,
   type VisitaTarjetaColor,
 } from "./domain/visita-tarjeta-color";
+import {
+  diffVisitaAuditFields,
+  resolveVisitaAuditAction,
+} from "./domain/visita-audit.helpers";
 import { requiresTarjetaDisponibilidad } from "./domain/visita-tarjeta-disponibilidad";
 import type { VisitaEstado } from "./domain/visita-estado";
 import type { VisitaZona } from "./domain/visita-zona";
 import { mapVisitaRowToResponse } from "./mappers/visita.mapper";
+import { VisitaAuditSqlRepository } from "./repositories/visita-audit.sql-repository";
 import { VisitasSqlRepository } from "./repositories/visitas.sql-repository";
+import type {
+  VisitaAuditAction,
+  VisitaAuditSnapshot,
+  VisitaListRow,
+} from "./visitas.types";
 
 /** Servicio de gestión de visitas con persistencia en Postgres. */
 @Injectable()
@@ -35,8 +45,54 @@ export class VisitasService {
   /** Inyecta repositorios SQL de visitas y personas. */
   constructor(
     private readonly repo: VisitasSqlRepository,
+    private readonly auditRepo: VisitaAuditSqlRepository,
     private readonly personasRepo: PersonasSqlRepository,
   ) {}
+
+  private toAuditSnapshot(row: VisitaListRow): VisitaAuditSnapshot {
+    const dto = mapVisitaRowToResponse(row);
+    return {
+      id: dto.id,
+      personaId: dto.personaId,
+      visitante: dto.visitante,
+      documento: dto.documento,
+      empresa: dto.empresa,
+      motivo: dto.motivo,
+      responsableNombre: dto.responsableNombre,
+      estado: dto.estado,
+      estadoSeguimiento: dto.estadoSeguimiento,
+      zonasPermitidas: [...dto.zonasPermitidas],
+      credencialNumero: dto.credencialNumero,
+      tarjetaColor: dto.tarjetaColor,
+      entradaAt: dto.entradaAt,
+      salidaAt: dto.salidaAt,
+      observaciones: dto.observaciones,
+      createdAt: dto.createdAt,
+      updatedAt: dto.updatedAt,
+    };
+  }
+
+  private async logAuditEvent(input: {
+    visitaId: number;
+    actorUserId: number;
+    action: VisitaAuditAction;
+    before: VisitaListRow | null;
+    after: VisitaListRow | null;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    const beforeState = input.before ? this.toAuditSnapshot(input.before) : null;
+    const afterState = input.after ? this.toAuditSnapshot(input.after) : null;
+    const changedFields = diffVisitaAuditFields(beforeState, afterState);
+    await this.auditRepo.create({
+      visitaId: input.visitaId,
+      actorUserId: input.actorUserId,
+      action: input.action,
+      beforeState,
+      afterState,
+      changedFields,
+      metadata: input.metadata,
+    });
+  }
 
   private rejectInconsistentZonas(tarjetaColor: VisitaTarjetaColor, zonas: VisitaZona[]): void {
     if (!zonasMatchTarjetaColor(tarjetaColor, zonas)) {
@@ -203,7 +259,7 @@ export class VisitasService {
    * @param dto - Datos de creación validados por el DTO.
    * @returns DTO de la visita creada.
    */
-  async create(dto: CreateVisitaDto): Promise<VisitaResponseDto> {
+  async create(actorUserId: number, dto: CreateVisitaDto): Promise<VisitaResponseDto> {
     const persona = await this.personasRepo.findById(dto.personaId);
     if (!persona) {
       throw new BusinessException({
@@ -252,6 +308,13 @@ export class VisitasService {
     };
 
     const created = await this.repo.create(input);
+    await this.logAuditEvent({
+      visitaId: Number(created.id),
+      actorUserId,
+      action: "visita.created",
+      before: null,
+      after: created,
+    });
     return mapVisitaRowToResponse(created);
   }
 
@@ -261,7 +324,7 @@ export class VisitasService {
    * @param dto - Campos a actualizar.
    * @returns DTO de la visita actualizada.
    */
-  async update(id: number, dto: UpdateVisitaDto): Promise<VisitaResponseDto> {
+  async update(actorUserId: number, id: number, dto: UpdateVisitaDto): Promise<VisitaResponseDto> {
     const current = await this.repo.findById(id);
     if (!current) {
       throw new BusinessException({
@@ -345,6 +408,20 @@ export class VisitasService {
       });
     }
 
+    const action = resolveVisitaAuditAction(current, updated, "visita.updated");
+    const beforeSnapshot = this.toAuditSnapshot(current);
+    const afterSnapshot = this.toAuditSnapshot(updated);
+    const changedFields = diffVisitaAuditFields(beforeSnapshot, afterSnapshot);
+    if (changedFields.length > 0) {
+      await this.logAuditEvent({
+        visitaId: id,
+        actorUserId,
+        action,
+        before: current,
+        after: updated,
+      });
+    }
+
     return mapVisitaRowToResponse(updated);
   }
 
@@ -353,7 +430,7 @@ export class VisitasService {
    * @param id - ID de la visita.
    * @returns Confirmación con el ID eliminado.
    */
-  async deletePermanent(id: number): Promise<{ id: number; deleted: true }> {
+  async deletePermanent(actorUserId: number, id: number): Promise<{ id: number; deleted: true }> {
     const visita = await this.repo.findById(id);
     if (!visita) {
       throw new BusinessException({
@@ -370,6 +447,14 @@ export class VisitasService {
         status: HttpStatus.CONFLICT,
       });
     }
+
+    await this.logAuditEvent({
+      visitaId: id,
+      actorUserId,
+      action: "visita.deleted",
+      before: visita,
+      after: null,
+    });
 
     const deleted = await this.repo.hardDelete(id);
     if (!deleted) {

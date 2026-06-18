@@ -5,6 +5,7 @@
 import { Module } from "@nestjs/common";
 import { PorteriaGuard } from "../../common/guards/porteria.guard";
 import { PersonasModule } from "../personas/personas.module";
+import { VisitaAuditSqlRepository } from "./repositories/visita-audit.sql-repository";
 import { VisitasController } from "./visitas.controller";
 import { VisitasService } from "./visitas.service";
 import { VisitasSqlRepository } from "./repositories/visitas.sql-repository";
@@ -13,7 +14,7 @@ import { VisitasSqlRepository } from "./repositories/visitas.sql-repository";
 @Module({
   imports: [PersonasModule],
   controllers: [VisitasController],
-  providers: [VisitasService, VisitasSqlRepository, PorteriaGuard],
-  exports: [VisitasService, VisitasSqlRepository],
+  providers: [VisitasService, VisitasSqlRepository, VisitaAuditSqlRepository, PorteriaGuard],
+  exports: [VisitasService, VisitasSqlRepository, VisitaAuditSqlRepository],
 })
 export class VisitasModule {}

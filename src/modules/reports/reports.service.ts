@@ -15,7 +15,12 @@ import {
   MAX_VISITAS_REPORT_PAGE_LIMIT,
   type ListVisitasReportQueryDto,
 } from "./dto/list-visitas-report-query.dto";
+import {
+  DEFAULT_PORTERIA_AUDIT_PAGE_LIMIT,
+  type ListPorteriaAuditQueryDto,
+} from "./dto/list-porteria-audit-query.dto";
 import type { TicketCreatedLogResponseDto } from "./dto/ticket-created-log.response.dto";
+import type { PorteriaAuditLogResponseDto } from "./dto/porteria-audit.response.dto";
 import type { VisitaReportLogResponseDto } from "./dto/visita-report.response.dto";
 import {
   buildRequesterLocationByEmail,
@@ -37,8 +42,9 @@ import type {
 import { TicketCreatedLogsExportService } from "./ticket-created-logs-export.service";
 import { VisitasExportService } from "./visitas-export.service";
 import { mapVisitaListRowToReportResponse } from "./mappers/visita-report.mapper";
+import { VisitaAuditSqlRepository } from "../visitas/repositories/visita-audit.sql-repository";
 import { VisitasSqlRepository } from "../visitas/repositories/visitas.sql-repository";
-import type { VisitaListFilters } from "../visitas/visitas.types";
+import type { VisitaAuditLogRow, VisitaListFilters } from "../visitas/visitas.types";
 
 /**
  * Servicio de reportes restringidos a super administradores.
@@ -57,6 +63,7 @@ export class ReportsService {
     private readonly exportService: TicketCreatedLogsExportService,
     private readonly visitasExportService: VisitasExportService,
     private readonly visitasSqlRepo: VisitasSqlRepository,
+    private readonly visitaAuditSqlRepo: VisitaAuditSqlRepository,
     private readonly users: UsersService,
     private readonly catalog: CatalogService,
   ) {}
@@ -181,6 +188,82 @@ export class ReportsService {
     );
 
     return this.visitasExportService.exportFromRows(items, query);
+  }
+
+  /**
+   * Lista auditoría completa de portería con filtros, orden y paginación server-side.
+   * @param query - Parámetros de consulta validados.
+   * @returns Resultado paginado con eventos de auditoría.
+   */
+  async listPorteriaAuditLogs(
+    query: ListPorteriaAuditQueryDto,
+  ): Promise<{
+    items: PorteriaAuditLogResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? DEFAULT_PORTERIA_AUDIT_PAGE_LIMIT;
+    const result = await this.visitaAuditSqlRepo.findAll({
+      page,
+      limit,
+      q: query.q,
+      action: query.action,
+      actorUserId: query.actorUserId,
+      visitaId: query.visitaId,
+      visitante: query.visitante,
+      documento: query.documento,
+      occurredFrom: query.occurredFrom,
+      occurredTo: query.occurredTo,
+      estadoBefore: query.estadoBefore,
+      estadoAfter: query.estadoAfter,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
+    });
+
+    const users = await this.users.listAll();
+    const userNameById = new Map<number, string>(
+      users.map((user) => [user.id, user.fullName || user.login]),
+    );
+
+    return {
+      items: result.items.map((row) => this.mapAuditRow(row, userNameById)),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: Math.max(1, Math.ceil(result.total / result.limit)),
+    };
+  }
+
+  private mapAuditRow(
+    row: VisitaAuditLogRow,
+    userNameById: Map<number, string>,
+  ): PorteriaAuditLogResponseDto {
+    const actorUserId = Number(row.actor_user_id);
+    return {
+      id: Number(row.id),
+      visitaId: Number(row.visita_id),
+      action: row.action,
+      actorUserId,
+      actorName: userNameById.get(actorUserId) ?? null,
+      occurredAt: new Date(row.occurred_at).toISOString(),
+      visitante: row.visitante ?? null,
+      documento: row.documento ?? null,
+      estadoBefore: row.estado_before ?? null,
+      estadoAfter: row.estado_after ?? null,
+      changedFields: Array.isArray(row.changed_fields) ? row.changed_fields : [],
+      beforeState:
+        row.before_state && typeof row.before_state === "object"
+          ? (row.before_state as unknown as Record<string, unknown>)
+          : null,
+      afterState:
+        row.after_state && typeof row.after_state === "object"
+          ? (row.after_state as unknown as Record<string, unknown>)
+          : null,
+      metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
+    };
   }
 
   /**

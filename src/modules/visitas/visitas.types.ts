@@ -98,3 +98,93 @@ export interface UpdateVisitaInput {
   salidaAt?: Date | null;
   observaciones?: string | null;
 }
+
+/** Acciones auditables del dominio de visitas. */
+export const VISITA_AUDIT_ACTION = [
+  "visita.created",
+  "visita.updated",
+  "visita.closed",
+  "visita.deleted",
+] as const;
+
+export type VisitaAuditAction = (typeof VISITA_AUDIT_ACTION)[number];
+
+/** Snapshot serializable de visita almacenado en before/after_state del log. */
+export interface VisitaAuditSnapshot {
+  id: number;
+  personaId: number;
+  visitante: string;
+  documento: string;
+  empresa: string | null;
+  motivo: string;
+  responsableNombre: string;
+  estado: VisitaEstado;
+  estadoSeguimiento: VisitaSeguimiento | null;
+  zonasPermitidas: string[];
+  credencialNumero: string | null;
+  tarjetaColor: string | null;
+  entradaAt: string | null;
+  salidaAt: string | null;
+  observaciones: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Payload de inserción de auditoría de visitas. */
+export interface CreateVisitaAuditLogInput {
+  visitaId: number;
+  action: VisitaAuditAction;
+  actorUserId: number;
+  changedFields: string[];
+  beforeState: VisitaAuditSnapshot | null;
+  afterState: VisitaAuditSnapshot | null;
+  metadata?: Record<string, unknown>;
+}
+
+/** Columnas ordenables del reporte de auditoría de portería. */
+export const VISITA_AUDIT_SORT_BY = [
+  "occurredAt",
+  "action",
+  "visitante",
+  "documento",
+  "actorUserId",
+  "visitaId",
+] as const;
+
+export type VisitaAuditSortBy = (typeof VISITA_AUDIT_SORT_BY)[number];
+export type VisitaAuditSortOrder = "asc" | "desc";
+
+/** Filtros paginados para consultar auditoría de visitas. */
+export interface VisitaAuditListFilters {
+  page: number;
+  limit: number;
+  q?: string;
+  action?: VisitaAuditAction;
+  actorUserId?: number;
+  visitaId?: number;
+  visitante?: string;
+  documento?: string;
+  occurredFrom?: string;
+  occurredTo?: string;
+  estadoBefore?: VisitaEstado;
+  estadoAfter?: VisitaEstado;
+  sortBy?: VisitaAuditSortBy;
+  sortOrder?: VisitaAuditSortOrder;
+}
+
+/** Fila SQL de `public.prt_visita_audit_log` para listados. */
+export interface VisitaAuditLogRow extends QueryResultRow {
+  id: string;
+  visita_id: string;
+  action: VisitaAuditAction;
+  actor_user_id: string;
+  occurred_at: Date | string;
+  before_state: VisitaAuditSnapshot | null;
+  after_state: VisitaAuditSnapshot | null;
+  changed_fields: string[] | null;
+  metadata: Record<string, unknown> | null;
+  visitante: string | null;
+  documento: string | null;
+  estado_before: VisitaEstado | null;
+  estado_after: VisitaEstado | null;
+}
