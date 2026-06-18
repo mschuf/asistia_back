@@ -5,13 +5,19 @@
 import { Injectable } from "@nestjs/common";
 import type { QueryValues } from "mysql2";
 import type { RowDataPacket } from "mysql2/promise";
-import { GLPI_TICKET_TYPE, GLPI_TICKET_USER_TYPE } from "../glpi.constants";
+import { GLPI_TICKET_STATUS, GLPI_TICKET_TYPE, GLPI_TICKET_USER_TYPE } from "../glpi.constants";
 import { MysqlService } from "../../mysql/mysql.service";
-import { OPEN_STATUS_GLPI, openPercent } from "../../tickets/domain/ticket-metrics.helpers";
+import {
+  EMPTY_METRIC_SLICE,
+  MY_GROUP_HISTORY_STATUS_GLPI,
+  OPEN_STATUS_GLPI,
+  openPercent,
+} from "../../tickets/domain/ticket-metrics.helpers";
 import type { TicketMetricsResponseDto } from "../../tickets/dto/ticket-metrics.response.dto";
 
 const METRICS_SITE_LIMIT = 50000;
 const OPEN_STATUS_IN = OPEN_STATUS_GLPI.join(", ");
+const MY_GROUP_STATUS_IN = MY_GROUP_HISTORY_STATUS_GLPI.join(", ");
 const BASE_TICKET_HISTORY_SQL = `
   SELECT
     t.id AS ticket_id,
@@ -42,6 +48,14 @@ interface AssignedAggregateRow extends RowDataPacket {
 interface SiteAggregateRow extends RowDataPacket {
   open_count: number | string | null;
   open_this_month: number | string | null;
+  total_this_month: number | string | null;
+}
+
+interface RequesterStatusAggregateRow extends RowDataPacket {
+  solved_count: number | string | null;
+  closed_count: number | string | null;
+  solved_this_month: number | string | null;
+  closed_this_month: number | string | null;
   total_this_month: number | string | null;
 }
 
@@ -101,15 +115,17 @@ export class TicketsMetricsSqlRepository {
     input: MetricsForTechnicianInput,
   ): Promise<TicketMetricsResponseDto>  {
     const technicianId = input.technicianId;
-    const [myTickets, myIncidents, myRequests, mySite, openByLocationRows] = await Promise.all([
-      this.aggregateMyTickets(technicianId),
-      this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.INCIDENT),
-      this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.REQUEST),
-      input.locationId != null
-        ? this.aggregateSiteSlice(input.locationId)
-        : Promise.resolve(null),
-      this.listGlobalOpenByLocation(),
-    ]);
+    const [myTickets, myIncidents, myRequests, myGroup, mySite, openByLocationRows] =
+      await Promise.all([
+        this.aggregateMyTickets(technicianId),
+        this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.INCIDENT),
+        this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.REQUEST),
+        this.aggregateMyGroupSlice(),
+        input.locationId != null
+          ? this.aggregateSiteSlice(input.locationId)
+          : Promise.resolve(null),
+        this.listGlobalOpenByLocation(),
+      ]);
 
     const openByLocation = openByLocationRows.map((row) => {
       const locationId = Number(row.location_id);
@@ -125,7 +141,58 @@ export class TicketsMetricsSqlRepository {
       mySite,
       myIncidents,
       myRequests,
+      myGroup,
+      mySolved: EMPTY_METRIC_SLICE,
+      myClosed: EMPTY_METRIC_SLICE,
       openByLocation,
+    };
+  }
+
+  /**
+
+   * Agrega tickets del equipo con filtro historial "Abiertos" (asignado + planificado).
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @returns `Promise<`
+   */
+  async aggregateMyGroupSlice(): Promise< {
+    open: number;
+    openPercent: number;
+    openThisMonth: number;
+    totalThisMonth: number;
+  }> {
+    const rows = await this.mysql.query<SiteAggregateRow>(
+      `SELECT
+         SUM(CASE WHEN status_glpi IN (${MY_GROUP_STATUS_IN}) THEN 1 ELSE 0 END) AS open_count,
+         SUM(
+           CASE
+             WHEN status_glpi IN (${MY_GROUP_STATUS_IN})
+              AND YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS open_this_month,
+         SUM(
+           CASE
+             WHEN YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS total_this_month
+       FROM v_asistia_ticket_history
+       WHERE is_deleted = 0`,
+    );
+
+    const row = rows[0];
+    const open = Number(row?.open_count ?? 0);
+    const openThisMonth = Number(row?.open_this_month ?? 0);
+    const totalThisMonth = Number(row?.total_this_month ?? 0);
+
+    return {
+      open,
+      openPercent: openPercent(openThisMonth, totalThisMonth),
+      openThisMonth,
+      totalThisMonth,
     };
   }
 
@@ -297,10 +364,9 @@ export class TicketsMetricsSqlRepository {
     input: MetricsForRequesterInput,
   ): Promise<TicketMetricsResponseDto>  {
     const requesterId = input.requesterId;
-    const [myTickets, myIncidents, myRequests, mySite, openByLocationRows] = await Promise.all([
+    const [myTickets, statusSlices, mySite, openByLocationRows] = await Promise.all([
       this.aggregateRequesterMyTickets(requesterId),
-      this.aggregateRequesterTypeSlice(requesterId, GLPI_TICKET_TYPE.INCIDENT),
-      this.aggregateRequesterTypeSlice(requesterId, GLPI_TICKET_TYPE.REQUEST),
+      this.aggregateRequesterSolvedClosedSlices(requesterId),
       input.locationId != null
         ? this.aggregateRequesterSiteSlice(requesterId, input.locationId)
         : Promise.resolve(null),
@@ -319,8 +385,11 @@ export class TicketsMetricsSqlRepository {
     return {
       myTickets,
       mySite,
-      myIncidents,
-      myRequests,
+      myIncidents: EMPTY_METRIC_SLICE,
+      myRequests: EMPTY_METRIC_SLICE,
+      myGroup: EMPTY_METRIC_SLICE,
+      mySolved: statusSlices.solved,
+      myClosed: statusSlices.closed,
       openByLocation,
     };
   }
@@ -348,6 +417,97 @@ export class TicketsMetricsSqlRepository {
       openThisMonth,
       totalThisMonth,
     };
+  }
+
+  /**
+
+   * Agrega tickets resueltos y cerrados del solicitante en una sola consulta.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<{ solved: TicketMetricSlice; closed: TicketMetricSlice }>`
+   */
+  private async aggregateRequesterSolvedClosedSlices(
+    requesterId: number,
+  ): Promise<{
+    solved: {
+      open: number;
+      openPercent: number;
+      openThisMonth: number;
+      totalThisMonth: number;
+    };
+    closed: {
+      open: number;
+      openPercent: number;
+      openThisMonth: number;
+      totalThisMonth: number;
+    };
+  }> {
+    const row = await this.queryRequesterStatusAggregate(requesterId);
+    const solvedThisMonth = Number(row?.solved_this_month ?? 0);
+    const closedThisMonth = Number(row?.closed_this_month ?? 0);
+    const totalThisMonth = Number(row?.total_this_month ?? 0);
+
+    return {
+      solved: {
+        open: Number(row?.solved_count ?? 0),
+        openPercent: openPercent(solvedThisMonth, totalThisMonth),
+        openThisMonth: solvedThisMonth,
+        totalThisMonth,
+      },
+      closed: {
+        open: Number(row?.closed_count ?? 0),
+        openPercent: openPercent(closedThisMonth, totalThisMonth),
+        openThisMonth: closedThisMonth,
+        totalThisMonth,
+      },
+    };
+  }
+
+  /**
+
+   * SQL de agregación por solicitante para estados resuelto y cerrado.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @param requesterId - Parámetro `requesterId`.
+   * @returns `Promise<RequesterStatusAggregateRow | undefined>`
+   */
+  private async queryRequesterStatusAggregate(
+    requesterId: number,
+  ): Promise<RequesterStatusAggregateRow | undefined> {
+    const rows = await this.mysql.query<RequesterStatusAggregateRow>(
+      `SELECT
+         SUM(CASE WHEN status_glpi = ${GLPI_TICKET_STATUS.SOLVED} THEN 1 ELSE 0 END) AS solved_count,
+         SUM(CASE WHEN status_glpi = ${GLPI_TICKET_STATUS.CLOSED} THEN 1 ELSE 0 END) AS closed_count,
+         SUM(
+           CASE
+             WHEN status_glpi = ${GLPI_TICKET_STATUS.SOLVED}
+              AND YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS solved_this_month,
+         SUM(
+           CASE
+             WHEN status_glpi = ${GLPI_TICKET_STATUS.CLOSED}
+              AND YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS closed_this_month,
+         SUM(
+           CASE
+             WHEN YEAR(created_at) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             THEN 1 ELSE 0
+           END
+         ) AS total_this_month
+       FROM (${BASE_TICKET_WITH_REQUESTER_SQL}) th
+       WHERE is_deleted = 0
+         AND requester_id = :requesterId`,
+      { requesterId } as QueryValues,
+    );
+    return rows[0];
   }
 
   /**

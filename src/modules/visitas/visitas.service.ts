@@ -7,8 +7,9 @@ import type { PaginatedResult } from "../../common/dto/pagination.dto";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import { PersonasSqlRepository } from "../personas/repositories/personas.sql-repository";
-import type { CreateVisitaInput, UpdateVisitaInput } from "./visitas.types";
+import type { CreateVisitaInput, UpdateVisitaInput, VisitaMetricsRange } from "./visitas.types";
 import type { VisitaMetricsResponseDto } from "./dto/visita-metrics.response.dto";
+import type { VisitaMetricsQueryDto } from "./dto/visita-metrics-query.dto";
 import type { VisitaResponseDto } from "./dto/visita.response.dto";
 import { CreateVisitaDto } from "./dto/create-visita.dto";
 import {
@@ -88,10 +89,12 @@ export class VisitasService {
 
   /**
    * Obtiene métricas agregadas de visitas para las cards de Portería.
-   * @returns Contadores de visitas por mes, día y zonas activas.
+   * @param query - Rango opcional de entrada_at (por defecto últimos 7 días).
+   * @returns Contadores de visitas por período, último día y zonas activas.
    */
-  async getMetrics(): Promise<VisitaMetricsResponseDto> {
-    const row = await this.repo.getMetrics();
+  async getMetrics(query: VisitaMetricsQueryDto = {}): Promise<VisitaMetricsResponseDto> {
+    const range = this.resolveMetricsRange(query);
+    const row = await this.repo.getMetrics(range);
 
     return {
       monthVisits: Number(row.month_visits ?? 0),
@@ -101,6 +104,46 @@ export class VisitasService {
       activeBothZones: Number(row.active_both_zones ?? 0),
       activeStaleWithoutCheckout: Number(row.active_stale_without_checkout ?? 0),
     };
+  }
+
+  private resolveMetricsRange(query: VisitaMetricsQueryDto): VisitaMetricsRange {
+    const now = new Date();
+    const defaultTo = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
+    const defaultFrom = new Date(defaultTo);
+    defaultFrom.setDate(defaultFrom.getDate() - 6);
+    defaultFrom.setHours(0, 0, 0, 0);
+
+    const entradaTo = query.entradaTo ? new Date(query.entradaTo) : defaultTo;
+    const entradaFrom = query.entradaFrom ? new Date(query.entradaFrom) : defaultFrom;
+
+    if (Number.isNaN(entradaFrom.getTime()) || Number.isNaN(entradaTo.getTime())) {
+      throw new BusinessException({
+        message: "Las fechas del rango de métricas no son válidas",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    if (entradaFrom.getTime() > entradaTo.getTime()) {
+      throw new BusinessException({
+        message: "La fecha desde no puede ser posterior a la fecha hasta",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    const lastDayStart = new Date(entradaTo);
+    lastDayStart.setHours(0, 0, 0, 0);
+
+    return { entradaFrom, entradaTo, lastDayStart };
   }
 
   /**

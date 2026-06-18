@@ -15,7 +15,7 @@ export class VisitaMetricsResponseDto {
   @ApiProperty({ example: 2, description: "Visitas activas con tarjeta roja (solo administración)" })
   activeOnlyAdmin!: number;
 
-  @ApiProperty({ example: 1, description: "Visitas activas con tarjeta amarilla (solo fábrica)" })
+  @ApiProperty({ example: 1, description: "Visitas activas con tarjeta amarilla (fábrica)" })
   activeOnlyFactory!: number;
 
   @ApiProperty({ example: 2, description: "Visitas activas con tarjeta verde (fábrica y administración)" })

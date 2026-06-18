@@ -56,7 +56,9 @@ import {
   buildOpenByLocationMetrics,
   computeMyTicketsMetrics,
   computeSiteMetrics,
+  computeStatusMetrics,
   computeTypeMetrics,
+  EMPTY_METRIC_SLICE,
   isTicketOpen,
   normalizeLocationId,
   OPEN_STATUSES,
@@ -489,8 +491,8 @@ export class TicketsService {
     });
 
     const myTickets = computeMyTicketsMetrics(requesterTickets);
-    const myIncidents = computeTypeMetrics(requesterTickets, "incident");
-    const myRequests = computeTypeMetrics(requesterTickets, "request");
+    const mySolved = computeStatusMetrics(requesterTickets, "solved");
+    const myClosed = computeStatusMetrics(requesterTickets, "closed");
 
     const normalizedLocationId = normalizeLocationId(user.locationId);
     const mySitePool =
@@ -524,8 +526,11 @@ export class TicketsService {
     return {
       myTickets,
       mySite,
-      myIncidents,
-      myRequests,
+      myIncidents: EMPTY_METRIC_SLICE,
+      myRequests: EMPTY_METRIC_SLICE,
+      myGroup: EMPTY_METRIC_SLICE,
+      mySolved,
+      myClosed,
       openByLocation,
     };
   }
@@ -578,14 +583,35 @@ export class TicketsService {
       locations.map((loc) => [normalizeLocationId(loc.id) ?? loc.id, loc.name]),
     );
     const openByLocation = buildOpenByLocationMetrics(globalOpenPool, locationNameById);
+    const myGroup = await this.resolveMyGroupMetrics();
 
     return {
       myTickets,
       mySite,
       myIncidents,
       myRequests,
+      myGroup,
+      mySolved: EMPTY_METRIC_SLICE,
+      myClosed: EMPTY_METRIC_SLICE,
       openByLocation,
     };
+  }
+
+  /**
+   * Cuenta tickets del equipo con los mismos filtros que historial "Abiertos" sin actor/sede.
+   * @returns Slice de métricas o vacío si SQL no está disponible.
+   * @throws Ninguno.
+   */
+  private async resolveMyGroupMetrics() {
+    try {
+      return await this.metricsSqlRepo.aggregateMyGroupSlice();
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        `[metrics] myGroup unavailable: ${(error as Error).message}`,
+      );
+      return EMPTY_METRIC_SLICE;
+    }
   }
 
   /**

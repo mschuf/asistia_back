@@ -60,6 +60,18 @@ export class TicketMetricsResponseDto {
   @ApiProperty({ type: TicketMetricSliceDto })
   myRequests!: TicketMetricSliceDto;
 
+  @ApiProperty({
+    type: TicketMetricSliceDto,
+    description: "Tickets abiertos del equipo (historial: Estado Abiertos, sin filtros de actor/sede)",
+  })
+  myGroup!: TicketMetricSliceDto;
+
+  @ApiProperty({ type: TicketMetricSliceDto })
+  mySolved!: TicketMetricSliceDto;
+
+  @ApiProperty({ type: TicketMetricSliceDto })
+  myClosed!: TicketMetricSliceDto;
+
   @ApiProperty({ type: [OpenByLocationDto] })
   openByLocation!: OpenByLocationDto[];
 }

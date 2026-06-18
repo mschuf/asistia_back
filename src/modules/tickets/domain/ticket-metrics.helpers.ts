@@ -9,7 +9,19 @@ import {
   type DomainTicketType,
 } from "../../glpi/mappers/ticket.mapper";
 import { GLPI_TICKET_STATUS } from "../../glpi/glpi.constants";
-import { TICKET_STATUS } from "./ticket-status";
+import { TICKET_STATUS, type TicketStatus } from "./ticket-status";
+
+/** Estados del historial con filtro UI "Abiertos" (asignado + planificado). */
+export const MY_GROUP_HISTORY_STATUSES: TicketStatus[] = [
+  TICKET_STATUS.ASSIGNED,
+  TICKET_STATUS.PLANNED,
+];
+
+/** Códigos GLPI equivalentes a {@link MY_GROUP_HISTORY_STATUSES}. */
+export const MY_GROUP_HISTORY_STATUS_GLPI = [
+  GLPI_TICKET_STATUS.ASSIGNED,
+  GLPI_TICKET_STATUS.PLANNED,
+] as const;
 
 /** Estados GLPI equivalentes a {@link OPEN_STATUSES} (indicadores SQL / API). */
 export const OPEN_STATUS_GLPI = [
@@ -88,6 +100,14 @@ export interface TicketMetricSlice {
   totalThisMonth: number;
 }
 
+/** Slice vacío reutilizable cuando una métrica no aplica al rol. */
+export const EMPTY_METRIC_SLICE: TicketMetricSlice = {
+  open: 0,
+  openPercent: 0,
+  openThisMonth: 0,
+  totalThisMonth: 0,
+};
+
 export interface MyTicketsMetricSlice {
   inProgress: number;
   openPercent: number;
@@ -142,6 +162,28 @@ export function computeTypeMetrics(
     open: pool.filter(isTicketOpen).length,
     openPercent: openPercent(openMonth.length, monthTickets.length),
     openThisMonth: openMonth.length,
+    totalThisMonth: monthTickets.length,
+  };
+}
+
+/**
+ * Calcula métricas por estado (resuelto o cerrado).
+ * @param tickets - Pool de tickets del usuario.
+ * @param status - Estado de ticket a filtrar.
+ * @returns Slice de métricas para el estado indicado.
+ * @throws Ninguno.
+ */
+export function computeStatusMetrics(
+  tickets: DomainTicket[],
+  status: DomainTicketStatus,
+): TicketMetricSlice {
+  const pool = activeOnly(tickets);
+  const monthTickets = pool.filter((t) => isInCurrentMonth(t.createdAt));
+  const statusMonth = monthTickets.filter((t) => t.status === status);
+  return {
+    open: pool.filter((t) => t.status === status).length,
+    openPercent: openPercent(statusMonth.length, monthTickets.length),
+    openThisMonth: statusMonth.length,
     totalThisMonth: monthTickets.length,
   };
 }

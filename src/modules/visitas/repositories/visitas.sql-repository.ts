@@ -10,6 +10,7 @@ import type {
   UpdateVisitaInput,
   VisitaListFilters,
   VisitaListRow,
+  VisitaMetricsRange,
   VisitaMetricsRow,
   VisitaRow,
 } from "../visitas.types";
@@ -45,7 +46,8 @@ const VISITA_SELECT_COLUMNS = `
   v.updated_at,
   p.nombre AS visitante,
   p.documento,
-  p.empresa
+  p.empresa,
+  (p.foto IS NOT NULL) AS has_foto
 `;
 
 const VISITA_FROM_JOIN = `
@@ -98,23 +100,26 @@ export class VisitasSqlRepository {
 
   /**
    * Obtiene contadores agregados de visitas para las cards de Portería.
-   * @returns Totales de visitas por mes, día y zonas activas.
+   * @param range - Rango de entrada_at y comienzo del último día del rango.
+   * @returns Totales de visitas por período, último día y zonas activas.
    */
-  async getMetrics(): Promise<VisitaMetricsRow> {
+  async getMetrics(range: VisitaMetricsRange): Promise<VisitaMetricsRow> {
     const rows = await this.postgres.query<VisitaMetricsRow>(
       `SELECT
           COUNT(*) FILTER (
-            WHERE entrada_at >= date_trunc('month', CURRENT_TIMESTAMP)
-              AND entrada_at < date_trunc('month', CURRENT_TIMESTAMP) + INTERVAL '1 month'
+            WHERE entrada_at >= $1
+              AND entrada_at <= $2
               AND estado <> 'cancelada'
           )::text AS month_visits,
           COUNT(*) FILTER (
-            WHERE entrada_at >= date_trunc('day', CURRENT_TIMESTAMP)
-              AND entrada_at < date_trunc('day', CURRENT_TIMESTAMP) + INTERVAL '1 day'
+            WHERE entrada_at >= $3
+              AND entrada_at <= $2
               AND estado <> 'cancelada'
           )::text AS day_visits,
           COUNT(*) FILTER (
             WHERE estado = 'activa'
+              AND entrada_at >= $1
+              AND entrada_at <= $2
               AND (
                 tarjeta_color = 'rojo'
                 OR (
@@ -126,6 +131,8 @@ export class VisitasSqlRepository {
           )::text AS active_only_admin,
           COUNT(*) FILTER (
             WHERE estado = 'activa'
+              AND entrada_at >= $1
+              AND entrada_at <= $2
               AND (
                 tarjeta_color = 'amarillo'
                 OR (
@@ -137,6 +144,8 @@ export class VisitasSqlRepository {
           )::text AS active_only_factory,
           COUNT(*) FILTER (
             WHERE estado = 'activa'
+              AND entrada_at >= $1
+              AND entrada_at <= $2
               AND (
                 tarjeta_color = 'verde'
                 OR (
@@ -148,10 +157,11 @@ export class VisitasSqlRepository {
           )::text AS active_both_zones,
           COUNT(*) FILTER (
             WHERE estado = 'activa'
-              AND entrada_at >= date_trunc('month', CURRENT_TIMESTAMP)
-              AND entrada_at < date_trunc('day', CURRENT_TIMESTAMP)
+              AND entrada_at >= $1
+              AND entrada_at < $3
           )::text AS active_stale_without_checkout
        FROM public.visita`,
+      [range.entradaFrom, range.entradaTo, range.lastDayStart],
     );
 
     return (

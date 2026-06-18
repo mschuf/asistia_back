@@ -23,6 +23,7 @@ import { CreateVisitaDto } from "./dto/create-visita.dto";
 import { ListVisitasQueryDto } from "./dto/list-visitas-query.dto";
 import { UpdateVisitaDto } from "./dto/update-visita.dto";
 import { VisitaMetricsResponseDto } from "./dto/visita-metrics.response.dto";
+import { VisitaMetricsQueryDto } from "./dto/visita-metrics-query.dto";
 import { VisitaListResponseDto, VisitaResponseDto } from "./dto/visita.response.dto";
 
 /** Controlador REST de visitas con guard JWT. */
@@ -55,8 +56,8 @@ export class VisitasController {
   @ApiOperation({ summary: "Get visita metrics for Porteria dashboard cards" })
   @ApiResponse({ status: 200, type: VisitaMetricsResponseDto })
   @ResponseMessage("Visita metrics retrieved")
-  async getMetrics(): Promise<VisitaMetricsResponseDto> {
-    return this.visitasService.getMetrics();
+  async getMetrics(@Query() query: VisitaMetricsQueryDto): Promise<VisitaMetricsResponseDto> {
+    return this.visitasService.getMetrics(query);
   }
 
   /**

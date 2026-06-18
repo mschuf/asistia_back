@@ -30,6 +30,7 @@ export interface VisitaListRow extends VisitaRow {
   visitante: string;
   documento: string;
   empresa: string | null;
+  has_foto: boolean;
 }
 
 /** Filtros de listado paginado de visitas en el repositorio SQL. */
@@ -64,6 +65,13 @@ export interface CreateVisitaInput {
   entradaAt: Date | null;
   salidaAt: Date | null;
   observaciones: string | null;
+}
+
+/** Parámetros de rango para agregados de métricas de visitas. */
+export interface VisitaMetricsRange {
+  entradaFrom: Date;
+  entradaTo: Date;
+  lastDayStart: Date;
 }
 
 /** Fila de agregados de métricas de visitas desde Postgres. */

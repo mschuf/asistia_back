@@ -185,6 +185,7 @@ export class UsersTechniciansSqlRepository {
          ON p.id = pu.profiles_id
        WHERE u.is_active = 1
          AND COALESCE(u.is_deleted, 0) = 0
+         AND (COALESCE(u.groups_id, 0) > 0 OR COALESCE(gu.groups_id, 0) > 0)
          AND (${groupWhere} OR (${profileLikeClauses}))
          ${locationFilter}`,
       params,
