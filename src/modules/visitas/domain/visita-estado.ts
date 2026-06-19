@@ -5,6 +5,7 @@
 export const VISITA_ESTADO = [
   "programada",
   "activa",
+  "sin_salida",
   "finalizada",
   "cancelada",
 ] as const;

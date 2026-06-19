@@ -35,7 +35,6 @@ import { PersonaListResponseDto, PersonaResponseDto } from "./dto/persona.respon
 import {
   VisitCandidateListResponseDto,
 } from "./dto/visit-candidate.response.dto";
-import { GlpiPersonaPreviewResponseDto } from "./dto/glpi-persona-preview.response.dto";
 import { personaPhotoMulterOptions } from "./persona-photo.multer.config";
 
 /** Controlador REST de personas con guard JWT. */
@@ -61,48 +60,18 @@ export class PersonasController {
   }
 
   /**
-   * Busca candidatos unificados (Postgres + GLPI) para el selector de visitas.
+   * Busca personas activas para el selector de visitas.
    * @param query - Texto de búsqueda y límite.
    * @returns Lista de candidatos ordenada por nombre.
    */
   @Get("visit-candidates")
-  @ApiOperation({ summary: "Search visit person candidates from Postgres and GLPI" })
+  @ApiOperation({ summary: "Search active personas for visit person selector" })
   @ApiResponse({ status: 200, type: VisitCandidateListResponseDto })
   @ResponseMessage("Visit person candidates retrieved")
   async searchVisitCandidates(
     @Query() query: ListVisitCandidatesQueryDto,
   ): Promise<VisitCandidateListResponseDto> {
     return this.personasService.searchVisitCandidates(query);
-  }
-
-  /**
-   * Obtiene o crea una persona vinculada a un usuario GLPI.
-   * @param glpiUserId - ID numérico del usuario GLPI.
-   * @returns DTO de la persona vinculada.
-   */
-  @Post("from-glpi/:glpiUserId")
-  @ApiOperation({ summary: "Ensure persona linked to a GLPI user" })
-  @ApiResponse({ status: 201, type: PersonaResponseDto })
-  @ResponseMessage("Persona linked from GLPI user")
-  async ensureFromGlpi(
-    @Param("glpiUserId", ParseIntPipe) glpiUserId: number,
-  ): Promise<PersonaResponseDto> {
-    return this.personasService.ensureFromGlpiUser(glpiUserId);
-  }
-
-  /**
-   * Vista previa de persona a partir de un usuario GLPI sin persistir.
-   * @param glpiUserId - ID numérico del usuario GLPI.
-   * @returns Datos precargables para el formulario de creación.
-   */
-  @Get("glpi-preview/:glpiUserId")
-  @ApiOperation({ summary: "Preview persona fields from a GLPI user" })
-  @ApiResponse({ status: 200, type: GlpiPersonaPreviewResponseDto })
-  @ResponseMessage("GLPI persona preview retrieved")
-  async previewFromGlpi(
-    @Param("glpiUserId", ParseIntPipe) glpiUserId: number,
-  ): Promise<GlpiPersonaPreviewResponseDto> {
-    return this.personasService.previewFromGlpiUser(glpiUserId);
   }
 
   /**

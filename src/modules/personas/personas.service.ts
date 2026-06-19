@@ -6,10 +6,8 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../common/dto/pagination.dto";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
-import { CatalogService } from "../catalog/catalog.service";
-import type { DomainLocation } from "../glpi/mappers/location.mapper";
-import { UsersService } from "../users/users.service";
-import type { CreatePersonaInput, PersonaRow, UpdatePersonaInput } from "./personas.types";
+import { ProveedoresService } from "../proveedores/proveedores.service";
+import type { CreatePersonaInput, UpdatePersonaInput } from "./personas.types";
 import type { PersonaResponseDto } from "./dto/persona.response.dto";
 import { CreatePersonaDto } from "./dto/create-persona.dto";
 import {
@@ -25,7 +23,6 @@ import type {
   VisitCandidateListResponseDto,
   VisitCandidateResponseDto,
 } from "./dto/visit-candidate.response.dto";
-import type { GlpiPersonaPreviewResponseDto } from "./dto/glpi-persona-preview.response.dto";
 import { mapPersonaRowToResponse } from "./mappers/persona.mapper";
 import { processPersonaPhoto } from "./persona-photo.processor";
 import { validatePersonaPhotoUpload } from "./persona-photo-validation";
@@ -34,11 +31,10 @@ import { PersonasSqlRepository } from "./repositories/personas.sql-repository";
 /** Servicio de gestión de personas con persistencia en Postgres. */
 @Injectable()
 export class PersonasService {
-  /** Inyecta repositorios y servicios de integración. */
+  /** Inyecta repositorios y servicios relacionados. */
   constructor(
     private readonly repo: PersonasSqlRepository,
-    private readonly usersService: UsersService,
-    private readonly catalogService: CatalogService,
+    private readonly proveedoresService: ProveedoresService,
   ) {}
 
   /**
@@ -55,7 +51,8 @@ export class PersonasService {
       search: query.search,
       nombre: query.nombre,
       documento: query.documento,
-      empresa: query.empresa,
+      proveedor: query.proveedor,
+      proveedorId: query.proveedorId,
       activo: query.activo,
       sortBy: query.sortBy,
       sortOrder: query.sortOrder,
@@ -70,9 +67,9 @@ export class PersonasService {
   }
 
   /**
-   * Busca candidatos unificados para el selector de persona en visitas.
+   * Busca personas activas para el selector de visitas.
    * @param query - Texto de búsqueda y límite de resultados.
-   * @returns Personas Postgres y usuarios GLPI no vinculados, ordenados por nombre.
+   * @returns Personas ordenadas por nombre.
    */
   async searchVisitCandidates(
     query: ListVisitCandidatesQueryDto,
@@ -80,98 +77,30 @@ export class PersonasService {
     const limit = query.limit ?? DEFAULT_VISIT_CANDIDATES_LIMIT;
     const search = query.search?.trim();
 
-    const [postgresResult, glpiResult, linkedGlpiUserIds, locations] = await Promise.all([
-      this.repo.findAll({
-        page: 1,
-        limit,
-        search,
-        activo: true,
-        sortBy: "nombre",
-        sortOrder: "asc",
-      }),
-      this.usersService.list({ page: 1, limit, search }),
-      this.repo.findLinkedGlpiUserIds(),
-      this.catalogService.listLocations(),
-    ]);
+    const postgresResult = await this.repo.findAll({
+      page: 1,
+      limit,
+      search,
+      activo: true,
+      sortBy: "nombre",
+      sortOrder: "asc",
+    });
 
-    const locationById = this.buildLocationMap(locations);
+    const items: VisitCandidateResponseDto[] = postgresResult.items.map((row) => {
+      const documento = row.documento.trim();
+      const proveedor = row.proveedor_nombre.trim();
+      const subtitleParts = [documento, proveedor].filter(Boolean);
 
-    const postgresCandidates: VisitCandidateResponseDto[] = postgresResult.items.map((row) => ({
-      source: "postgres",
-      id: Number(row.id),
-      fullName: row.nombre,
-      subtitle: row.documento,
-    }));
-
-    const glpiCandidates: VisitCandidateResponseDto[] = glpiResult.items
-      .filter((user) => user.isActive && !linkedGlpiUserIds.has(user.id))
-      .map((user) => ({
-        source: "glpi",
-        id: user.id,
-        fullName: user.fullName,
-        subtitle: this.resolveLocationName(locationById, user.locationId),
-      }));
-
-    const merged = [...postgresCandidates, ...glpiCandidates].sort((left, right) =>
-      left.fullName.localeCompare(right.fullName, "es", { sensitivity: "base" }),
-    );
-
-    const items = merged.slice(0, limit);
+      return {
+        id: Number(row.id),
+        fullName: row.nombre,
+        subtitle: subtitleParts.join(" — "),
+      };
+    });
 
     return {
       items,
       total: items.length,
-    };
-  }
-
-  /**
-   * Obtiene o crea una persona vinculada a un usuario GLPI.
-   * @param glpiUserId - ID numérico del usuario en GLPI.
-   * @returns DTO de la persona vinculada.
-   */
-  async ensureFromGlpiUser(glpiUserId: number): Promise<PersonaResponseDto> {
-    const existing = await this.repo.findByGlpiUserId(glpiUserId);
-    if (existing) {
-      let persona = existing;
-      if (!persona.activo) {
-        const reactivated = await this.repo.update(Number(persona.id), { activo: true });
-        if (reactivated) {
-          persona = reactivated;
-        }
-      }
-      persona = await this.normalizeGlpiLinkedDocumento(glpiUserId, persona);
-      return mapPersonaRowToResponse(persona);
-    }
-
-    const input = await this.buildPersonaInputFromGlpiUser(glpiUserId);
-    const created = await this.repo.create(input);
-    return mapPersonaRowToResponse(created);
-  }
-
-  /**
-   * Devuelve una vista previa de persona a partir de un usuario GLPI sin persistir.
-   * @param glpiUserId - ID numérico del usuario en GLPI.
-   * @returns Datos precargables para el formulario de creación.
-   */
-  async previewFromGlpiUser(glpiUserId: number): Promise<GlpiPersonaPreviewResponseDto> {
-    const linked = await this.repo.findByGlpiUserId(glpiUserId);
-    if (linked) {
-      throw new BusinessException({
-        message: `El usuario GLPI ${glpiUserId} ya está vinculado a una persona`,
-        code: API_ERROR_CODE.CONFLICT,
-        status: HttpStatus.CONFLICT,
-      });
-    }
-
-    const input = await this.buildPersonaInputFromGlpiUser(glpiUserId);
-
-    return {
-      glpiUserId: input.glpiUserId!,
-      nombre: input.nombre,
-      documento: "",
-      email: input.email,
-      telefono: input.telefono,
-      empresa: input.empresa,
     };
   }
 
@@ -200,6 +129,8 @@ export class PersonasService {
    * @returns DTO de la persona creada.
    */
   async create(dto: CreatePersonaDto): Promise<PersonaResponseDto> {
+    await this.proveedoresService.assertActiveProveedor(dto.proveedorId);
+
     const documento = dto.documento.trim();
     const existing = await this.repo.findByDocumento(documento);
     if (existing) {
@@ -210,19 +141,12 @@ export class PersonasService {
       });
     }
 
-    let glpiUserId: number | null = null;
-    if (dto.glpiUserId != null) {
-      await this.assertGlpiUserAvailableForLink(dto.glpiUserId);
-      glpiUserId = dto.glpiUserId;
-    }
-
     const input: CreatePersonaInput = {
       nombre: dto.nombre.trim(),
       documento,
-      empresa: dto.empresa?.trim() || null,
+      proveedorId: dto.proveedorId,
       email: dto.email?.trim() || null,
       telefono: dto.telefono?.trim() || null,
-      glpiUserId,
       activo: dto.activo ?? true,
     };
 
@@ -239,6 +163,10 @@ export class PersonasService {
   async update(id: number, dto: UpdatePersonaDto): Promise<PersonaResponseDto> {
     await this.ensureExists(id);
 
+    if (dto.proveedorId !== undefined) {
+      await this.proveedoresService.assertActiveProveedor(dto.proveedorId);
+    }
+
     if (dto.documento !== undefined) {
       const documento = dto.documento.trim();
       const existing = await this.repo.findByDocumento(documento);
@@ -254,7 +182,7 @@ export class PersonasService {
     const input: UpdatePersonaInput = {};
     if (dto.nombre !== undefined) input.nombre = dto.nombre.trim();
     if (dto.documento !== undefined) input.documento = dto.documento.trim();
-    if (dto.empresa !== undefined) input.empresa = dto.empresa?.trim() || null;
+    if (dto.proveedorId !== undefined) input.proveedorId = dto.proveedorId;
     if (dto.email !== undefined) input.email = dto.email?.trim() || null;
     if (dto.telefono !== undefined) input.telefono = dto.telefono?.trim() || null;
     if (dto.activo !== undefined) input.activo = dto.activo;
@@ -398,119 +326,6 @@ export class PersonasService {
       mimeType: photo.foto_mime_type || "image/jpeg",
       size: photo.foto.length,
     };
-  }
-
-  /**
-   * Construye mapa de ubicaciones GLPI por ID.
-   * @param locations - Catálogo de ubicaciones.
-   * @returns Mapa id → ubicación.
-   */
-  private buildLocationMap(locations: DomainLocation[]): Map<number, DomainLocation> {
-    return new Map(locations.map((location) => [location.id, location]));
-  }
-
-  /**
-   * Resuelve el nombre legible de una ubicación GLPI.
-   * @param locationById - Mapa de ubicaciones.
-   * @param locationId - ID de ubicación o null.
-   * @returns Nombre de sede o cadena vacía.
-   */
-  private resolveLocationName(
-    locationById: Map<number, DomainLocation>,
-    locationId: number | null,
-  ): string {
-    if (locationId == null) {
-      return "";
-    }
-
-    const location = locationById.get(locationId);
-    if (!location) {
-      return "";
-    }
-
-    return location.name || location.fullPath || "";
-  }
-
-  /**
-   * Limpia documentos sintéticos heredados (login LDAP o GLPI-{id}) en personas vinculadas.
-   * @param glpiUserId - ID numérico del usuario en GLPI.
-   * @param persona - Persona vinculada existente.
-   * @returns Persona con documento vacío si tenía un valor sintético de GLPI.
-   */
-  private async normalizeGlpiLinkedDocumento(
-    glpiUserId: number,
-    persona: PersonaRow,
-  ): Promise<PersonaRow> {
-    const documento = persona.documento.trim();
-    if (!documento) {
-      return persona;
-    }
-
-    const glpiUser = await this.usersService.findById(glpiUserId);
-    if (!glpiUser) {
-      return persona;
-    }
-
-    const login = glpiUser.login.trim();
-    const legacyFallback = `GLPI-${glpiUserId}`;
-    if (documento !== login && documento !== legacyFallback) {
-      return persona;
-    }
-
-    const updated = await this.repo.update(Number(persona.id), { documento: "" });
-    return updated ?? persona;
-  }
-
-  /**
-   * Construye el input de creación a partir de un usuario GLPI activo.
-   * @param glpiUserId - ID numérico del usuario en GLPI.
-   * @returns Datos listos para insertar o previsualizar.
-   */
-  private async buildPersonaInputFromGlpiUser(glpiUserId: number): Promise<CreatePersonaInput> {
-    const glpiUser = await this.usersService.findById(glpiUserId);
-    if (!glpiUser || !glpiUser.isActive) {
-      throw new BusinessException({
-        message: `Usuario GLPI ${glpiUserId} not found`,
-        code: API_ERROR_CODE.NOT_FOUND,
-        status: HttpStatus.NOT_FOUND,
-      });
-    }
-
-    const telefono = glpiUser.phone?.trim() || glpiUser.mobile?.trim() || null;
-
-    return {
-      nombre: glpiUser.fullName.trim() || glpiUser.login,
-      documento: "",
-      empresa: glpiUser.userTitle?.trim() || null,
-      email: glpiUser.email?.trim() || null,
-      telefono,
-      glpiUserId,
-      activo: true,
-    };
-  }
-
-  /**
-   * Valida que un usuario GLPI exista, esté activo y no esté ya vinculado.
-   * @param glpiUserId - ID numérico del usuario en GLPI.
-   */
-  private async assertGlpiUserAvailableForLink(glpiUserId: number): Promise<void> {
-    const linked = await this.repo.findByGlpiUserId(glpiUserId);
-    if (linked) {
-      throw new BusinessException({
-        message: `El usuario GLPI ${glpiUserId} ya está vinculado a una persona`,
-        code: API_ERROR_CODE.CONFLICT,
-        status: HttpStatus.CONFLICT,
-      });
-    }
-
-    const glpiUser = await this.usersService.findById(glpiUserId);
-    if (!glpiUser || !glpiUser.isActive) {
-      throw new BusinessException({
-        message: `Usuario GLPI ${glpiUserId} not found`,
-        code: API_ERROR_CODE.NOT_FOUND,
-        status: HttpStatus.NOT_FOUND,
-      });
-    }
   }
 
   /**

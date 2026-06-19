@@ -21,6 +21,9 @@ export function diffVisitaAuditFields(
   if (!beforeSnapshot && afterSnapshot) {
     return Object.keys(afterSnapshot);
   }
+  if (beforeSnapshot && !afterSnapshot) {
+    return Object.keys(beforeSnapshot);
+  }
   if (!beforeSnapshot || !afterSnapshot) return [];
   return Object.keys(afterSnapshot).filter((key) => {
     const typedKey = key as keyof VisitaAuditSnapshot;
@@ -41,9 +44,9 @@ export function resolveVisitaAuditAction(
   fallback: VisitaAuditAction,
 ): VisitaAuditAction {
   if (!current || !updated) return fallback;
-  const wasClosed = current.estado === "finalizada" || current.salida_at !== null;
-  const isClosed = updated.estado === "finalizada" || updated.salida_at !== null;
-  if (!wasClosed && isClosed) {
+  const wasFinalizada = current.estado === "finalizada";
+  const isFinalizada = updated.estado === "finalizada";
+  if (!wasFinalizada && isFinalizada) {
     return "visita.closed";
   }
   return fallback;

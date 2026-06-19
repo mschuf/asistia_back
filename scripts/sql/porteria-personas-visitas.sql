@@ -1,43 +1,49 @@
--- Personas y visitas para el módulo Portería (Asistia).
+-- Personas, proveedores y visitas para el módulo Portería (Asistia).
 -- Ejecutar en la base PostgreSQL de Asistia antes de habilitar el CRUD.
 -- Ejemplo: psql -h HOST -U USER -d asistia_back -f scripts/sql/porteria-personas-visitas.sql
 
-CREATE TABLE IF NOT EXISTS public.persona (
+CREATE TABLE IF NOT EXISTS public.prt_proveedor (
+  id          BIGSERIAL PRIMARY KEY,
+  nombre      TEXT NOT NULL UNIQUE,
+  activo      BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_proveedor_nombre
+  ON public.prt_proveedor (nombre);
+
+CREATE INDEX IF NOT EXISTS idx_proveedor_activo
+  ON public.prt_proveedor (activo);
+
+CREATE TABLE IF NOT EXISTS public.prt_persona (
   id              BIGSERIAL PRIMARY KEY,
   nombre          TEXT NOT NULL,
   documento       TEXT NOT NULL,
-  empresa         TEXT,
+  proveedor_id    BIGINT NOT NULL REFERENCES public.prt_proveedor (id),
   email           TEXT,
   telefono        TEXT,
-  glpi_user_id    BIGINT UNIQUE,
   activo          BOOLEAN NOT NULL DEFAULT true,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_persona_nombre
-  ON public.persona (nombre);
+  ON public.prt_persona (nombre);
 
-CREATE INDEX IF NOT EXISTS idx_persona_empresa
-  ON public.persona (empresa);
+CREATE INDEX IF NOT EXISTS idx_persona_proveedor_id
+  ON public.prt_persona (proveedor_id);
 
 CREATE INDEX IF NOT EXISTS idx_persona_activo
-  ON public.persona (activo);
+  ON public.prt_persona (activo);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persona_documento_unique_nonempty
-  ON public.persona (documento)
+  ON public.prt_persona (documento)
   WHERE documento <> '';
 
-ALTER TABLE public.persona
-  ADD COLUMN IF NOT EXISTS glpi_user_id BIGINT UNIQUE;
-
-CREATE INDEX IF NOT EXISTS idx_persona_glpi_user_id
-  ON public.persona (glpi_user_id)
-  WHERE glpi_user_id IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS public.visita (
+CREATE TABLE IF NOT EXISTS public.prt_visita (
   id                  BIGSERIAL PRIMARY KEY,
-  persona_id          BIGINT NOT NULL REFERENCES public.persona (id),
+  persona_id          BIGINT NOT NULL REFERENCES public.prt_persona (id),
   motivo              TEXT NOT NULL,
   responsable_nombre  TEXT NOT NULL,
   estado              TEXT NOT NULL DEFAULT 'activa',
@@ -51,7 +57,7 @@ CREATE TABLE IF NOT EXISTS public.visita (
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT visita_estado_check CHECK (
-    estado IN ('programada', 'activa', 'finalizada', 'cancelada')
+    estado IN ('programada', 'activa', 'sin_salida', 'finalizada', 'cancelada')
   ),
   CONSTRAINT visita_estado_seguimiento_check CHECK (
     estado_seguimiento IS NULL OR estado_seguimiento IN ('activo', 'alerta', 'peligro')
@@ -59,13 +65,13 @@ CREATE TABLE IF NOT EXISTS public.visita (
 );
 
 CREATE INDEX IF NOT EXISTS idx_visita_persona_id
-  ON public.visita (persona_id);
+  ON public.prt_visita (persona_id);
 
 CREATE INDEX IF NOT EXISTS idx_visita_estado
-  ON public.visita (estado);
+  ON public.prt_visita (estado);
 
 CREATE INDEX IF NOT EXISTS idx_visita_entrada_at
-  ON public.visita (entrada_at DESC);
+  ON public.prt_visita (entrada_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_visita_responsable_nombre
-  ON public.visita (responsable_nombre);
+  ON public.prt_visita (responsable_nombre);

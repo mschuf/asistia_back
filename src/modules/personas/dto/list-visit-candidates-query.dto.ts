@@ -1,6 +1,6 @@
 /**
  * @file list-visit-candidates-query.dto.ts
- * @description DTO de consulta para buscar candidatos de persona en visitas (Postgres + GLPI).
+ * @description DTO de consulta para buscar candidatos de persona en visitas (Postgres).
  */
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";

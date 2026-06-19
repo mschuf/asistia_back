@@ -32,7 +32,9 @@ import { AiModule } from "./modules/ai/ai.module";
 import { CompaniesModule } from "./modules/companies/companies.module";
 import { PromptsModule } from "./modules/prompts/prompts.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { ProveedoresModule } from "./modules/proveedores/proveedores.module";
 import { PersonasModule } from "./modules/personas/personas.module";
+import { MotivosVisitaModule } from "./modules/motivos-visita/motivos-visita.module";
 import { VisitasModule } from "./modules/visitas/visitas.module";
 
 @Module({
@@ -111,7 +113,9 @@ import { VisitasModule } from "./modules/visitas/visitas.module";
     CompaniesModule,
     PromptsModule,
     ReportsModule,
+    ProveedoresModule,
     PersonasModule,
+    MotivosVisitaModule,
     VisitasModule,
   ],
   providers: [

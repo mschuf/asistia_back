@@ -247,7 +247,7 @@ export class ReportsService {
       visitaId: Number(row.visita_id),
       action: row.action,
       actorUserId,
-      actorName: userNameById.get(actorUserId) ?? null,
+      actorName: actorUserId === 0 ? "Sistema" : (userNameById.get(actorUserId) ?? null),
       occurredAt: new Date(row.occurred_at).toISOString(),
       visitante: row.visitante ?? null,
       documento: row.documento ?? null,

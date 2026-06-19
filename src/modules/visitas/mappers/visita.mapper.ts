@@ -21,7 +21,7 @@ function parseZonasPermitidas(value: unknown): VisitaZona[] {
 
 /**
  * Convierte una fila de Postgres en DTO de respuesta.
- * @param row - Fila cruda de `public.visita` con datos de persona.
+ * @param row - Fila cruda de `public.prt_visita` con datos de prt_persona.
  * @returns DTO listo para serializar en HTTP.
  */
 export function mapVisitaRowToResponse(row: VisitaListRow | (VisitaRow & Partial<VisitaListRow>)): VisitaResponseDto {
@@ -33,6 +33,7 @@ export function mapVisitaRowToResponse(row: VisitaListRow | (VisitaRow & Partial
     documento: row.documento ?? "",
     empresa: row.empresa ?? null,
     motivo: row.motivo,
+    motivoVisitaId: row.motivo_visita_id != null ? Number(row.motivo_visita_id) : null,
     responsableNombre: row.responsable_nombre,
     estado: row.estado,
     estadoSeguimiento: row.estado_seguimiento,

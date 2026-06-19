@@ -68,12 +68,33 @@ describe("visita-audit.helpers", () => {
       expect(result).toEqual(expect.arrayContaining(["estado", "salidaAt"]));
       expect(result).not.toContain("visitante");
     });
+
+    it("devuelve todos los campos cuando se elimina la visita", () => {
+      const before = makeSnapshot();
+      const result = diffVisitaAuditFields(before, null);
+      expect(result).toContain("estado");
+      expect(result).toContain("visitante");
+      expect(result.length).toBeGreaterThan(5);
+    });
   });
 
   describe("resolveVisitaAuditAction", () => {
     it("marca visita.closed cuando pasa a finalizada", () => {
       const current = makeRow({ estado: "activa", salida_at: null });
       const updated = makeRow({ estado: "finalizada", salida_at: "2026-06-18T14:00:00.000Z" });
+      const result = resolveVisitaAuditAction(current, updated, "visita.updated");
+      expect(result).toBe("visita.closed");
+    });
+
+    it("marca visita.closed aunque la visita activa ya tenga salida planificada", () => {
+      const current = makeRow({
+        estado: "activa",
+        salida_at: "2026-06-18T18:00:00.000Z",
+      });
+      const updated = makeRow({
+        estado: "finalizada",
+        salida_at: "2026-06-18T14:00:00.000Z",
+      });
       const result = resolveVisitaAuditAction(current, updated, "visita.updated");
       expect(result).toBe("visita.closed");
     });

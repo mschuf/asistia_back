@@ -21,6 +21,7 @@ const TARJETA_LABELS = {
 const ESTADO_LABELS = {
   programada: "Programada",
   activa: "Activa",
+  sin_salida: "Sin salida",
   finalizada: "Finalizada",
   cancelada: "Cancelada",
 } as const;

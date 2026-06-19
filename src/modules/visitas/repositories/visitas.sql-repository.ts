@@ -1,6 +1,6 @@
 /**
  * @file visitas.sql-repository.ts
- * @description Acceso SQL a la tabla `public.visita` con JOIN a persona, filtros y orden.
+ * @description Acceso SQL a la tabla `public.prt_visita` con JOIN a prt_persona, filtros y orden.
  */
 import { Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../../common/dto/pagination.dto";
@@ -21,7 +21,7 @@ const VISITA_SORT_EXPRESSIONS: Record<VisitaSortBy, string> = {
   id: "v.id",
   visitante: "p.nombre",
   documento: "p.documento",
-  empresa: "p.empresa",
+  empresa: "prov.nombre",
   motivo: "v.motivo",
   responsable: "v.responsable_nombre",
   estado: "v.estado",
@@ -32,6 +32,7 @@ const VISITA_SORT_EXPRESSIONS: Record<VisitaSortBy, string> = {
 const VISITA_SELECT_COLUMNS = `
   v.id,
   v.persona_id,
+  v.motivo_visita_id,
   v.motivo,
   v.responsable_nombre,
   v.estado,
@@ -46,13 +47,37 @@ const VISITA_SELECT_COLUMNS = `
   v.updated_at,
   p.nombre AS visitante,
   p.documento,
-  p.empresa,
+  prov.nombre AS empresa,
   (p.foto IS NOT NULL) AS has_foto
 `;
 
 const VISITA_FROM_JOIN = `
-  FROM public.visita v
-  INNER JOIN public.persona p ON p.id = v.persona_id
+  FROM public.prt_visita v
+  INNER JOIN public.prt_persona p ON p.id = v.persona_id
+  INNER JOIN public.prt_proveedor prov ON prov.id = p.proveedor_id
+`;
+
+/** Columnas de visita actualizada vía RETURNING (alias `u`) con joins de persona. */
+const VISITA_UPDATED_SELECT_COLUMNS = `
+  u.id,
+  u.persona_id,
+  u.motivo_visita_id,
+  u.motivo,
+  u.responsable_nombre,
+  u.estado,
+  u.estado_seguimiento,
+  u.zonas_permitidas,
+  u.credencial_numero,
+  u.tarjeta_color,
+  u.entrada_at,
+  u.salida_at,
+  u.observaciones,
+  u.created_at,
+  u.updated_at,
+  p.nombre AS visitante,
+  p.documento,
+  prov.nombre AS empresa,
+  (p.foto IS NOT NULL) AS has_foto
 `;
 
 /** Repositorio Postgres para operaciones CRUD de visitas. */
@@ -156,11 +181,11 @@ export class VisitasSqlRepository {
               )
           )::text AS active_both_zones,
           COUNT(*) FILTER (
-            WHERE estado = 'activa'
+            WHERE estado = 'sin_salida'
               AND entrada_at >= $1
               AND entrada_at < $3
           )::text AS active_stale_without_checkout
-       FROM public.visita`,
+       FROM public.prt_visita`,
       [range.entradaFrom, range.entradaTo, range.lastDayStart],
     );
 
@@ -205,7 +230,7 @@ export class VisitasSqlRepository {
     const rows = await this.postgres.query<VisitaListRow>(
       `SELECT ${VISITA_SELECT_COLUMNS}
        ${VISITA_FROM_JOIN}
-       WHERE v.estado = 'activa'
+       WHERE v.estado IN ('activa', 'sin_salida')
          AND v.tarjeta_color = $1
          AND ($2::bigint IS NULL OR v.id <> $2)
        LIMIT 1`,
@@ -231,7 +256,7 @@ export class VisitasSqlRepository {
     const rows = await this.postgres.query<VisitaListRow>(
       `SELECT ${VISITA_SELECT_COLUMNS}
        ${VISITA_FROM_JOIN}
-       WHERE v.estado = 'activa'
+       WHERE v.estado IN ('activa', 'sin_salida')
          AND trim(v.credencial_numero) = $1
          AND ($2::bigint IS NULL OR v.id <> $2)
        LIMIT 1`,
@@ -242,14 +267,18 @@ export class VisitasSqlRepository {
   }
 
   /**
-   * Busca una visita activa de la persona indicada.
+   * Busca una visita activa de la persona indicada en el día calendario dado.
    * @param personaId - ID de la persona visitante.
    * @param excludeVisitaId - ID de visita a excluir (p. ej. la que se está editando).
-   * @returns Fila encontrada o `null` si la persona no tiene visita activa.
+   * @param dayStart - Inicio inclusive del día local de referencia (`entrada_at >= dayStart`).
+   * @param dayEnd - Fin exclusive del día local de referencia (`entrada_at < dayEnd`).
+   * @returns Fila encontrada o `null` si la persona no tiene visita activa ese día.
    */
   async findActiveByPersonaId(
     personaId: number,
     excludeVisitaId?: number,
+    dayStart?: Date,
+    dayEnd?: Date,
   ): Promise<VisitaListRow | null> {
     const rows = await this.postgres.query<VisitaListRow>(
       `SELECT ${VISITA_SELECT_COLUMNS}
@@ -257,11 +286,52 @@ export class VisitasSqlRepository {
        WHERE v.estado = 'activa'
          AND v.persona_id = $1
          AND ($2::bigint IS NULL OR v.id <> $2)
+         AND ($3::timestamptz IS NULL OR v.entrada_at >= $3::timestamptz)
+         AND ($4::timestamptz IS NULL OR v.entrada_at < $4::timestamptz)
        LIMIT 1`,
-      [personaId, excludeVisitaId ?? null],
+      [personaId, excludeVisitaId ?? null, dayStart ?? null, dayEnd ?? null],
     );
 
     return rows[0] ?? null;
+  }
+
+  /**
+   * Lista visitas activas candidatas a pasar a sin_salida (ingreso anterior al día actual).
+   * @param startOfToday - Inicio del día calendario actual (hora local del servidor).
+   * @returns Filas con estado activa y entrada_at anterior a hoy.
+   */
+  async findStaleCandidates(startOfToday: Date): Promise<VisitaListRow[]> {
+    return this.postgres.query<VisitaListRow>(
+      `SELECT ${VISITA_SELECT_COLUMNS}
+       ${VISITA_FROM_JOIN}
+       WHERE v.estado = 'activa'
+         AND v.entrada_at IS NOT NULL
+         AND v.entrada_at < $1::timestamptz`,
+      [startOfToday],
+    );
+  }
+
+  /**
+   * Marca visitas activas con ingreso de día anterior como sin_salida.
+   * @param startOfToday - Inicio del día calendario actual (hora local del servidor).
+   * @returns Filas actualizadas con datos de persona.
+   */
+  async markStaleWithoutCheckout(startOfToday: Date): Promise<VisitaListRow[]> {
+    return this.postgres.query<VisitaListRow>(
+      `WITH updated AS (
+          UPDATE public.prt_visita
+          SET estado = 'sin_salida', updated_at = now()
+          WHERE estado = 'activa'
+            AND entrada_at IS NOT NULL
+            AND entrada_at < $1::timestamptz
+          RETURNING *
+       )
+       SELECT ${VISITA_UPDATED_SELECT_COLUMNS}
+       FROM updated u
+       INNER JOIN public.prt_persona p ON p.id = u.persona_id
+       INNER JOIN public.prt_proveedor prov ON prov.id = p.proveedor_id`,
+      [startOfToday],
+    );
   }
 
   /**
@@ -271,8 +341,9 @@ export class VisitasSqlRepository {
    */
   async create(input: CreateVisitaInput): Promise<VisitaListRow> {
     const rows = await this.postgres.query<VisitaRow>(
-      `INSERT INTO public.visita (
+      `INSERT INTO public.prt_visita (
           persona_id,
+          motivo_visita_id,
           motivo,
           responsable_nombre,
           estado,
@@ -283,10 +354,11 @@ export class VisitasSqlRepository {
           entrada_at,
           salida_at,
           observaciones
-       ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12)
        RETURNING
           id,
           persona_id,
+          motivo_visita_id,
           motivo,
           responsable_nombre,
           estado,
@@ -301,6 +373,7 @@ export class VisitasSqlRepository {
           updated_at`,
       [
         input.personaId,
+        input.motivoVisitaId,
         input.motivo,
         input.responsableNombre,
         input.estado,
@@ -339,6 +412,7 @@ export class VisitasSqlRepository {
     };
 
     if (input.personaId !== undefined) setField("persona_id", input.personaId);
+    if (input.motivoVisitaId !== undefined) setField("motivo_visita_id", input.motivoVisitaId);
     if (input.motivo !== undefined) setField("motivo", input.motivo);
     if (input.responsableNombre !== undefined) setField("responsable_nombre", input.responsableNombre);
     if (input.estado !== undefined) setField("estado", input.estado);
@@ -361,7 +435,7 @@ export class VisitasSqlRepository {
     params.push(id);
 
     const rows = await this.postgres.query<VisitaRow>(
-      `UPDATE public.visita
+      `UPDATE public.prt_visita
        SET ${assignments.join(", ")}
        WHERE id = $${params.length}
        RETURNING id`,
@@ -379,7 +453,7 @@ export class VisitasSqlRepository {
    */
   async hardDelete(id: number): Promise<VisitaRow | null> {
     const rows = await this.postgres.query<VisitaRow>(
-      `DELETE FROM public.visita
+      `DELETE FROM public.prt_visita
        WHERE id = $1
        RETURNING
           id,
@@ -462,7 +536,7 @@ export class VisitasSqlRepository {
 
     addIlike("p.nombre", filters.visitante);
     addIlike("p.documento", filters.documento);
-    addIlike("p.empresa", filters.empresa);
+    addIlike("prov.nombre", filters.empresa);
     addIlike("v.motivo", filters.motivo);
     addIlike("v.responsable_nombre", filters.responsable);
 
@@ -472,7 +546,7 @@ export class VisitasSqlRepository {
       whereClauses.push(
         `(p.nombre ILIKE $${params.length}
           OR p.documento ILIKE $${params.length}
-          OR p.empresa ILIKE $${params.length}
+          OR prov.nombre ILIKE $${params.length}
           OR v.motivo ILIKE $${params.length}
           OR v.responsable_nombre ILIKE $${params.length})`,
       );

@@ -2,9 +2,9 @@
 -- Ejecutar una vez en PostgreSQL de Asistia:
 -- psql -h HOST -U USER -d asistia_back -f scripts/sql/persona-documento-unique-partial.sql
 
-ALTER TABLE public.persona
+ALTER TABLE public.prt_persona
   DROP CONSTRAINT IF EXISTS persona_documento_unique;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_persona_documento_unique_nonempty
-  ON public.persona (documento)
+  ON public.prt_persona (documento)
   WHERE documento <> '';

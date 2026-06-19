@@ -1,6 +1,6 @@
 /**
  * @file personas.sql-repository.ts
- * @description Acceso SQL a la tabla `public.persona` con paginación, filtros y orden.
+ * @description Acceso SQL a la tabla `public.prt_persona` con paginación, filtros y orden.
  */
 import { Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../../common/dto/pagination.dto";
@@ -15,25 +15,31 @@ import type {
 import type { PersonaSortBy, PersonaSortOrder } from "../dto/list-personas-query.dto";
 
 const PERSONA_SORT_EXPRESSIONS: Record<PersonaSortBy, string> = {
-  id: "id",
-  nombre: "nombre",
-  documento: "documento",
-  empresa: "empresa",
-  createdAt: "created_at",
+  id: "p.id",
+  nombre: "p.nombre",
+  documento: "p.documento",
+  proveedorNombre: "prov.nombre",
+  createdAt: "p.created_at",
 };
 
 const PERSONA_SELECT_COLUMNS = `
-  id,
-  nombre,
-  documento,
-  empresa,
-  email,
-  telefono,
-  glpi_user_id,
-  activo,
-  (foto IS NOT NULL) AS has_foto,
-  created_at,
-  updated_at
+  p.id,
+  p.nombre,
+  p.documento,
+  p.proveedor_id,
+  prov.nombre AS proveedor_nombre,
+  prov.activo AS proveedor_activo,
+  p.email,
+  p.telefono,
+  p.activo,
+  (p.foto IS NOT NULL) AS has_foto,
+  p.created_at,
+  p.updated_at
+`;
+
+const PERSONA_FROM_JOIN = `
+  FROM public.prt_persona p
+  INNER JOIN public.prt_proveedor prov ON prov.id = p.proveedor_id
 `;
 
 /** Repositorio Postgres para operaciones CRUD de personas. */
@@ -50,7 +56,7 @@ export class PersonasSqlRepository {
   async findAll(filters: PersonaListFilters): Promise<PaginatedResult<PersonaRow>> {
     const { whereSql, params } = this.buildWhereClause(filters);
     const countRows = await this.postgres.query<{ total: string }>(
-      `SELECT COUNT(*)::text AS total FROM public.persona ${whereSql}`,
+      `SELECT COUNT(*)::text AS total ${PERSONA_FROM_JOIN} ${whereSql}`,
       params,
     );
     const total = Number(countRows[0]?.total ?? 0);
@@ -63,7 +69,7 @@ export class PersonasSqlRepository {
 
     const items = await this.postgres.query<PersonaRow>(
       `SELECT ${PERSONA_SELECT_COLUMNS}
-       FROM public.persona
+       ${PERSONA_FROM_JOIN}
        ${whereSql}
        ${orderSql}
        LIMIT $${limitParam}
@@ -87,8 +93,8 @@ export class PersonasSqlRepository {
   async findById(id: number): Promise<PersonaRow | null> {
     const rows = await this.postgres.query<PersonaRow>(
       `SELECT ${PERSONA_SELECT_COLUMNS}
-       FROM public.persona
-       WHERE id = $1`,
+       ${PERSONA_FROM_JOIN}
+       WHERE p.id = $1`,
       [id],
     );
 
@@ -103,44 +109,12 @@ export class PersonasSqlRepository {
   async findByDocumento(documento: string): Promise<PersonaRow | null> {
     const rows = await this.postgres.query<PersonaRow>(
       `SELECT ${PERSONA_SELECT_COLUMNS}
-       FROM public.persona
-       WHERE documento = $1`,
+       ${PERSONA_FROM_JOIN}
+       WHERE p.documento = $1`,
       [documento],
     );
 
     return rows[0] ?? null;
-  }
-
-  /**
-   * Busca una persona por ID de usuario GLPI vinculado.
-   * @param glpiUserId - ID numérico del usuario en GLPI.
-   * @returns Fila encontrada o `null`.
-   */
-  async findByGlpiUserId(glpiUserId: number): Promise<PersonaRow | null> {
-    const rows = await this.postgres.query<PersonaRow>(
-      `SELECT ${PERSONA_SELECT_COLUMNS}
-       FROM public.persona
-       WHERE glpi_user_id = $1`,
-      [glpiUserId],
-    );
-
-    return rows[0] ?? null;
-  }
-
-  /**
-   * Lista los IDs de usuario GLPI ya vinculados a personas.
-   * @returns Conjunto de IDs GLPI vinculados.
-   */
-  async findLinkedGlpiUserIds(): Promise<Set<number>> {
-    const rows = await this.postgres.query<{ glpi_user_id: string }>(
-      `SELECT glpi_user_id FROM public.persona WHERE glpi_user_id IS NOT NULL`,
-    );
-
-    return new Set(
-      rows
-        .map((row) => Number(row.glpi_user_id))
-        .filter((id) => Number.isFinite(id) && id > 0),
-    );
   }
 
   /**
@@ -151,9 +125,9 @@ export class PersonasSqlRepository {
   async countActiveVisitas(personaId: number): Promise<number> {
     const rows = await this.postgres.query<{ total: string }>(
       `SELECT COUNT(*)::text AS total
-       FROM public.visita
+       FROM public.prt_visita
        WHERE persona_id = $1
-         AND estado IN ('programada', 'activa')`,
+         AND estado IN ('programada', 'activa', 'sin_salida')`,
       [personaId],
     );
 
@@ -166,29 +140,28 @@ export class PersonasSqlRepository {
    * @returns Fila de la persona creada.
    */
   async create(input: CreatePersonaInput): Promise<PersonaRow> {
-    const rows = await this.postgres.query<PersonaRow>(
-      `INSERT INTO public.persona (
+    const rows = await this.postgres.query<{ id: string }>(
+      `INSERT INTO public.prt_persona (
           nombre,
           documento,
-          empresa,
+          proveedor_id,
           email,
           telefono,
-          glpi_user_id,
           activo
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING ${PERSONA_SELECT_COLUMNS}`,
+       ) VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id`,
       [
         input.nombre,
         input.documento,
-        input.empresa,
+        input.proveedorId,
         input.email,
         input.telefono,
-        input.glpiUserId,
         input.activo,
       ],
     );
 
-    return rows[0];
+    const created = await this.findById(Number(rows[0]!.id));
+    return created!;
   }
 
   /**
@@ -208,10 +181,9 @@ export class PersonasSqlRepository {
 
     if (input.nombre !== undefined) setField("nombre", input.nombre);
     if (input.documento !== undefined) setField("documento", input.documento);
-    if (input.empresa !== undefined) setField("empresa", input.empresa);
+    if (input.proveedorId !== undefined) setField("proveedor_id", input.proveedorId);
     if (input.email !== undefined) setField("email", input.email);
     if (input.telefono !== undefined) setField("telefono", input.telefono);
-    if (input.glpiUserId !== undefined) setField("glpi_user_id", input.glpiUserId);
     if (input.activo !== undefined) setField("activo", input.activo);
 
     if (assignments.length === 0) {
@@ -221,15 +193,19 @@ export class PersonasSqlRepository {
     assignments.push("updated_at = now()");
     params.push(id);
 
-    const rows = await this.postgres.query<PersonaRow>(
-      `UPDATE public.persona
+    const rows = await this.postgres.query<{ id: string }>(
+      `UPDATE public.prt_persona
        SET ${assignments.join(", ")}
        WHERE id = $${params.length}
-       RETURNING ${PERSONA_SELECT_COLUMNS}`,
+       RETURNING id`,
       params,
     );
 
-    return rows[0] ?? null;
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(Number(rows[0].id));
   }
 
   /**
@@ -238,15 +214,19 @@ export class PersonasSqlRepository {
    * @returns Fila actualizada o `null` si no existe.
    */
   async softDelete(id: number): Promise<PersonaRow | null> {
-    const rows = await this.postgres.query<PersonaRow>(
-      `UPDATE public.persona
+    const rows = await this.postgres.query<{ id: string }>(
+      `UPDATE public.prt_persona
        SET activo = false, updated_at = now()
        WHERE id = $1
-       RETURNING ${PERSONA_SELECT_COLUMNS}`,
+       RETURNING id`,
       [id],
     );
 
-    return rows[0] ?? null;
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(Number(rows[0].id));
   }
 
   /**
@@ -256,7 +236,7 @@ export class PersonasSqlRepository {
    */
   async hardDelete(id: number): Promise<number | null> {
     const rows = await this.postgres.query<{ id: string }>(
-      `DELETE FROM public.persona WHERE id = $1 RETURNING id`,
+      `DELETE FROM public.prt_persona WHERE id = $1 RETURNING id`,
       [id],
     );
 
@@ -272,7 +252,7 @@ export class PersonasSqlRepository {
   async findPhotoById(id: number): Promise<PersonaPhotoRow | null> {
     const rows = await this.postgres.query<PersonaPhotoRow>(
       `SELECT foto, foto_mime_type
-       FROM public.persona
+       FROM public.prt_persona
        WHERE id = $1
          AND foto IS NOT NULL`,
       [id],
@@ -289,17 +269,21 @@ export class PersonasSqlRepository {
    * @returns Fila actualizada o `null` si no existe la persona.
    */
   async updatePhoto(id: number, foto: Buffer, mimeType: string): Promise<PersonaRow | null> {
-    const rows = await this.postgres.query<PersonaRow>(
-      `UPDATE public.persona
+    const rows = await this.postgres.query<{ id: string }>(
+      `UPDATE public.prt_persona
        SET foto = $1,
            foto_mime_type = $2,
            updated_at = now()
        WHERE id = $3
-       RETURNING ${PERSONA_SELECT_COLUMNS}`,
+       RETURNING id`,
       [foto, mimeType, id],
     );
 
-    return rows[0] ?? null;
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(Number(rows[0].id));
   }
 
   /**
@@ -308,17 +292,21 @@ export class PersonasSqlRepository {
    * @returns Fila actualizada o `null` si no existe la persona.
    */
   async clearPhoto(id: number): Promise<PersonaRow | null> {
-    const rows = await this.postgres.query<PersonaRow>(
-      `UPDATE public.persona
+    const rows = await this.postgres.query<{ id: string }>(
+      `UPDATE public.prt_persona
        SET foto = NULL,
            foto_mime_type = NULL,
            updated_at = now()
        WHERE id = $1
-       RETURNING ${PERSONA_SELECT_COLUMNS}`,
+       RETURNING id`,
       [id],
     );
 
-    return rows[0] ?? null;
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(Number(rows[0].id));
   }
 
   /**
@@ -339,28 +327,33 @@ export class PersonasSqlRepository {
 
     if (filters.activo !== undefined) {
       params.push(filters.activo);
-      whereClauses.push(`activo = $${params.length}`);
+      whereClauses.push(`p.activo = $${params.length}`);
     }
 
-    addIlike("nombre", filters.nombre);
-    addIlike("documento", filters.documento);
-    addIlike("empresa", filters.empresa);
+    if (filters.proveedorId !== undefined) {
+      params.push(filters.proveedorId);
+      whereClauses.push(`p.proveedor_id = $${params.length}`);
+    }
+
+    addIlike("p.nombre", filters.nombre);
+    addIlike("p.documento", filters.documento);
+    addIlike("prov.nombre", filters.proveedor);
 
     const search = filters.search?.trim();
     if (search) {
       params.push(`%${search}%`);
       const ilikeParam = params.length;
       const searchConditions = [
-        `nombre ILIKE $${ilikeParam}`,
-        `documento ILIKE $${ilikeParam}`,
-        `empresa ILIKE $${ilikeParam}`,
-        `email ILIKE $${ilikeParam}`,
+        `p.nombre ILIKE $${ilikeParam}`,
+        `p.documento ILIKE $${ilikeParam}`,
+        `prov.nombre ILIKE $${ilikeParam}`,
+        `p.email ILIKE $${ilikeParam}`,
       ];
 
       const parsedId = Number.parseInt(search, 10);
       if (Number.isFinite(parsedId) && parsedId > 0 && String(parsedId) === search) {
         params.push(parsedId);
-        searchConditions.push(`id = $${params.length}`);
+        searchConditions.push(`p.id = $${params.length}`);
       }
 
       whereClauses.push(`(${searchConditions.join(" OR ")})`);
@@ -377,15 +370,15 @@ export class PersonasSqlRepository {
    */
   private buildOrderClause(filters: PersonaListFilters): string {
     if (!filters.sortBy) {
-      return "ORDER BY nombre ASC, id ASC";
+      return "ORDER BY p.id DESC";
     }
 
     const expression = PERSONA_SORT_EXPRESSIONS[filters.sortBy];
     if (!expression) {
-      return "ORDER BY nombre ASC, id ASC";
+      return "ORDER BY p.id DESC";
     }
 
     const direction: PersonaSortOrder = filters.sortOrder === "desc" ? "desc" : "asc";
-    return `ORDER BY ${expression} ${direction.toUpperCase()}, id ASC`;
+    return `ORDER BY ${expression} ${direction.toUpperCase()}, p.id ASC`;
   }
 }

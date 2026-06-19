@@ -7,10 +7,11 @@ import type { VisitaEstado } from "./domain/visita-estado";
 import type { VisitaSeguimiento } from "./domain/visita-seguimiento";
 import type { VisitaSortBy, VisitaSortOrder } from "./dto/list-visitas-query.dto";
 
-/** Fila de la tabla `public.visita` tal como la devuelve Postgres. */
+/** Fila de la tabla `public.prt_visita` tal como la devuelve Postgres. */
 export interface VisitaRow extends QueryResultRow {
   id: string;
   persona_id: string;
+  motivo_visita_id: string | null;
   motivo: string;
   responsable_nombre: string;
   estado: VisitaEstado;
@@ -55,6 +56,7 @@ export interface VisitaListFilters {
 /** Payload de creación de visita normalizado para el repositorio. */
 export interface CreateVisitaInput {
   personaId: number;
+  motivoVisitaId: number;
   motivo: string;
   responsableNombre: string;
   estado: VisitaEstado;
@@ -87,6 +89,7 @@ export interface VisitaMetricsRow extends QueryResultRow {
 /** Payload parcial de actualización de visita para el repositorio. */
 export interface UpdateVisitaInput {
   personaId?: number;
+  motivoVisitaId?: number;
   motivo?: string;
   responsableNombre?: string;
   estado?: VisitaEstado;

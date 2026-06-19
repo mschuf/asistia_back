@@ -4,23 +4,15 @@
  */
 import { ApiProperty } from "@nestjs/swagger";
 
-/** Origen del candidato en la búsqueda unificada. */
-export const VISIT_CANDIDATE_SOURCE = ["postgres", "glpi"] as const;
-
-export type VisitCandidateSource = (typeof VISIT_CANDIDATE_SOURCE)[number];
-
-/** Candidato unificado para el selector de persona en visitas. */
+/** Candidato de persona activa para el selector de visitas. */
 export class VisitCandidateResponseDto {
-  @ApiProperty({ enum: VISIT_CANDIDATE_SOURCE, example: "postgres" })
-  source!: VisitCandidateSource;
-
   @ApiProperty({ example: 1 })
   id!: number;
 
   @ApiProperty({ example: "Maria Gonzalez" })
   fullName!: string;
 
-  @ApiProperty({ example: "30.123.456", description: "Documento (Postgres) o ubicación (GLPI)" })
+  @ApiProperty({ example: "30.123.456", description: "Documento de la persona" })
   subtitle!: string;
 }
 

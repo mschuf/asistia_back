@@ -4,15 +4,14 @@
  */
 import { Module } from "@nestjs/common";
 import { PorteriaGuard } from "../../common/guards/porteria.guard";
-import { CatalogModule } from "../catalog/catalog.module";
-import { UsersModule } from "../users/users.module";
+import { ProveedoresModule } from "../proveedores/proveedores.module";
 import { PersonasController } from "./personas.controller";
 import { PersonasService } from "./personas.service";
 import { PersonasSqlRepository } from "./repositories/personas.sql-repository";
 
 /** Registra controlador, servicio y repositorio de personas. */
 @Module({
-  imports: [UsersModule, CatalogModule],
+  imports: [ProveedoresModule],
   controllers: [PersonasController],
   providers: [PersonasService, PersonasSqlRepository, PorteriaGuard],
   exports: [PersonasService, PersonasSqlRepository],

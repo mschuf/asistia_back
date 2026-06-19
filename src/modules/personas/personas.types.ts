@@ -5,15 +5,16 @@
 import type { QueryResultRow } from "pg";
 import type { PersonaSortBy, PersonaSortOrder } from "./dto/list-personas-query.dto";
 
-/** Fila de la tabla `public.persona` tal como la devuelve Postgres. */
+/** Fila de la tabla `public.prt_persona` con JOIN a proveedor. */
 export interface PersonaRow extends QueryResultRow {
   id: string;
   nombre: string;
   documento: string;
-  empresa: string | null;
+  proveedor_id: string;
+  proveedor_nombre: string;
+  proveedor_activo: boolean;
   email: string | null;
   telefono: string | null;
-  glpi_user_id: string | null;
   activo: boolean;
   has_foto: boolean;
   created_at: Date | string;
@@ -33,7 +34,8 @@ export interface PersonaListFilters {
   search?: string;
   nombre?: string;
   documento?: string;
-  empresa?: string;
+  proveedor?: string;
+  proveedorId?: number;
   activo?: boolean;
   sortBy?: PersonaSortBy;
   sortOrder?: PersonaSortOrder;
@@ -43,10 +45,9 @@ export interface PersonaListFilters {
 export interface CreatePersonaInput {
   nombre: string;
   documento: string;
-  empresa: string | null;
+  proveedorId: number;
   email: string | null;
   telefono: string | null;
-  glpiUserId: number | null;
   activo: boolean;
 }
 
@@ -54,10 +55,11 @@ export interface CreatePersonaInput {
 export interface UpdatePersonaInput {
   nombre?: string;
   documento?: string;
-  empresa?: string | null;
+  proveedorId?: number;
   email?: string | null;
   telefono?: string | null;
-  glpiUserId?: number | null;
   activo?: boolean;
 }
-
+
+/** Nombre del proveedor placeholder creado en migración para datos históricos. */
+export const PROVEEDOR_SIN_ASIGNAR_NOMBRE = "Sin asignar";

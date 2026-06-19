@@ -6,7 +6,14 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import type { PaginatedResult } from "../../common/dto/pagination.dto";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
+import type { DomainUser } from "../glpi/mappers/user.mapper";
+import { MotivosVisitaService } from "../motivos-visita/motivos-visita.service";
 import { PersonasSqlRepository } from "../personas/repositories/personas.sql-repository";
+import type { PersonaRow } from "../personas/personas.types";
+import { PROVEEDOR_SIN_ASIGNAR_NOMBRE } from "../personas/personas.types";
+import { UsersService } from "../users/users.service";
+import { CatalogService } from "../catalog/catalog.service";
+import type { DomainLocation } from "../glpi/mappers/location.mapper";
 import type { CreateVisitaInput, UpdateVisitaInput, VisitaMetricsRange } from "./visitas.types";
 import type { VisitaMetricsResponseDto } from "./dto/visita-metrics.response.dto";
 import type { VisitaMetricsQueryDto } from "./dto/visita-metrics-query.dto";
@@ -18,6 +25,11 @@ import {
 } from "./dto/list-visitas-query.dto";
 import { UpdateVisitaDto } from "./dto/update-visita.dto";
 import {
+  DEFAULT_RESPONSABLE_CANDIDATES_LIMIT,
+  type ListResponsableCandidatesQueryDto,
+} from "./dto/list-responsable-candidates-query.dto";
+import type { ResponsableCandidateListResponseDto } from "./dto/responsable-candidate.response.dto";
+import {
   isVisitaTarjetaColor,
   resolveZonasFromTarjetaColor,
   zonasMatchTarjetaColor,
@@ -27,6 +39,7 @@ import {
   diffVisitaAuditFields,
   resolveVisitaAuditAction,
 } from "./domain/visita-audit.helpers";
+import { requiereCancelacionAlEliminar } from "./domain/visita-estado.helpers";
 import { requiresTarjetaDisponibilidad } from "./domain/visita-tarjeta-disponibilidad";
 import type { VisitaEstado } from "./domain/visita-estado";
 import type { VisitaZona } from "./domain/visita-zona";
@@ -42,11 +55,16 @@ import type {
 /** Servicio de gestión de visitas con persistencia en Postgres. */
 @Injectable()
 export class VisitasService {
+  private staleSyncDayKey: string | null = null;
+
   /** Inyecta repositorios SQL de visitas y personas. */
   constructor(
     private readonly repo: VisitasSqlRepository,
     private readonly auditRepo: VisitaAuditSqlRepository,
     private readonly personasRepo: PersonasSqlRepository,
+    private readonly motivosVisitaService: MotivosVisitaService,
+    private readonly usersService: UsersService,
+    private readonly catalogService: CatalogService,
   ) {}
 
   private toAuditSnapshot(row: VisitaListRow): VisitaAuditSnapshot {
@@ -83,13 +101,33 @@ export class VisitasService {
     const beforeState = input.before ? this.toAuditSnapshot(input.before) : null;
     const afterState = input.after ? this.toAuditSnapshot(input.after) : null;
     const changedFields = diffVisitaAuditFields(beforeState, afterState);
-    await this.auditRepo.create({
+    await this.logAuditSnapshots({
       visitaId: input.visitaId,
       actorUserId: input.actorUserId,
       action: input.action,
       beforeState,
       afterState,
       changedFields,
+      metadata: input.metadata,
+    });
+  }
+
+  private async logAuditSnapshots(input: {
+    visitaId: number;
+    actorUserId: number;
+    action: VisitaAuditAction;
+    beforeState: VisitaAuditSnapshot | null;
+    afterState: VisitaAuditSnapshot | null;
+    changedFields: string[];
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    await this.auditRepo.create({
+      visitaId: input.visitaId,
+      actorUserId: input.actorUserId,
+      action: input.action,
+      beforeState: input.beforeState,
+      afterState: input.afterState,
+      changedFields: input.changedFields,
       metadata: input.metadata,
     });
   }
@@ -131,9 +169,11 @@ export class VisitasService {
 
   private async assertPersonaSinVisitaActiva(
     personaId: number,
+    referenceDate: Date,
     excludeVisitaId?: number,
   ): Promise<void> {
-    const conflict = await this.repo.findActiveByPersonaId(personaId, excludeVisitaId);
+    const { start, end } = this.getLocalDayBounds(referenceDate);
+    const conflict = await this.repo.findActiveByPersonaId(personaId, excludeVisitaId, start, end);
     if (!conflict) return;
 
     throw new BusinessException({
@@ -143,12 +183,93 @@ export class VisitasService {
     });
   }
 
+  private async assertPersonaConProveedorValido(persona: PersonaRow): Promise<void> {
+    if (persona.proveedor_nombre === PROVEEDOR_SIN_ASIGNAR_NOMBRE) {
+      throw new BusinessException({
+        message: `La persona ${persona.id} no tiene proveedor asignado. Edítela en Personas y seleccione un proveedor.`,
+        code: API_ERROR_CODE.CONFLICT,
+        status: HttpStatus.CONFLICT,
+      });
+    }
+
+    if (!persona.proveedor_activo) {
+      throw new BusinessException({
+        message: `El proveedor de la persona ${persona.id} está inactivo`,
+        code: API_ERROR_CODE.CONFLICT,
+        status: HttpStatus.CONFLICT,
+      });
+    }
+  }
+
+  private rejectManualSinSalidaEstado(estado: VisitaEstado | undefined): void {
+    if (estado === "sin_salida") {
+      throw new BusinessException({
+        message: "El estado sin_salida solo se asigna automáticamente",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+  }
+
+  private getLocalDayKey(): string {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${now.getFullYear()}-${month}-${day}`;
+  }
+
+  private getStartOfToday(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  }
+
+  private getLocalDayBounds(reference: Date): { start: Date; end: Date } {
+    const start = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate(), 0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  }
+
+  private async syncStaleVisitasIfNeeded(): Promise<void> {
+    const dayKey = this.getLocalDayKey();
+    if (this.staleSyncDayKey === dayKey) return;
+
+    const startOfToday = this.getStartOfToday();
+    const beforeRows = await this.repo.findStaleCandidates(startOfToday);
+    const beforeSnapshotsById = new Map(
+      beforeRows.map((row) => [String(row.id), this.toAuditSnapshot(row)]),
+    );
+
+    const afterRows = await this.repo.markStaleWithoutCheckout(startOfToday);
+
+    for (const afterRow of afterRows) {
+      const beforeSnapshot = beforeSnapshotsById.get(String(afterRow.id));
+      if (!beforeSnapshot) continue;
+
+      const afterSnapshot = this.toAuditSnapshot(afterRow);
+      const changedFields = diffVisitaAuditFields(beforeSnapshot, afterSnapshot);
+      if (changedFields.length === 0) continue;
+
+      await this.logAuditSnapshots({
+        visitaId: Number(afterRow.id),
+        actorUserId: 0,
+        action: "visita.updated",
+        beforeState: beforeSnapshot,
+        afterState: afterSnapshot,
+        changedFields,
+        metadata: { source: "daily_stale_sync" },
+      });
+    }
+
+    this.staleSyncDayKey = dayKey;
+  }
+
   /**
-   * Obtiene métricas agregadas de visitas para las cards de Portería.
    * @param query - Rango opcional de entrada_at (por defecto últimos 7 días).
    * @returns Contadores de visitas por período, último día y zonas activas.
    */
   async getMetrics(query: VisitaMetricsQueryDto = {}): Promise<VisitaMetricsResponseDto> {
+    await this.syncStaleVisitasIfNeeded();
     const range = this.resolveMetricsRange(query);
     const row = await this.repo.getMetrics(range);
 
@@ -277,6 +398,11 @@ export class VisitasService {
       });
     }
 
+    await this.assertPersonaConProveedorValido(persona);
+    await this.assertResponsableEsUsuarioGlpi(dto.responsableNombre);
+
+    this.rejectManualSinSalidaEstado(dto.estado);
+
     const zonasPermitidas = resolveZonasFromTarjetaColor(dto.tarjetaColor);
     if (dto.zonasPermitidas !== undefined) {
       this.rejectInconsistentZonas(dto.tarjetaColor, dto.zonasPermitidas);
@@ -290,12 +416,16 @@ export class VisitasService {
     }
 
     if (requiresTarjetaDisponibilidad(estado)) {
-      await this.assertPersonaSinVisitaActiva(dto.personaId);
+      const referenceDate = dto.entradaAt ? new Date(dto.entradaAt) : new Date();
+      await this.assertPersonaSinVisitaActiva(dto.personaId, referenceDate);
     }
+
+    const motivoVisita = await this.motivosVisitaService.assertActiveMotivoVisita(dto.motivoVisitaId);
 
     const input: CreateVisitaInput = {
       personaId: dto.personaId,
-      motivo: dto.motivo.trim(),
+      motivoVisitaId: dto.motivoVisitaId,
+      motivo: motivoVisita.nombre,
       responsableNombre: dto.responsableNombre.trim(),
       estado,
       estadoSeguimiento: dto.estadoSeguimiento ?? (estado === "activa" ? "activo" : null),
@@ -350,7 +480,10 @@ export class VisitasService {
           status: HttpStatus.CONFLICT,
         });
       }
+      await this.assertPersonaConProveedorValido(persona);
     }
+
+    this.rejectManualSinSalidaEstado(dto.estado);
 
     const input: UpdateVisitaInput = {};
     const nextTarjetaColor = this.resolveCurrentTarjetaColor(current.tarjeta_color, dto.tarjetaColor);
@@ -366,11 +499,20 @@ export class VisitasService {
     }
 
     if (requiresTarjetaDisponibilidad(nextEstado)) {
-      await this.assertPersonaSinVisitaActiva(nextPersonaId, id);
+      const referenceDate = dto.entradaAt
+        ? new Date(dto.entradaAt)
+        : current.entrada_at
+          ? new Date(current.entrada_at)
+          : new Date();
+      await this.assertPersonaSinVisitaActiva(nextPersonaId, referenceDate, id);
     }
 
     if (dto.personaId !== undefined) input.personaId = dto.personaId;
-    if (dto.motivo !== undefined) input.motivo = dto.motivo.trim();
+    if (dto.motivoVisitaId !== undefined) {
+      const motivoVisita = await this.motivosVisitaService.assertActiveMotivoVisita(dto.motivoVisitaId);
+      input.motivoVisitaId = dto.motivoVisitaId;
+      input.motivo = motivoVisita.nombre;
+    }
     if (dto.responsableNombre !== undefined) input.responsableNombre = dto.responsableNombre.trim();
     if (dto.estado !== undefined) input.estado = dto.estado;
     if (dto.estadoSeguimiento !== undefined) input.estadoSeguimiento = dto.estadoSeguimiento;
@@ -426,11 +568,51 @@ export class VisitasService {
   }
 
   /**
-   * Elimina permanentemente una visita programada o cancelada.
-   * @param id - ID de la visita.
-   * @returns Confirmación con el ID eliminado.
+   * Busca usuarios activos de GLPI para el selector de responsable al crear visitas.
+   * @param query - Texto de búsqueda, ID puntual o límite de resultados.
+   * @returns Candidatos responsables ordenados por nombre.
    */
-  async deletePermanent(actorUserId: number, id: number): Promise<{ id: number; deleted: true }> {
+  async searchResponsableCandidates(
+    query: ListResponsableCandidatesQueryDto,
+  ): Promise<ResponsableCandidateListResponseDto> {
+    const locations = await this.catalogService.listLocations();
+    const locationNames = VisitasService.buildLocationNameMap(locations);
+
+    if (query.id != null) {
+      const user = await this.usersService.findById(query.id);
+      const items =
+        user?.isActive === true
+          ? [VisitasService.toResponsableCandidate(user, locationNames)]
+          : [];
+      return { items, total: items.length };
+    }
+
+    const limit = query.limit ?? DEFAULT_RESPONSABLE_CANDIDATES_LIMIT;
+    const result = await this.usersService.list({
+      search: query.search,
+      limit,
+      page: 1,
+    });
+
+    const items = result.items
+      .filter((user) => user.isActive)
+      .map((user) => VisitasService.toResponsableCandidate(user, locationNames));
+
+    return {
+      items,
+      total: items.length,
+    };
+  }
+
+  /**
+   * Elimina una visita: cancela las abiertas (activa/sin_salida) o borra permanentemente el resto.
+   * @param id - ID de la visita.
+   * @returns Confirmación de cancelación o eliminación definitiva.
+   */
+  async deletePermanent(
+    actorUserId: number,
+    id: number,
+  ): Promise<{ id: number; deleted: true } | { id: number; cancelled: true }> {
     const visita = await this.repo.findById(id);
     if (!visita) {
       throw new BusinessException({
@@ -440,12 +622,27 @@ export class VisitasService {
       });
     }
 
-    if (!["programada", "cancelada"].includes(visita.estado)) {
-      throw new BusinessException({
-        message: `Solo se pueden eliminar visitas programadas o canceladas`,
-        code: API_ERROR_CODE.CONFLICT,
-        status: HttpStatus.CONFLICT,
+    if (requiereCancelacionAlEliminar(visita.estado)) {
+      const updated = await this.repo.update(id, {
+        estado: "cancelada",
+        estadoSeguimiento: null,
       });
+      if (!updated) {
+        throw new BusinessException({
+          message: `Visita ${id} not found`,
+          code: API_ERROR_CODE.NOT_FOUND,
+          status: HttpStatus.NOT_FOUND,
+        });
+      }
+
+      await this.logAuditEvent({
+        visitaId: id,
+        actorUserId,
+        action: "visita.deleted",
+        before: visita,
+        after: updated,
+      });
+      return { id, cancelled: true };
     }
 
     await this.logAuditEvent({
@@ -466,5 +663,43 @@ export class VisitasService {
     }
 
     return { id: Number(deleted.id), deleted: true };
+  }
+
+  private static buildLocationNameMap(locations: DomainLocation[]): Map<number, string> {
+    return new Map(
+      locations.map((location) => [location.id, location.name.trim() || location.fullPath.trim()]),
+    );
+  }
+
+  private static toResponsableCandidate(
+    user: DomainUser,
+    locationNames: Map<number, string>,
+  ) {
+    const subtitle =
+      user.locationId != null ? locationNames.get(user.locationId)?.trim() ?? "" : "";
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      subtitle,
+    };
+  }
+
+  private async assertResponsableEsUsuarioGlpi(responsableNombre: string): Promise<void> {
+    const normalized = responsableNombre.trim().toLowerCase();
+    if (!normalized) {
+      return;
+    }
+
+    const users = await this.usersService.listAll();
+    const match = users.find(
+      (user) => user.isActive && user.fullName.trim().toLowerCase() === normalized,
+    );
+    if (!match) {
+      throw new BusinessException({
+        message: "El responsable debe ser un usuario activo de GLPI",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
   }
 }

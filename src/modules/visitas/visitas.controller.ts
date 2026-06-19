@@ -27,6 +27,8 @@ import { UpdateVisitaDto } from "./dto/update-visita.dto";
 import { VisitaMetricsResponseDto } from "./dto/visita-metrics.response.dto";
 import { VisitaMetricsQueryDto } from "./dto/visita-metrics-query.dto";
 import { VisitaListResponseDto, VisitaResponseDto } from "./dto/visita.response.dto";
+import { ListResponsableCandidatesQueryDto } from "./dto/list-responsable-candidates-query.dto";
+import { ResponsableCandidateListResponseDto } from "./dto/responsable-candidate.response.dto";
 
 /** Controlador REST de visitas con guard JWT. */
 @ApiTags("visitas")
@@ -60,6 +62,21 @@ export class VisitasController {
   @ResponseMessage("Visita metrics retrieved")
   async getMetrics(@Query() query: VisitaMetricsQueryDto): Promise<VisitaMetricsResponseDto> {
     return this.visitasService.getMetrics(query);
+  }
+
+  /**
+   * Busca usuarios GLPI activos para el selector de responsable al crear visitas.
+   * @param query - Texto de búsqueda, ID puntual o límite de resultados.
+   * @returns Lista de candidatos responsables.
+   */
+  @Get("responsable-candidates")
+  @ApiOperation({ summary: "Search active GLPI users for visit responsable selector" })
+  @ApiResponse({ status: 200, type: ResponsableCandidateListResponseDto })
+  @ResponseMessage("Responsable candidates retrieved")
+  async searchResponsableCandidates(
+    @Query() query: ListResponsableCandidatesQueryDto,
+  ): Promise<ResponsableCandidateListResponseDto> {
+    return this.visitasService.searchResponsableCandidates(query);
   }
 
   /**
@@ -110,17 +127,17 @@ export class VisitasController {
   }
 
   /**
-   * Elimina permanentemente una visita programada o cancelada.
+   * Elimina una visita no activa y registra el evento en auditoría.
    * @param id - ID de la visita.
-   * @returns Confirmación de eliminación.
+   * @returns Confirmación de eliminación o cancelación.
    */
   @Delete(":id")
-  @ApiOperation({ summary: "Permanently delete visita" })
+  @ApiOperation({ summary: "Delete visita (cancel if active) and log audit event" })
   @ResponseMessage("Visita deleted")
   async deletePermanent(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseIntPipe) id: number,
-  ): Promise<{ id: number; deleted: true }> {
+  ): Promise<{ id: number; deleted: true } | { id: number; cancelled: true }> {
     return this.visitasService.deletePermanent(user.id, id);
   }
 }

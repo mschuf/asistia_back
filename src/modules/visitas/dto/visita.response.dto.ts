@@ -31,6 +31,9 @@ export class VisitaResponseDto {
   @ApiProperty({ example: "Entrega de materiales" })
   motivo!: string;
 
+  @ApiProperty({ nullable: true, example: 1 })
+  motivoVisitaId!: number | null;
+
   @ApiProperty({ example: "Juan Perez" })
   responsableNombre!: string;
 

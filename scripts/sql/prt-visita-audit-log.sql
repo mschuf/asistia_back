@@ -12,11 +12,6 @@ CREATE TABLE IF NOT EXISTS public.prt_visita_audit_log (
   changed_fields   TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   metadata         JSONB NOT NULL DEFAULT '{}'::jsonb,
 
-  CONSTRAINT fk_prt_visita_audit_log_visita
-    FOREIGN KEY (visita_id)
-    REFERENCES public.visita(id)
-    ON DELETE CASCADE,
-
   CONSTRAINT chk_prt_visita_audit_log_action
     CHECK (action IN ('visita.created', 'visita.updated', 'visita.closed', 'visita.deleted'))
 );

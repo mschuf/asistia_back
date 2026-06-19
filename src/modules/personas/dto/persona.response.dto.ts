@@ -15,17 +15,17 @@ export class PersonaResponseDto {
   @ApiProperty({ example: "30.123.456" })
   documento!: string;
 
-  @ApiProperty({ nullable: true, example: "Logistica Norte SA" })
-  empresa!: string | null;
+  @ApiProperty({ example: 1 })
+  proveedorId!: number;
+
+  @ApiProperty({ example: "Logistica Norte SA" })
+  proveedorNombre!: string;
 
   @ApiProperty({ nullable: true, example: "maria@empresa.com" })
   email!: string | null;
 
   @ApiProperty({ nullable: true, example: "+54 11 5555-1234" })
   telefono!: string | null;
-
-  @ApiProperty({ nullable: true, example: 188 })
-  glpiUserId!: number | null;
 
   @ApiProperty({ example: true })
   activo!: boolean;
@@ -54,4 +54,3 @@ export class PersonaListResponseDto {
   @ApiProperty({ example: 15 })
   limit!: number;
 }
-

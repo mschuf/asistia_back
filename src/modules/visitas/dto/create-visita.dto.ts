@@ -15,7 +15,6 @@ import {
   IsString,
   MaxLength,
   Min,
-  MinLength,
 } from "class-validator";
 import { VISITA_ESTADO, type VisitaEstado } from "../domain/visita-estado";
 import { VISITA_SEGUIMIENTO, type VisitaSeguimiento } from "../domain/visita-seguimiento";
@@ -30,12 +29,11 @@ export class CreateVisitaDto {
   @Min(1)
   personaId!: number;
 
-  @ApiProperty({ example: "Entrega de materiales" })
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(2)
-  @MaxLength(500)
-  motivo!: string;
+  @ApiProperty({ example: 1 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  motivoVisitaId!: number;
 
   @ApiProperty({ example: "Juan Perez" })
   @IsString()
