@@ -12,6 +12,7 @@ import type {
   VisitaListRow,
   VisitaMetricsRange,
   VisitaMetricsRow,
+  VisitaPhotoRow,
   VisitaRow,
 } from "../visitas.types";
 import type { VisitaSortBy, VisitaSortOrder } from "../dto/list-visitas-query.dto";
@@ -48,7 +49,8 @@ const VISITA_SELECT_COLUMNS = `
   p.nombre AS visitante,
   p.documento,
   prov.nombre AS empresa,
-  (p.foto IS NOT NULL) AS has_foto
+  (p.foto IS NOT NULL) AS has_foto,
+  (v.foto IS NOT NULL) AS has_visita_foto
 `;
 
 const VISITA_FROM_JOIN = `
@@ -77,7 +79,8 @@ const VISITA_UPDATED_SELECT_COLUMNS = `
   p.nombre AS visitante,
   p.documento,
   prov.nombre AS empresa,
-  (p.foto IS NOT NULL) AS has_foto
+  (p.foto IS NOT NULL) AS has_foto,
+  (u.foto IS NOT NULL) AS has_visita_foto
 `;
 
 /** Repositorio Postgres para operaciones CRUD de visitas. */
@@ -574,5 +577,47 @@ export class VisitasSqlRepository {
     const direction: VisitaSortOrder = filters.sortOrder === "asc" ? "asc" : "desc";
     const nulls = filters.sortBy === "entradaAt" || filters.sortBy === "salidaAt" ? " NULLS LAST" : "";
     return `ORDER BY ${expression} ${direction.toUpperCase()}${nulls}, v.id DESC`;
+  }
+
+  /**
+   * Obtiene el blob de foto de una visita.
+   * @param id - ID de la visita.
+   * @returns Buffer y MIME type o `null` si no hay foto.
+   */
+  async findPhotoById(id: number): Promise<VisitaPhotoRow | null> {
+    const rows = await this.postgres.query<VisitaPhotoRow>(
+      `SELECT foto, foto_mime_type
+       FROM public.prt_visita
+       WHERE id = $1
+         AND foto IS NOT NULL`,
+      [id],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Persiste o reemplaza la foto de una visita.
+   * @param id - ID de la visita.
+   * @param foto - Imagen procesada.
+   * @param mimeType - MIME type final de la imagen.
+   * @returns Fila actualizada con datos de persona o `null` si no existe la visita.
+   */
+  async updatePhoto(id: number, foto: Buffer, mimeType: string): Promise<VisitaListRow | null> {
+    const rows = await this.postgres.query<{ id: string }>(
+      `UPDATE public.prt_visita
+       SET foto = $1,
+           foto_mime_type = $2,
+           updated_at = now()
+       WHERE id = $3
+       RETURNING id`,
+      [foto, mimeType, id],
+    );
+
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(id);
   }
 }

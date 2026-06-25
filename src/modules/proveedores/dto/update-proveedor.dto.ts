@@ -3,7 +3,7 @@
  * @description DTO de validación para actualización parcial de un proveedor.
  */
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 /** Cuerpo HTTP para actualizar un proveedor existente. */
 export class UpdateProveedorDto {
@@ -13,6 +13,13 @@ export class UpdateProveedorDto {
   @MinLength(2)
   @MaxLength(200)
   nombre?: string;
+
+  @ApiPropertyOptional({ example: "80012345-6" })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  ruc?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

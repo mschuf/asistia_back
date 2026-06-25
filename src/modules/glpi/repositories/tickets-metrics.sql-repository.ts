@@ -364,11 +364,12 @@ export class TicketsMetricsSqlRepository {
     input: MetricsForRequesterInput,
   ): Promise<TicketMetricsResponseDto>  {
     const requesterId = input.requesterId;
+    const locationId = input.locationId ?? null;
     const [myTickets, statusSlices, mySite, openByLocationRows] = await Promise.all([
-      this.aggregateRequesterMyTickets(requesterId),
-      this.aggregateRequesterSolvedClosedSlices(requesterId),
-      input.locationId != null
-        ? this.aggregateRequesterSiteSlice(requesterId, input.locationId)
+      this.aggregateRequesterMyTickets(requesterId, locationId),
+      this.aggregateRequesterSolvedClosedSlices(requesterId, locationId),
+      locationId != null
+        ? this.aggregateRequesterSiteSlice(requesterId, locationId)
         : Promise.resolve(null),
       this.listRequesterOpenByLocation(requesterId),
     ]);
@@ -402,13 +403,16 @@ export class TicketsMetricsSqlRepository {
    * @param requesterId - Parámetro `requesterId`.
    * @returns `Promise<`
    */
-  private async aggregateRequesterMyTickets(requesterId: number): Promise< {
+  private async aggregateRequesterMyTickets(
+    requesterId: number,
+    locationId: number | null = null,
+  ): Promise< {
     inProgress: number;
     openPercent: number;
     openThisMonth: number;
     totalThisMonth: number;
   }> {
-    const row = await this.queryRequesterAggregate(requesterId, null);
+    const row = await this.queryRequesterAggregate(requesterId, null, locationId);
     const openThisMonth = Number(row?.open_this_month ?? 0);
     const totalThisMonth = Number(row?.total_this_month ?? 0);
     return {
@@ -429,6 +433,7 @@ export class TicketsMetricsSqlRepository {
    */
   private async aggregateRequesterSolvedClosedSlices(
     requesterId: number,
+    locationId: number | null = null,
   ): Promise<{
     solved: {
       open: number;
@@ -443,7 +448,7 @@ export class TicketsMetricsSqlRepository {
       totalThisMonth: number;
     };
   }> {
-    const row = await this.queryRequesterStatusAggregate(requesterId);
+    const row = await this.queryRequesterStatusAggregate(requesterId, locationId);
     const solvedThisMonth = Number(row?.solved_this_month ?? 0);
     const closedThisMonth = Number(row?.closed_this_month ?? 0);
     const totalThisMonth = Number(row?.total_this_month ?? 0);
@@ -474,7 +479,14 @@ export class TicketsMetricsSqlRepository {
    */
   private async queryRequesterStatusAggregate(
     requesterId: number,
+    locationId: number | null = null,
   ): Promise<RequesterStatusAggregateRow | undefined> {
+    const locationClause = locationId != null ? "AND location_id = :locationId" : "";
+    const params: Record<string, unknown> = { requesterId };
+    if (locationId != null) {
+      params.locationId = locationId;
+    }
+
     const rows = await this.mysql.query<RequesterStatusAggregateRow>(
       `SELECT
          SUM(CASE WHEN status_glpi = ${GLPI_TICKET_STATUS.SOLVED} THEN 1 ELSE 0 END) AS solved_count,
@@ -504,8 +516,9 @@ export class TicketsMetricsSqlRepository {
          ) AS total_this_month
        FROM (${BASE_TICKET_WITH_REQUESTER_SQL}) th
        WHERE is_deleted = 0
-         AND requester_id = :requesterId`,
-      { requesterId } as QueryValues,
+         AND requester_id = :requesterId
+         ${locationClause}`,
+      params as QueryValues,
     );
     return rows[0];
   }
@@ -551,10 +564,13 @@ export class TicketsMetricsSqlRepository {
   private async queryRequesterAggregate(
     requesterId: number,
     typeGlpi: number | null,
+    locationId: number | null = null,
   ): Promise<AssignedAggregateRow | undefined>  {
     const typeClause = typeGlpi != null ? "AND type_glpi = :typeGlpi" : "";
+    const locationClause = locationId != null ? "AND location_id = :locationId" : "";
     const params: Record<string, unknown> = { requesterId };
     if (typeGlpi != null) params.typeGlpi = typeGlpi;
+    if (locationId != null) params.locationId = locationId;
 
     const rows = await this.mysql.query<AssignedAggregateRow>(
       `SELECT
@@ -577,7 +593,8 @@ export class TicketsMetricsSqlRepository {
        FROM (${BASE_TICKET_WITH_REQUESTER_SQL}) th
        WHERE is_deleted = 0
          AND requester_id = :requesterId
-         ${typeClause}`,
+         ${typeClause}
+         ${locationClause}`,
       params as QueryValues,
     );
     return rows[0];

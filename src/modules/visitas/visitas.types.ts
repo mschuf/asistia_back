@@ -26,12 +26,19 @@ export interface VisitaRow extends QueryResultRow {
   updated_at: Date | string;
 }
 
+/** Fila de foto almacenada en `public.prt_visita`. */
+export interface VisitaPhotoRow extends QueryResultRow {
+  foto: Buffer;
+  foto_mime_type: string | null;
+}
+
 /** Fila de visita con datos de persona para listados. */
 export interface VisitaListRow extends VisitaRow {
   visitante: string;
   documento: string;
   empresa: string | null;
   has_foto: boolean;
+  has_visita_foto: boolean;
 }
 
 /** Filtros de listado paginado de visitas en el repositorio SQL. */

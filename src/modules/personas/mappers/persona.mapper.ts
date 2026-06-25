@@ -21,6 +21,8 @@ export function mapPersonaRowToResponse(row: PersonaRow): PersonaResponseDto {
     telefono: row.telefono,
     activo: row.activo,
     hasFoto: Boolean(row.has_foto),
+    ultimoMotivo: row.ultimo_motivo != null ? Number(row.ultimo_motivo) : null,
+    ultimoResponsable: row.ultimo_responsable != null ? Number(row.ultimo_responsable) : null,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };

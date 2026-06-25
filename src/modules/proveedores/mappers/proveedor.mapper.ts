@@ -14,6 +14,7 @@ export function mapProveedorRowToResponse(row: ProveedorRow): ProveedorResponseD
   return {
     id: Number(row.id),
     nombre: row.nombre,
+    ruc: row.ruc,
     activo: row.activo,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),

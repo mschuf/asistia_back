@@ -10,6 +10,7 @@ import type {
   PersonaListFilters,
   PersonaPhotoRow,
   PersonaRow,
+  UpdateUltimosVisitaPersonaInput,
   UpdatePersonaInput,
 } from "../personas.types";
 import type { PersonaSortBy, PersonaSortOrder } from "../dto/list-personas-query.dto";
@@ -33,6 +34,8 @@ const PERSONA_SELECT_COLUMNS = `
   p.telefono,
   p.activo,
   (p.foto IS NOT NULL) AS has_foto,
+  p.ultimo_motivo,
+  p.ultimo_responsable,
   p.created_at,
   p.updated_at
 `;
@@ -118,16 +121,15 @@ export class PersonasSqlRepository {
   }
 
   /**
-   * Cuenta visitas activas o programadas asociadas a una persona.
+   * Cuenta visitas asociadas a una persona.
    * @param personaId - ID de la persona.
-   * @returns Cantidad de visitas abiertas.
+   * @returns Cantidad de visitas vinculadas.
    */
-  async countActiveVisitas(personaId: number): Promise<number> {
+  async countVisitas(personaId: number): Promise<number> {
     const rows = await this.postgres.query<{ total: string }>(
       `SELECT COUNT(*)::text AS total
        FROM public.prt_visita
-       WHERE persona_id = $1
-         AND estado IN ('programada', 'activa', 'sin_salida')`,
+       WHERE persona_id = $1`,
       [personaId],
     );
 
@@ -277,6 +279,33 @@ export class PersonasSqlRepository {
        WHERE id = $3
        RETURNING id`,
       [foto, mimeType, id],
+    );
+
+    if (!rows[0]) {
+      return null;
+    }
+
+    return this.findById(Number(rows[0].id));
+  }
+
+  /**
+   * Actualiza los últimos IDs usados por una persona al crear una visita.
+   * @param id - ID de la persona.
+   * @param input - IDs de motivo y responsable seleccionados.
+   * @returns Fila actualizada o `null` si no existe.
+   */
+  async updateUltimosVisita(
+    id: number,
+    input: UpdateUltimosVisitaPersonaInput,
+  ): Promise<PersonaRow | null> {
+    const rows = await this.postgres.query<{ id: string }>(
+      `UPDATE public.prt_persona
+       SET ultimo_motivo = $1,
+           ultimo_responsable = $2,
+           updated_at = now()
+       WHERE id = $3
+       RETURNING id`,
+      [input.ultimoMotivo, input.ultimoResponsable, id],
     );
 
     if (!rows[0]) {

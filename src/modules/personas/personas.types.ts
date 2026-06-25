@@ -17,6 +17,8 @@ export interface PersonaRow extends QueryResultRow {
   telefono: string | null;
   activo: boolean;
   has_foto: boolean;
+  ultimo_motivo: string | null;
+  ultimo_responsable: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -59,6 +61,12 @@ export interface UpdatePersonaInput {
   email?: string | null;
   telefono?: string | null;
   activo?: boolean;
+}
+
+/** Últimos valores usados al crear una visita para la persona. */
+export interface UpdateUltimosVisitaPersonaInput {
+  ultimoMotivo: number;
+  ultimoResponsable: number;
 }
 
 /** Nombre del proveedor placeholder creado en migración para datos históricos. */

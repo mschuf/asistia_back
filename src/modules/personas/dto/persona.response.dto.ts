@@ -33,6 +33,12 @@ export class PersonaResponseDto {
   @ApiProperty({ example: false, description: "Indica si la persona tiene foto almacenada." })
   hasFoto!: boolean;
 
+  @ApiProperty({ nullable: true, example: 1, description: "ID del último motivo usado en una visita." })
+  ultimoMotivo!: number | null;
+
+  @ApiProperty({ nullable: true, example: 188, description: "ID GLPI del último responsable usado." })
+  ultimoResponsable!: number | null;
+
   @ApiProperty()
   createdAt!: string;
 

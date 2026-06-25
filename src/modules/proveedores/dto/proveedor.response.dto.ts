@@ -12,6 +12,9 @@ export class ProveedorResponseDto {
   @ApiProperty({ example: "Logistica Norte SA" })
   nombre!: string;
 
+  @ApiProperty({ example: "80012345-6" })
+  ruc!: string;
+
   @ApiProperty({ example: true })
   activo!: boolean;
 

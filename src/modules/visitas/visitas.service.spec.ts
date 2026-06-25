@@ -35,6 +35,7 @@ function makeRow(overrides: Partial<VisitaListRow> = {}): VisitaListRow {
     documento: "30111222",
     empresa: "Empresa Test",
     has_foto: false,
+    has_visita_foto: false,
     ...overrides,
   };
 }
@@ -142,12 +143,13 @@ describe("VisitasService visita activa por día", () => {
   };
   const personasRepo = {
     findById: jest.fn(),
+    updateUltimosVisita: jest.fn(),
   };
   const motivosVisitaService = {
     assertActiveMotivoVisita: jest.fn(),
   };
   const usersService = {
-    listAll: jest.fn(),
+    findById: jest.fn(),
   };
   const catalogService = {};
 
@@ -157,6 +159,8 @@ describe("VisitasService visita activa por día", () => {
     personaId: 10,
     motivoVisitaId: 3,
     responsableNombre: "Responsable Test",
+    responsableId: 1,
+    credencialNumero: "T-100",
     tarjetaColor: "rojo",
     estado: "activa",
     entradaAt: "2026-06-19T14:30:00.000Z",
@@ -174,6 +178,8 @@ describe("VisitasService visita activa por día", () => {
       telefono: null,
       activo: true,
       has_foto: false,
+      ultimo_motivo: null,
+      ultimo_responsable: null,
       created_at: "2026-06-17T12:00:00.000Z",
       updated_at: "2026-06-17T12:00:00.000Z",
     };
@@ -186,10 +192,14 @@ describe("VisitasService visita activa por día", () => {
     repo.create.mockResolvedValue(makeRow({ entrada_at: baseDto.entradaAt ?? null }));
     auditRepo.create.mockResolvedValue(undefined);
     personasRepo.findById.mockResolvedValue(makePersona());
+    personasRepo.updateUltimosVisita.mockResolvedValue(makePersona());
     motivosVisitaService.assertActiveMotivoVisita.mockResolvedValue({ id: 3, nombre: "Reunión" });
-    usersService.listAll.mockResolvedValue([
-      { id: 1, fullName: "Responsable Test", isActive: true, locationId: null },
-    ]);
+    usersService.findById.mockResolvedValue({
+      id: 1,
+      fullName: "Responsable Test",
+      isActive: true,
+      locationId: null,
+    });
 
     service = new VisitasService(
       repo as never,
@@ -230,6 +240,15 @@ describe("VisitasService visita activa por día", () => {
     expect(repo.create).toHaveBeenCalled();
   });
 
+  it("actualiza el último motivo y responsable de la persona al crear", async () => {
+    await service.create(1, baseDto);
+
+    expect(personasRepo.updateUltimosVisita).toHaveBeenCalledWith(10, {
+      ultimoMotivo: 3,
+      ultimoResponsable: 1,
+    });
+  });
+
   it("ignora visitas sin_salida y permite crear", async () => {
     repo.findActiveByPersonaId.mockResolvedValue(null);
 
@@ -244,6 +263,104 @@ describe("VisitasService visita activa por día", () => {
       code: "CONFLICT",
     });
     expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it("bloquea crear visita sin número de tarjeta", async () => {
+    await expect(service.create(1, { ...baseDto, credencialNumero: "   " })).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "El número de tarjeta es obligatorio para crear una visita",
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it("bloquea crear visita sin persona", async () => {
+    await expect(service.create(1, { ...baseDto, personaId: 0 })).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "La persona es obligatoria para crear una visita",
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it("bloquea crear visita sin motivo", async () => {
+    await expect(service.create(1, { ...baseDto, motivoVisitaId: 0 })).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "El motivo es obligatorio para crear una visita",
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it("bloquea crear visita sin responsable", async () => {
+    await expect(service.create(1, { ...baseDto, responsableNombre: "   " })).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "El responsable es obligatorio para crear una visita",
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it("bloquea crear visita sin ID de responsable", async () => {
+    await expect(service.create(1, { ...baseDto, responsableId: 0 })).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: "El responsable es obligatorio para crear una visita",
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("VisitasService update close", () => {
+  const repo = {
+    findById: jest.fn(),
+    update: jest.fn(),
+  };
+  const auditRepo = {
+    create: jest.fn(),
+  };
+
+  let service: VisitasService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    auditRepo.create.mockResolvedValue(undefined);
+
+    service = new VisitasService(
+      repo as never,
+      auditRepo as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it("actualiza salidaAt con la hora real al finalizar una visita activa", async () => {
+    const current = makeRow({
+      id: "7",
+      estado: "activa",
+      salida_at: "2026-06-19T18:00:00.000Z",
+    });
+    const updated = makeRow({
+      id: "7",
+      estado: "finalizada",
+      salida_at: "2026-06-19T15:45:00.000Z",
+      estado_seguimiento: null,
+    });
+    repo.findById.mockResolvedValueOnce(current).mockResolvedValueOnce(updated);
+    repo.update.mockResolvedValue(updated);
+
+    const before = Date.now();
+    await service.update(3, 7, { estado: "finalizada" });
+    const after = Date.now();
+
+    expect(repo.update).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        estado: "finalizada",
+        estadoSeguimiento: null,
+        salidaAt: expect.any(Date),
+      }),
+    );
+    const salidaAt = repo.update.mock.calls[0]?.[1]?.salidaAt as Date;
+    expect(salidaAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(salidaAt.getTime()).toBeLessThanOrEqual(after);
   });
 });
 
@@ -318,5 +435,71 @@ describe("VisitasService deletePermanent", () => {
       }),
     );
     expect(repo.hardDelete).not.toHaveBeenCalled();
+  });
+});
+
+jest.mock("../personas/persona-photo.processor", () => ({
+  processPersonaPhoto: jest.fn().mockResolvedValue({
+    buffer: Buffer.from("processed-image"),
+    mimeType: "image/jpeg",
+  }),
+}));
+
+describe("VisitasService photo", () => {
+  const repo = {
+    findById: jest.fn(),
+    updatePhoto: jest.fn(),
+    findPhotoById: jest.fn(),
+  };
+
+  let service: VisitasService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repo.findById.mockResolvedValue(makeRow());
+    service = new VisitasService(
+      repo as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  it("getPhoto devuelve buffer cuando la visita tiene foto", async () => {
+    repo.findPhotoById.mockResolvedValue({
+      foto: Buffer.from("jpeg-data"),
+      foto_mime_type: "image/jpeg",
+    });
+
+    const result = await service.getPhoto(1);
+
+    expect(result.buffer).toEqual(Buffer.from("jpeg-data"));
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(result.size).toBe(Buffer.from("jpeg-data").length);
+  });
+
+  it("getPhoto lanza NOT_FOUND si no hay foto", async () => {
+    repo.findPhotoById.mockResolvedValue(null);
+
+    await expect(service.getPhoto(1)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("setPhoto procesa y persiste la imagen", async () => {
+    const updated = makeRow({ has_visita_foto: true });
+    repo.updatePhoto.mockResolvedValue(updated);
+
+    const result = await service.setPhoto(1, {
+      buffer: Buffer.from("raw-image"),
+      mimetype: "image/jpeg",
+      originalname: "capture.jpg",
+      size: 11,
+    });
+
+    expect(repo.updatePhoto).toHaveBeenCalledWith(1, Buffer.from("processed-image"), "image/jpeg");
+    expect(result.hasVisitaFoto).toBe(true);
   });
 });

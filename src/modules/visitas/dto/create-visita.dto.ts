@@ -8,6 +8,7 @@ import {
   ArrayUnique,
   IsArray,
   IsDateString,
+  IsDefined,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -24,22 +25,32 @@ import { VISITA_TARJETA_COLOR, type VisitaTarjetaColor } from "../domain/visita-
 /** Cuerpo HTTP para crear una visita. */
 export class CreateVisitaDto {
   @ApiProperty({ example: 1 })
+  @IsDefined()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   personaId!: number;
 
   @ApiProperty({ example: 1 })
+  @IsDefined()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   motivoVisitaId!: number;
 
   @ApiProperty({ example: "Juan Perez" })
+  @IsDefined()
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   responsableNombre!: string;
+
+  @ApiProperty({ example: 188, description: "ID de usuario GLPI del responsable" })
+  @IsDefined()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  responsableId!: number;
 
   @ApiPropertyOptional({ enum: VISITA_ESTADO, default: "activa" })
   @IsOptional()
@@ -58,11 +69,11 @@ export class CreateVisitaDto {
   @IsIn(VISITA_ZONA, { each: true })
   zonasPermitidas?: VisitaZona[];
 
-  @ApiPropertyOptional({ example: "T-1024" })
-  @IsOptional()
+  @ApiProperty({ example: "T-1024" })
   @IsString()
+  @IsNotEmpty()
   @MaxLength(50)
-  credencialNumero?: string;
+  credencialNumero!: string;
 
   @ApiProperty({ enum: VISITA_TARJETA_COLOR, example: "rojo" })
   @IsIn(VISITA_TARJETA_COLOR)

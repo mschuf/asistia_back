@@ -19,8 +19,11 @@ export class VisitaResponseDto {
   @ApiProperty({ example: "Maria Gonzalez" })
   visitante!: string;
 
-  @ApiProperty({ example: false, description: "Indica si el visitante tiene foto almacenada." })
+  @ApiProperty({ example: false, description: "Indica si la persona visitante tiene foto almacenada." })
   hasFoto!: boolean;
+
+  @ApiProperty({ example: false, description: "Indica si la visita tiene foto capturada al ingreso." })
+  hasVisitaFoto!: boolean;
 
   @ApiProperty({ example: "30.123.456" })
   documento!: string;

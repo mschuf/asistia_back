@@ -142,15 +142,7 @@ export class MailListener {
    */
   @OnEvent(MAIL_EVENTS.TICKET_ASSIGNED, { async: true, promisify: true })
   async onTicketAssigned(event: TicketAssignedEvent): Promise<void> {
-    const result = await this.mail.send({
-      subject: buildTicketAssignedSubject(event),
-      html: buildTicketAssignedHtml(event),
-      text: buildTicketAssignedText(event),
-      recipients: event.recipients,
-    });
-    if (!result.sent && result.error) {
-      this.logger.error(`Ticket ${event.ticketId} assigned mail failed: ${result.error}`);
-    }
+    await this.dispatchTicketAssigned(event);
   }
 
   /**
@@ -160,14 +152,48 @@ export class MailListener {
    */
   @OnEvent(MAIL_EVENTS.TICKET_REASSIGNED, { async: true, promisify: true })
   async onTicketReassigned(event: TicketReassignedEvent): Promise<void> {
-    const result = await this.mail.send({
-      subject: buildTicketReassignedSubject(event),
-      html: buildTicketReassignedHtml(event),
-      text: buildTicketReassignedText(event),
-      recipients: event.recipients,
-    });
-    if (!result.sent && result.error) {
-      this.logger.error(`Ticket ${event.ticketId} reassigned mail failed: ${result.error}`);
+    await this.dispatchTicketReassigned(event);
+  }
+
+  /**
+   * Envía correos de asignación inicial personalizados por rol.
+   * @param event - Payload con destinatarios y datos del ticket.
+   * @returns void
+   */
+  async dispatchTicketAssigned(event: TicketAssignedEvent): Promise<void> {
+    for (const recipient of event.notify) {
+      const result = await this.mail.send({
+        subject: buildTicketAssignedSubject(event, recipient.role),
+        html: buildTicketAssignedHtml(event, recipient.role),
+        text: buildTicketAssignedText(event, recipient.role),
+        recipients: [recipient],
+      });
+      if (!result.sent && result.error) {
+        this.logger.error(
+          `Ticket ${event.ticketId} assigned mail failed for ${recipient.role}: ${result.error}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Envía correos de reasignación personalizados por rol.
+   * @param event - Payload con destinatarios y datos del ticket.
+   * @returns void
+   */
+  async dispatchTicketReassigned(event: TicketReassignedEvent): Promise<void> {
+    for (const recipient of event.notify) {
+      const result = await this.mail.send({
+        subject: buildTicketReassignedSubject(event, recipient.role),
+        html: buildTicketReassignedHtml(event, recipient.role),
+        text: buildTicketReassignedText(event, recipient.role),
+        recipients: [recipient],
+      });
+      if (!result.sent && result.error) {
+        this.logger.error(
+          `Ticket ${event.ticketId} reassigned mail failed for ${recipient.role}: ${result.error}`,
+        );
+      }
     }
   }
 }

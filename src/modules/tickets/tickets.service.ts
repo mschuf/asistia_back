@@ -316,46 +316,89 @@ export class TicketsService {
     void (async () => {
       try {
         const userIds = new Set<number>([input.technicianId, input.user.id]);
+        if (input.ticket.requesterId != null) {
+          userIds.add(input.ticket.requesterId);
+        }
         if (input.previousTechnicianId != null) {
           userIds.add(input.previousTechnicianId);
         }
 
         const usersById = await this.loadUsersByIds(userIds);
         const technicianUser = usersById.get(input.technicianId);
+        if (!technicianUser) {
+          return;
+        }
+        const requesterUser =
+          input.ticket.requesterId != null
+            ? usersById.get(input.ticket.requesterId) ?? null
+            : null;
         const assignedBy =
           usersById.get(input.user.id)?.fullName ?? `Usuario ${input.user.id}`;
-
-        if (technicianUser?.email) {
-          const payload: TicketAssignedEvent = {
-            ticketId: input.ticket.id,
-            subject: input.ticket.subject,
-            technicianName: technicianUser.fullName,
-            assignedBy,
-            recipients: [{ name: technicianUser.fullName, email: technicianUser.email }],
-          };
-          this.events.emit(MAIL_EVENTS.TICKET_ASSIGNED, payload);
-        }
+        const technicianRecipient = await this.resolveMailRecipient(technicianUser);
+        const requesterRecipient = await this.resolveMailRecipient(requesterUser);
 
         const isReassignment =
           input.previousTechnicianId != null &&
-          input.previousTechnicianId !== input.technicianId &&
-          input.previousTechnicianId !== input.user.id;
+          input.previousTechnicianId !== input.technicianId;
 
-        if (isReassignment && technicianUser) {
-          const previousTechnician = usersById.get(input.previousTechnicianId!);
-          if (previousTechnician?.email) {
-            const payload: TicketReassignedEvent = {
+        if (!isReassignment) {
+          const notify: TicketAssignedEvent["notify"] = [];
+          const seenEmails = new Set<string>();
+          if (requesterRecipient) {
+            const email = requesterRecipient.email.trim().toLowerCase();
+            seenEmails.add(email);
+            notify.push({ ...requesterRecipient, role: "requester" });
+          }
+          if (technicianRecipient) {
+            const email = technicianRecipient.email.trim().toLowerCase();
+            if (!seenEmails.has(email)) {
+              notify.push({ ...technicianRecipient, role: "new_technician" });
+            }
+          }
+          if (notify.length > 0) {
+            const payload: TicketAssignedEvent = {
               ticketId: input.ticket.id,
               subject: input.ticket.subject,
-              previousTechnicianName: previousTechnician.fullName,
-              newTechnicianName: technicianUser.fullName,
-              reassignedBy: assignedBy,
-              recipients: [
-                { name: previousTechnician.fullName, email: previousTechnician.email },
-              ],
+              technicianName: technicianUser.fullName,
+              assignedBy,
+              notify,
             };
-            this.events.emit(MAIL_EVENTS.TICKET_REASSIGNED, payload);
+            this.events.emit(MAIL_EVENTS.TICKET_ASSIGNED, payload);
           }
+          return;
+        }
+
+        const previousTechnician = usersById.get(input.previousTechnicianId!);
+        const previousTechnicianRecipient = await this.resolveMailRecipient(
+          previousTechnician ?? null,
+        );
+        const notify: TicketReassignedEvent["notify"] = [];
+        const seenEmails = new Set<string>();
+        const addRecipient = (
+          recipient: MailRecipient | null,
+          role: TicketReassignedEvent["notify"][number]["role"],
+        ) => {
+          if (!recipient) return;
+          const email = recipient.email.trim().toLowerCase();
+          if (seenEmails.has(email)) return;
+          seenEmails.add(email);
+          notify.push({ ...recipient, role });
+        };
+
+        addRecipient(requesterRecipient, "requester");
+        addRecipient(technicianRecipient, "new_technician");
+        addRecipient(previousTechnicianRecipient, "previous_technician");
+
+        if (notify.length > 0) {
+          const payload: TicketReassignedEvent = {
+            ticketId: input.ticket.id,
+            subject: input.ticket.subject,
+            previousTechnicianName: previousTechnician?.fullName ?? "Técnico anterior",
+            newTechnicianName: technicianUser.fullName,
+            reassignedBy: assignedBy,
+            notify,
+          };
+          this.events.emit(MAIL_EVENTS.TICKET_REASSIGNED, payload);
         }
       } catch (error) {
         this.logger.warn(
@@ -490,18 +533,21 @@ export class TicketsService {
       return [tickets, locs] as const;
     });
 
-    const myTickets = computeMyTicketsMetrics(requesterTickets);
-    const mySolved = computeStatusMetrics(requesterTickets, "solved");
-    const myClosed = computeStatusMetrics(requesterTickets, "closed");
-
     const normalizedLocationId = normalizeLocationId(user.locationId);
-    const mySitePool =
+    const scopedRequesterTickets =
       normalizedLocationId != null
         ? requesterTickets.filter(
-            (ticket) =>
-              normalizeLocationId(ticket.locationId) === normalizedLocationId &&
-              isTicketOpen(ticket),
+            (ticket) => normalizeLocationId(ticket.locationId) === normalizedLocationId,
           )
+        : requesterTickets;
+
+    const myTickets = computeMyTicketsMetrics(scopedRequesterTickets);
+    const mySolved = computeStatusMetrics(scopedRequesterTickets, "solved");
+    const myClosed = computeStatusMetrics(scopedRequesterTickets, "closed");
+
+    const mySitePool =
+      normalizedLocationId != null
+        ? scopedRequesterTickets.filter(isTicketOpen)
         : [];
     const mySite = normalizedLocationId != null ? computeSiteMetrics(mySitePool) : null;
 

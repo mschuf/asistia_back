@@ -8,7 +8,7 @@ import { IsBoolean, IsIn, IsOptional, IsString } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
 
 /** Columnas ordenables en GET /proveedores. */
-export const PROVEEDOR_SORT_BY = ["id", "nombre", "createdAt"] as const;
+export const PROVEEDOR_SORT_BY = ["id", "nombre", "ruc", "createdAt"] as const;
 
 export type ProveedorSortBy = (typeof PROVEEDOR_SORT_BY)[number];
 
@@ -19,7 +19,7 @@ export type ProveedorSortOrder = (typeof PROVEEDOR_SORT_ORDER)[number];
 
 /** Parámetros de query para el listado paginado de proveedores. */
 export class ListProveedoresQueryDto extends PaginationDto {
-  @ApiPropertyOptional({ description: "Free-text search in id, nombre" })
+  @ApiPropertyOptional({ description: "Free-text search in id, nombre, ruc" })
   @IsOptional()
   @IsString()
   search?: string;
@@ -28,6 +28,11 @@ export class ListProveedoresQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   nombre?: string;
+
+  @ApiPropertyOptional({ description: "Filter by RUC" })
+  @IsOptional()
+  @IsString()
+  ruc?: string;
 
   @ApiPropertyOptional({ description: "Filter by active status" })
   @IsOptional()

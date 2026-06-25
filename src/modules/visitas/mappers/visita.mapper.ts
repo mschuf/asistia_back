@@ -30,6 +30,7 @@ export function mapVisitaRowToResponse(row: VisitaListRow | (VisitaRow & Partial
     personaId: Number(row.persona_id),
     visitante: row.visitante ?? "",
     hasFoto: Boolean(row.has_foto),
+    hasVisitaFoto: Boolean(row.has_visita_foto),
     documento: row.documento ?? "",
     empresa: row.empresa ?? null,
     motivo: row.motivo,

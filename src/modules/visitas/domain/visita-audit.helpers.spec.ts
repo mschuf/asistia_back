@@ -47,6 +47,7 @@ function makeRow(overrides: Partial<VisitaListRow> = {}): VisitaListRow {
     documento: "30111222",
     empresa: "Empresa Test",
     has_foto: false,
+    has_visita_foto: false,
     ...overrides,
   };
 }

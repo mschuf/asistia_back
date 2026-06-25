@@ -9,6 +9,7 @@ import type { ProveedorSortBy, ProveedorSortOrder } from "./dto/list-proveedores
 export interface ProveedorRow extends QueryResultRow {
   id: string;
   nombre: string;
+  ruc: string;
   activo: boolean;
   created_at: Date | string;
   updated_at: Date | string;
@@ -20,6 +21,7 @@ export interface ProveedorListFilters {
   limit: number;
   search?: string;
   nombre?: string;
+  ruc?: string;
   activo?: boolean;
   sortBy?: ProveedorSortBy;
   sortOrder?: ProveedorSortOrder;
@@ -28,11 +30,13 @@ export interface ProveedorListFilters {
 /** Payload de creación de proveedor normalizado para el repositorio. */
 export interface CreateProveedorInput {
   nombre: string;
+  ruc: string;
   activo: boolean;
 }
 
 /** Payload parcial de actualización de proveedor para el repositorio. */
 export interface UpdateProveedorInput {
   nombre?: string;
+  ruc?: string;
   activo?: boolean;
 }

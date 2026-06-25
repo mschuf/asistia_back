@@ -226,16 +226,30 @@ export class PersonasService {
   async deletePermanent(id: number): Promise<{ id: number; deleted: true }> {
     await this.ensureExists(id);
 
-    const activeVisitas = await this.repo.countActiveVisitas(id);
-    if (activeVisitas > 0) {
+    const linkedVisitas = await this.repo.countVisitas(id);
+    if (linkedVisitas > 0) {
       throw new BusinessException({
-        message: `No se puede eliminar la persona ${id} porque tiene visitas activas o programadas`,
+        message:
+          "No se puede eliminar esta persona porque tiene visitas registradas. Puede desactivarla si ya no debe usarse en nuevas visitas.",
         code: API_ERROR_CODE.CONFLICT,
         status: HttpStatus.CONFLICT,
       });
     }
 
-    const deletedId = await this.repo.hardDelete(id);
+    let deletedId: number | null;
+    try {
+      deletedId = await this.repo.hardDelete(id);
+    } catch (error) {
+      if (this.isPersonaVisitaFkViolation(error)) {
+        throw new BusinessException({
+          message:
+            "No se puede eliminar esta persona porque tiene visitas registradas. Puede desactivarla si ya no debe usarse en nuevas visitas.",
+          code: API_ERROR_CODE.CONFLICT,
+          status: HttpStatus.CONFLICT,
+        });
+      }
+      throw error;
+    }
     if (deletedId == null) {
       throw new BusinessException({
         message: `Persona ${id} not found`,
@@ -341,5 +355,19 @@ export class PersonasService {
         status: HttpStatus.NOT_FOUND,
       });
     }
+  }
+
+  /**
+   * Detecta violaciones de FK al eliminar una persona con visitas asociadas.
+   * @param error - Error capturado al ejecutar el DELETE.
+   * @returns `true` si PostgreSQL bloqueó la eliminación por visitas.
+   */
+  private isPersonaVisitaFkViolation(error: unknown): boolean {
+    if (typeof error !== "object" || error === null) {
+      return false;
+    }
+
+    const pgError = error as { code?: string; constraint?: string };
+    return pgError.code === "23503" && pgError.constraint === "visita_persona_id_fkey";
   }
 }

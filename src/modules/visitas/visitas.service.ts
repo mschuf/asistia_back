@@ -11,6 +11,8 @@ import { MotivosVisitaService } from "../motivos-visita/motivos-visita.service";
 import { PersonasSqlRepository } from "../personas/repositories/personas.sql-repository";
 import type { PersonaRow } from "../personas/personas.types";
 import { PROVEEDOR_SIN_ASIGNAR_NOMBRE } from "../personas/personas.types";
+import { processPersonaPhoto } from "../personas/persona-photo.processor";
+import { validatePersonaPhotoUpload } from "../personas/persona-photo-validation";
 import { UsersService } from "../users/users.service";
 import { CatalogService } from "../catalog/catalog.service";
 import type { DomainLocation } from "../glpi/mappers/location.mapper";
@@ -376,11 +378,102 @@ export class VisitasService {
   }
 
   /**
+   * Procesa y guarda la foto de una visita existente.
+   * @param id - ID de la visita.
+   * @param file - Archivo recibido por Multer en memoria.
+   * @returns DTO de la visita actualizada.
+   */
+  async setPhoto(
+    id: number,
+    file: Pick<Express.Multer.File, "buffer" | "mimetype" | "originalname" | "size">,
+  ): Promise<VisitaResponseDto> {
+    await this.findById(id);
+
+    validatePersonaPhotoUpload({
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+    });
+
+    if (!file.buffer?.length) {
+      throw new BusinessException({
+        message: "No file received under field 'file'",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    const processed = await processPersonaPhoto(file.buffer);
+    const updated = await this.repo.updatePhoto(id, processed.buffer, processed.mimeType);
+    if (!updated) {
+      throw new BusinessException({
+        message: `Visita ${id} not found`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    return mapVisitaRowToResponse(updated);
+  }
+
+  /**
+   * Resuelve la foto almacenada de una visita para descarga binaria.
+   * @param id - ID de la visita.
+   * @returns Buffer, MIME type y tamaño en bytes.
+   */
+  async getPhoto(id: number): Promise<{ buffer: Buffer; mimeType: string; size: number }> {
+    await this.findById(id);
+    const photo = await this.repo.findPhotoById(id);
+    if (!photo) {
+      throw new BusinessException({
+        message: `Visita ${id} does not have a photo`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    return {
+      buffer: photo.foto,
+      mimeType: photo.foto_mime_type || "image/jpeg",
+      size: photo.foto.length,
+    };
+  }
+
+  /**
    * Crea una visita nueva.
    * @param dto - Datos de creación validados por el DTO.
    * @returns DTO de la visita creada.
    */
   async create(actorUserId: number, dto: CreateVisitaDto): Promise<VisitaResponseDto> {
+    if (dto.personaId == null || dto.personaId < 1) {
+      throw new BusinessException({
+        message: "La persona es obligatoria para crear una visita",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+    if (dto.motivoVisitaId == null || dto.motivoVisitaId < 1) {
+      throw new BusinessException({
+        message: "El motivo es obligatorio para crear una visita",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+    if (!dto.responsableNombre?.trim()) {
+      throw new BusinessException({
+        message: "El responsable es obligatorio para crear una visita",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+    if (dto.responsableId == null || dto.responsableId < 1) {
+      throw new BusinessException({
+        message: "El responsable es obligatorio para crear una visita",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
     const persona = await this.personasRepo.findById(dto.personaId);
     if (!persona) {
       throw new BusinessException({
@@ -399,7 +492,7 @@ export class VisitasService {
     }
 
     await this.assertPersonaConProveedorValido(persona);
-    await this.assertResponsableEsUsuarioGlpi(dto.responsableNombre);
+    const responsable = await this.assertResponsableActivoGlpi(dto.responsableId);
 
     this.rejectManualSinSalidaEstado(dto.estado);
 
@@ -410,6 +503,13 @@ export class VisitasService {
 
     const estado = dto.estado ?? "activa";
     const credencialNumero = dto.credencialNumero?.trim() || null;
+    if (!credencialNumero) {
+      throw new BusinessException({
+        message: "El número de tarjeta es obligatorio para crear una visita",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
 
     if (requiresTarjetaDisponibilidad(estado) && credencialNumero) {
       await this.assertCredencialNumeroDisponible(credencialNumero);
@@ -426,7 +526,7 @@ export class VisitasService {
       personaId: dto.personaId,
       motivoVisitaId: dto.motivoVisitaId,
       motivo: motivoVisita.nombre,
-      responsableNombre: dto.responsableNombre.trim(),
+      responsableNombre: responsable.fullName.trim(),
       estado,
       estadoSeguimiento: dto.estadoSeguimiento ?? (estado === "activa" ? "activo" : null),
       zonasPermitidas,
@@ -438,6 +538,10 @@ export class VisitasService {
     };
 
     const created = await this.repo.create(input);
+    await this.personasRepo.updateUltimosVisita(dto.personaId, {
+      ultimoMotivo: dto.motivoVisitaId,
+      ultimoResponsable: dto.responsableId,
+    });
     await this.logAuditEvent({
       visitaId: Number(created.id),
       actorUserId,
@@ -488,6 +592,7 @@ export class VisitasService {
     const input: UpdateVisitaInput = {};
     const nextTarjetaColor = this.resolveCurrentTarjetaColor(current.tarjeta_color, dto.tarjetaColor);
     const nextEstado = (dto.estado ?? current.estado) as VisitaEstado;
+    const isClosingVisit = dto.estado === "finalizada" && current.estado !== "finalizada";
     const nextPersonaId = dto.personaId ?? Number(current.persona_id);
     const nextCredencialNumero =
       dto.credencialNumero !== undefined
@@ -515,10 +620,18 @@ export class VisitasService {
     }
     if (dto.responsableNombre !== undefined) input.responsableNombre = dto.responsableNombre.trim();
     if (dto.estado !== undefined) input.estado = dto.estado;
-    if (dto.estadoSeguimiento !== undefined) input.estadoSeguimiento = dto.estadoSeguimiento;
+    if (dto.estadoSeguimiento !== undefined) {
+      input.estadoSeguimiento = dto.estadoSeguimiento;
+    } else if (isClosingVisit) {
+      input.estadoSeguimiento = null;
+    }
     if (dto.credencialNumero !== undefined) input.credencialNumero = dto.credencialNumero?.trim() || null;
     if (dto.entradaAt !== undefined) input.entradaAt = dto.entradaAt ? new Date(dto.entradaAt) : null;
-    if (dto.salidaAt !== undefined) input.salidaAt = dto.salidaAt ? new Date(dto.salidaAt) : null;
+    if (isClosingVisit) {
+      input.salidaAt = new Date();
+    } else if (dto.salidaAt !== undefined) {
+      input.salidaAt = dto.salidaAt ? new Date(dto.salidaAt) : null;
+    }
     if (dto.observaciones !== undefined) input.observaciones = dto.observaciones?.trim() || null;
 
     if (dto.tarjetaColor !== undefined) {
@@ -684,22 +797,15 @@ export class VisitasService {
     };
   }
 
-  private async assertResponsableEsUsuarioGlpi(responsableNombre: string): Promise<void> {
-    const normalized = responsableNombre.trim().toLowerCase();
-    if (!normalized) {
-      return;
-    }
-
-    const users = await this.usersService.listAll();
-    const match = users.find(
-      (user) => user.isActive && user.fullName.trim().toLowerCase() === normalized,
-    );
-    if (!match) {
+  private async assertResponsableActivoGlpi(responsableId: number): Promise<DomainUser> {
+    const user = await this.usersService.findById(responsableId);
+    if (!user?.isActive) {
       throw new BusinessException({
         message: "El responsable debe ser un usuario activo de GLPI",
         code: API_ERROR_CODE.VALIDATION,
         status: HttpStatus.BAD_REQUEST,
       });
     }
+    return user;
   }
 }

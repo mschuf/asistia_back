@@ -14,6 +14,12 @@ export class CreateProveedorDto {
   @MaxLength(200)
   nombre!: string;
 
+  @ApiProperty({ example: "80012345-6" })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50)
+  ruc!: string;
+
   @ApiPropertyOptional({ default: true })
   @IsOptional()
   @IsBoolean()

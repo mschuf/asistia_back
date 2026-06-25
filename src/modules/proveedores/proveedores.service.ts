@@ -36,6 +36,7 @@ export class ProveedoresService {
       limit,
       search: query.search,
       nombre: query.nombre,
+      ruc: query.ruc,
       activo: query.activo,
       sortBy: query.sortBy,
       sortOrder: query.sortOrder,
@@ -92,6 +93,7 @@ export class ProveedoresService {
    */
   async create(dto: CreateProveedorDto): Promise<ProveedorResponseDto> {
     const nombre = dto.nombre.trim();
+    const ruc = dto.ruc.trim();
     const existing = await this.repo.findByNombre(nombre);
     if (existing) {
       throw new BusinessException({
@@ -101,8 +103,18 @@ export class ProveedoresService {
       });
     }
 
+    const existingRuc = await this.repo.findByRuc(ruc);
+    if (existingRuc) {
+      throw new BusinessException({
+        message: `Ya existe un proveedor con RUC ${ruc}`,
+        code: API_ERROR_CODE.CONFLICT,
+        status: HttpStatus.CONFLICT,
+      });
+    }
+
     const input: CreateProveedorInput = {
       nombre,
+      ruc,
       activo: dto.activo ?? true,
     };
 
@@ -131,8 +143,21 @@ export class ProveedoresService {
       }
     }
 
+    if (dto.ruc !== undefined) {
+      const ruc = dto.ruc.trim();
+      const existing = await this.repo.findByRuc(ruc);
+      if (existing && Number(existing.id) !== id) {
+        throw new BusinessException({
+          message: `Ya existe un proveedor con RUC ${ruc}`,
+          code: API_ERROR_CODE.CONFLICT,
+          status: HttpStatus.CONFLICT,
+        });
+      }
+    }
+
     const input: UpdateProveedorInput = {};
     if (dto.nombre !== undefined) input.nombre = dto.nombre.trim();
+    if (dto.ruc !== undefined) input.ruc = dto.ruc.trim();
     if (dto.activo !== undefined) input.activo = dto.activo;
 
     const updated = await this.repo.update(id, input);

@@ -16,12 +16,14 @@ import type { ProveedorSortBy, ProveedorSortOrder } from "../dto/list-proveedore
 const PROVEEDOR_SORT_EXPRESSIONS: Record<ProveedorSortBy, string> = {
   id: "id",
   nombre: "nombre",
+  ruc: "ruc",
   createdAt: "created_at",
 };
 
 const PROVEEDOR_SELECT_COLUMNS = `
   id,
   nombre,
+  ruc,
   activo,
   created_at,
   updated_at
@@ -103,6 +105,22 @@ export class ProveedoresSqlRepository {
   }
 
   /**
+   * Busca un proveedor por RUC exacto.
+   * @param ruc - RUC del proveedor.
+   * @returns Fila encontrada o `null`.
+   */
+  async findByRuc(ruc: string): Promise<ProveedorRow | null> {
+    const rows = await this.postgres.query<ProveedorRow>(
+      `SELECT ${PROVEEDOR_SELECT_COLUMNS}
+       FROM public.prt_proveedor
+       WHERE ruc = $1`,
+      [ruc],
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
    * Cuenta personas vinculadas a un proveedor.
    * @param proveedorId - ID del proveedor.
    * @returns Cantidad de personas asociadas.
@@ -125,10 +143,10 @@ export class ProveedoresSqlRepository {
    */
   async create(input: CreateProveedorInput): Promise<ProveedorRow> {
     const rows = await this.postgres.query<ProveedorRow>(
-      `INSERT INTO public.prt_proveedor (nombre, activo)
-       VALUES ($1, $2)
+      `INSERT INTO public.prt_proveedor (nombre, ruc, activo)
+       VALUES ($1, $2, $3)
        RETURNING ${PROVEEDOR_SELECT_COLUMNS}`,
-      [input.nombre, input.activo],
+      [input.nombre, input.ruc, input.activo],
     );
 
     return rows[0];
@@ -150,6 +168,7 @@ export class ProveedoresSqlRepository {
     };
 
     if (input.nombre !== undefined) setField("nombre", input.nombre);
+    if (input.ruc !== undefined) setField("ruc", input.ruc);
     if (input.activo !== undefined) setField("activo", input.activo);
 
     if (assignments.length === 0) {
@@ -241,12 +260,13 @@ export class ProveedoresSqlRepository {
     }
 
     addIlike("nombre", filters.nombre);
+    addIlike("ruc", filters.ruc);
 
     const search = filters.search?.trim();
     if (search) {
       params.push(`%${search}%`);
       const ilikeParam = params.length;
-      const searchConditions = [`nombre ILIKE $${ilikeParam}`];
+      const searchConditions = [`nombre ILIKE $${ilikeParam}`, `ruc ILIKE $${ilikeParam}`];
 
       const parsedId = Number.parseInt(search, 10);
       if (Number.isFinite(parsedId) && parsedId > 0 && String(parsedId) === search) {
@@ -268,12 +288,12 @@ export class ProveedoresSqlRepository {
    */
   private buildOrderClause(filters: ProveedorListFilters): string {
     if (!filters.sortBy) {
-      return "ORDER BY nombre ASC, id ASC";
+      return "ORDER BY id DESC";
     }
 
     const expression = PROVEEDOR_SORT_EXPRESSIONS[filters.sortBy];
     if (!expression) {
-      return "ORDER BY nombre ASC, id ASC";
+      return "ORDER BY id DESC";
     }
 
     const direction: ProveedorSortOrder = filters.sortOrder === "desc" ? "desc" : "asc";

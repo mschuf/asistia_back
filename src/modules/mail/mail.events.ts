@@ -49,12 +49,31 @@ export interface TicketStatusChangedEvent {
 }
 
 /** Payload del evento emitido al asignar un ticket a un técnico. */
+export type TicketAssignedRecipientRole = "requester" | "new_technician";
+
+/** Destinatario de ticket asignado con rol para personalizar la plantilla. */
+export interface TicketAssignedRecipient extends MailRecipient {
+  role: TicketAssignedRecipientRole;
+}
+
+/** Payload del evento emitido al asignar un ticket a un técnico. */
 export interface TicketAssignedEvent {
   ticketId: number;
   subject: string;
   technicianName: string;
   assignedBy: string;
-  recipients: MailRecipient[];
+  notify: TicketAssignedRecipient[];
+}
+
+/** Payload del evento emitido al reasignar un ticket a otro técnico. */
+export type TicketReassignedRecipientRole =
+  | "requester"
+  | "previous_technician"
+  | "new_technician";
+
+/** Destinatario de ticket reasignado con rol para personalizar la plantilla. */
+export interface TicketReassignedRecipient extends MailRecipient {
+  role: TicketReassignedRecipientRole;
 }
 
 /** Payload del evento emitido al reasignar un ticket a otro técnico. */
@@ -64,5 +83,5 @@ export interface TicketReassignedEvent {
   previousTechnicianName: string;
   newTechnicianName: string;
   reassignedBy: string;
-  recipients: MailRecipient[];
+  notify: TicketReassignedRecipient[];
 }

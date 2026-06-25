@@ -7,19 +7,28 @@ import {
   Controller,
   Delete,
   Get,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import type { Response } from "express";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { PorteriaGuard } from "../../common/guards/porteria.guard";
-import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
+import { ResponseMessage, SkipResponseEnvelope } from "../../common/interceptors/response-message.decorator";
+import { BusinessException } from "../../common/exceptions/business.exception";
+import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { personaPhotoMulterOptions } from "../personas/persona-photo.multer.config";
 import { VisitasService } from "./visitas.service";
 import { CreateVisitaDto } from "./dto/create-visita.dto";
 import { ListVisitasQueryDto } from "./dto/list-visitas-query.dto";
@@ -90,6 +99,58 @@ export class VisitasController {
   @ResponseMessage("Visita retrieved")
   async findById(@Param("id", ParseIntPipe) id: number): Promise<VisitaResponseDto> {
     return this.visitasService.findById(id);
+  }
+
+  /**
+   * Obtiene la foto de una visita como stream binario.
+   * @param id - ID numérico de la visita.
+   * @param res - Respuesta Express para escribir bytes.
+   */
+  @Get(":id/foto")
+  @SkipResponseEnvelope()
+  @ApiOperation({ summary: "Get visita photo as binary image" })
+  @ApiResponse({ status: 200, description: "Binary image stream" })
+  async getPhoto(@Param("id", ParseIntPipe) id: number, @Res() res: Response): Promise<void> {
+    const photo = await this.visitasService.getPhoto(id);
+    res.setHeader("Content-Type", photo.mimeType);
+    res.setHeader("Content-Length", String(photo.size));
+    res.setHeader("Cache-Control", "private, max-age=300");
+    res.send(photo.buffer);
+  }
+
+  /**
+   * Sube o reemplaza la foto de una visita vía multipart/form-data.
+   * @param id - ID numérico de la visita.
+   * @param file - Archivo recibido bajo el campo `file`.
+   * @returns DTO de la visita actualizada.
+   */
+  @Post(":id/foto")
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: { type: "string", format: "binary" },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor("file", personaPhotoMulterOptions))
+  @ApiOperation({ summary: "Upload or replace visita photo (optional, max 15 MB after processing)" })
+  @ApiResponse({ status: 200, type: VisitaResponseDto })
+  @ResponseMessage("Visita photo uploaded")
+  async uploadPhoto(
+    @Param("id", ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<VisitaResponseDto> {
+    if (!file) {
+      throw new BusinessException({
+        message: "No file received under field 'file'",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    return this.visitasService.setPhoto(id, file);
   }
 
   /**
