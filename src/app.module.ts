@@ -36,6 +36,7 @@ import { ProveedoresModule } from "./modules/proveedores/proveedores.module";
 import { PersonasModule } from "./modules/personas/personas.module";
 import { MotivosVisitaModule } from "./modules/motivos-visita/motivos-visita.module";
 import { VisitasModule } from "./modules/visitas/visitas.module";
+import { ErsModule } from "./modules/ers/ers.module";
 
 @Module({
   imports: [
@@ -117,6 +118,7 @@ import { VisitasModule } from "./modules/visitas/visitas.module";
     PersonasModule,
     MotivosVisitaModule,
     VisitasModule,
+    ErsModule,
   ],
   providers: [
     Reflector,
