@@ -6,22 +6,19 @@ import { Module } from "@nestjs/common";
 import { SuperAdminGuard } from "../../common/guards/super-admin.guard";
 import { CatalogModule } from "../catalog/catalog.module";
 import { UsersModule } from "../users/users.module";
-import { VisitasModule } from "../visitas/visitas.module";
 import { TicketCreatedLogsSqlRepository } from "./repositories/ticket-created-logs.sql-repository";
 import { ReportsController } from "./reports.controller";
 import { ReportsService } from "./reports.service";
 import { TicketCreatedLogsExportService } from "./ticket-created-logs-export.service";
-import { VisitasExportService } from "./visitas-export.service";
 
 /** Registra controlador, servicio, repositorio y guarda de super admin. */
 @Module({
-  imports: [UsersModule, CatalogModule, VisitasModule],
+  imports: [UsersModule, CatalogModule],
   controllers: [ReportsController],
   providers: [
     ReportsService,
     TicketCreatedLogsSqlRepository,
     TicketCreatedLogsExportService,
-    VisitasExportService,
     SuperAdminGuard,
   ],
   exports: [ReportsService],

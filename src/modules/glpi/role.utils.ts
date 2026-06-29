@@ -7,10 +7,6 @@
 
 export const TI_GROUP_KEYWORDS = ["ti", "it", "soporte", "helpdesk"] as const;
 
-/** Grupos GLPI que identifican personal de portería. */
-
-export const PORTERIA_GROUP_KEYWORDS = ["porteria"] as const;
-
 
 
 /** Perfiles operativos de TI (sin grupo explícito también pueden ser técnicos). */
@@ -75,40 +71,6 @@ function matchesKeyword(value: string, keyword: string): boolean {
 export function isTiGroupName(name: string): boolean {
 
   return TI_GROUP_KEYWORDS.some((keyword) => matchesKeyword(name, keyword));
-
-}
-
-
-
-/**
- * Indica si el nombre corresponde a un grupo de portería conocido.
- * @param name - Nombre del grupo GLPI.
- * @returns `true` si coincide con alguna palabra clave de portería.
- * @throws No lanza excepciones.
- */
-export function isPorteriaGroupName(name: string): boolean {
-
-  return PORTERIA_GROUP_KEYWORDS.some((keyword) => matchesKeyword(name, keyword));
-
-}
-
-
-
-/**
- * Indica si el usuario pertenece al grupo de portería según IDs y catálogo GLPI.
- * @param groupIds - IDs de grupos GLPI del usuario.
- * @param groups - Catálogo de grupos GLPI.
- * @returns `true` si algún grupo del usuario coincide con portería.
- * @throws No lanza excepciones.
- */
-export function hasPorteriaGroupMembership(
-  groupIds: number[],
-  groups: Array<{ id: number; name: string }>,
-): boolean {
-
-  const memberGroups = groups.filter((group) => groupIds.includes(group.id));
-
-  return memberGroups.some((group) => isPorteriaGroupName(group.name));
 
 }
 

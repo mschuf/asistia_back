@@ -8,7 +8,6 @@ import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
-import { TicketsAccessGuard } from "../../common/guards/tickets-access.guard";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { EscalarTicketDto } from "./dto/escalar-ticket.dto";
@@ -26,7 +25,7 @@ import { ErsService } from "./ers.service";
 /** Controlador del módulo ERS protegido por JWT y permisos de tickets. */
 @ApiTags("ers")
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, TicketsAccessGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("ers")
 export class ErsController {
   constructor(private readonly ersService: ErsService) {}

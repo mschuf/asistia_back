@@ -10,13 +10,8 @@ import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { SuperAdminGuard } from "../../common/guards/super-admin.guard";
 import { ResponseMessage, SkipResponseEnvelope } from "../../common/interceptors/response-message.decorator";
 import { ExportTicketCreatedLogsQueryDto } from "./dto/export-ticket-created-logs-query.dto";
-import { ExportVisitasReportQueryDto } from "./dto/export-visitas-report-query.dto";
-import { ListPorteriaAuditQueryDto } from "./dto/list-porteria-audit-query.dto";
 import { ListTicketCreatedLogsQueryDto } from "./dto/list-ticket-created-logs-query.dto";
-import { ListVisitasReportQueryDto } from "./dto/list-visitas-report-query.dto";
-import { PorteriaAuditLogListResponseDto } from "./dto/porteria-audit.response.dto";
 import { TicketCreatedLogListResponseDto } from "./dto/ticket-created-log.response.dto";
-import { VisitaReportLogListResponseDto } from "./dto/visita-report.response.dto";
 import { ReportsService } from "./reports.service";
 
 /** Controlador REST de reportes con guardas JWT y super admin. */
@@ -71,57 +66,4 @@ export class ReportsController {
     res.send(file.buffer);
   }
 
-  /**
-   * Lista visitas de portería con filtros y paginación.
-   * @param query - Parámetros de paginación, fechas, estado y ordenación.
-   * @returns Lista paginada de visitas.
-   */
-  @Get("visitas")
-  @ApiOperation({ summary: "Paginated porteria visitas report (super admin)" })
-  @ApiResponse({ status: 200, type: VisitaReportLogListResponseDto })
-  @ResponseMessage("Porteria visitas report retrieved")
-  async listVisitasReport(
-    @Query() query: ListVisitasReportQueryDto,
-  ): Promise<VisitaReportLogListResponseDto> {
-    return this.reportsService.listVisitasReport(query);
-  }
-
-  /**
-   * Lista eventos de auditoría completa de portería.
-   * @param query - Filtros, paginación, orden y búsqueda general.
-   * @returns Lista paginada de eventos de auditoría.
-   */
-  @Get("porteria-audit")
-  @ApiOperation({ summary: "Paginated porteria audit logs report (super admin)" })
-  @ApiResponse({ status: 200, type: PorteriaAuditLogListResponseDto })
-  @ResponseMessage("Porteria audit report retrieved")
-  async listPorteriaAuditLogs(
-    @Query() query: ListPorteriaAuditQueryDto,
-  ): Promise<PorteriaAuditLogListResponseDto> {
-    return this.reportsService.listPorteriaAuditLogs(query);
-  }
-
-  /**
-   * Exporta visitas de portería a PDF o Excel.
-   * @param query - Filtros y formato de exportación.
-   * @param res - Respuesta Express para enviar el archivo binario.
-   * @returns Promesa vacía; el cuerpo se escribe en la respuesta HTTP.
-   */
-  @Get("visitas/export")
-  @SkipResponseEnvelope()
-  @ApiOperation({ summary: "Export porteria visitas as PDF or Excel (super admin)" })
-  @ApiProduces("application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-  @ApiResponse({ status: 200, description: "Binary export file" })
-  async exportVisitasReport(
-    @Query() query: ExportVisitasReportQueryDto,
-    @Res() res: Response,
-  ): Promise<void> {
-    const file = await this.reportsService.exportVisitasReport(query);
-    res.setHeader("Content-Type", file.mimeType);
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-    );
-    res.send(file.buffer);
-  }
 }

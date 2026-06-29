@@ -13,7 +13,6 @@ import {
 import { UsersGlpiRepository } from "../glpi/repositories/users.glpi-repository";
 import { CatalogGlpiRepository } from "../glpi/repositories/catalog.glpi-repository";
 import { UsersProfilesSqlRepository } from "../glpi/repositories/users-profiles.sql-repository";
-import { UsersGroupsSqlRepository } from "../glpi/repositories/users-groups.sql-repository";
 import type { DomainUser } from "../glpi/mappers/user.mapper";
 import { LdapProvider } from "./strategies/ldap.provider";
 import type { IdentityResolution } from "./strategies/identity-provider.interface";
@@ -47,7 +46,6 @@ export class AuthService {
     private readonly usersRepo: UsersGlpiRepository,
     private readonly catalogRepo: CatalogGlpiRepository,
     private readonly usersProfilesSqlRepo: UsersProfilesSqlRepository,
-    private readonly usersGroupsSqlRepo: UsersGroupsSqlRepository,
   ) {}
 
   /**
@@ -157,12 +155,9 @@ export class AuthService {
       this.resolveEntityName(glpiUser.entityId),
       this.resolveIsSuperAdmin(glpiUser.id),
     ]);
-    const [role, isPorteriaUser] = await Promise.all([
-      this.determineRole(groupIds),
-      this.resolveIsPorteriaUser(glpiUser.id),
-    ]);
+    const role = await this.determineRole(groupIds);
     this.logger.debug(
-      `[AUTH] groupIds=${JSON.stringify(groupIds)} resolvedRole='${role}' entityId=${glpiUser.entityId ?? "null"} entityName='${entityName ?? ""}' isSuperAdmin=${isSuperAdmin} isPorteriaUser=${isPorteriaUser}`,
+      `[AUTH] groupIds=${JSON.stringify(groupIds)} resolvedRole='${role}' entityId=${glpiUser.entityId ?? "null"} entityName='${entityName ?? ""}' isSuperAdmin=${isSuperAdmin}`,
     );
 
     const principal: AuthenticatedUser = {
@@ -178,7 +173,6 @@ export class AuthService {
       entityId: glpiUser.entityId,
       entityName,
       isSuperAdmin,
-      isPorteriaUser,
     };
     const user: SessionUser = { ...principal, ...profile };
 
@@ -207,10 +201,9 @@ export class AuthService {
     }
 
     const groupIds = await this.resolveGroupIds(domainUser.id);
-    const [entityName, isSuperAdmin, isPorteriaUser] = await Promise.all([
+    const [entityName, isSuperAdmin] = await Promise.all([
       this.resolveEntityName(domainUser.entityId),
       this.resolveIsSuperAdmin(domainUser.id),
-      this.resolveIsPorteriaUser(domainUser.id),
     ]);
 
     return {
@@ -224,7 +217,6 @@ export class AuthService {
       entityId: domainUser.entityId,
       entityName,
       isSuperAdmin,
-      isPorteriaUser,
     };
   }
 
@@ -349,27 +341,6 @@ export class AuthService {
     } catch (error) {
       this.logger.warn(`Role detection failed, defaulting to final_user: ${(error as Error).message}`);
       return "final_user";
-    }
-  }
-
-  /**
-   * Determina si el usuario pertenece al grupo GLPI de portería.
-   * @param userId - Identificador numérico del usuario en GLPI.
-   * @returns `true` si pertenece a un grupo de portería; `false` en caso contrario.
-   * @throws No lanza excepciones explícitas; devuelve `false` ante errores SQL.
-   */
-  private async resolveIsPorteriaUser(userId: number): Promise<boolean> {
-    try {
-      const isPorteriaUser = await this.usersGroupsSqlRepo.isPorteriaUser(userId);
-      this.logger.debug(
-        `[AUTH] porteria signals -> isPorteriaUser=${isPorteriaUser} userId=${userId}`,
-      );
-      return isPorteriaUser;
-    } catch (error) {
-      this.logger.warn(
-        `Porteria group detection failed, defaulting to false: ${(error as Error).message}`,
-      );
-      return false;
     }
   }
 

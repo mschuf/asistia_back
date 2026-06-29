@@ -46,9 +46,3 @@ export interface TicketCreatedLogRow {
   requester_location?: string | null;
 }
 
-/** Resultado de exportación del reporte de visitas de portería. */
-export interface VisitaReportExportResult {
-  buffer: Buffer;
-  filename: string;
-  mimeType: string;
-}

@@ -158,7 +158,6 @@ export class AuthController {
       entityId: user.entityId,
       entityName: user.entityName,
       isSuperAdmin: user.isSuperAdmin,
-      isPorteriaUser: user.isPorteriaUser,
     };
   }
 

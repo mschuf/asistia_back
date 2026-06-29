@@ -17,7 +17,6 @@ import { TicketsMetricsSqlRepository } from "./repositories/tickets-metrics.sql-
 import { TicketsStatusSqlRepository } from "./repositories/tickets-status.sql-repository";
 import { TicketsCreateSqlRepository } from "./repositories/tickets-create.sql-repository";
 import { UsersTechniciansSqlRepository } from "./repositories/users-technicians.sql-repository";
-import { UsersGroupsSqlRepository } from "./repositories/users-groups.sql-repository";
 import { LocationsSqlRepository } from "./repositories/locations.sql-repository";
 import { UsersProfilesSqlRepository } from "./repositories/users-profiles.sql-repository";
 
@@ -47,7 +46,6 @@ import { UsersProfilesSqlRepository } from "./repositories/users-profiles.sql-re
     TicketsStatusSqlRepository,
     TicketsCreateSqlRepository,
     UsersTechniciansSqlRepository,
-    UsersGroupsSqlRepository,
     UsersProfilesSqlRepository,
     LocationsSqlRepository,
   ],
@@ -63,7 +61,6 @@ import { UsersProfilesSqlRepository } from "./repositories/users-profiles.sql-re
     TicketsStatusSqlRepository,
     TicketsCreateSqlRepository,
     UsersTechniciansSqlRepository,
-    UsersGroupsSqlRepository,
     UsersProfilesSqlRepository,
     LocationsSqlRepository,
   ],

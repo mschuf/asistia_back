@@ -6,7 +6,6 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { MulterModule } from "@nestjs/platform-express";
 import { join, resolve } from "path";
-import { TicketsAccessGuard } from "../../common/guards/tickets-access.guard";
 import type { AppConfig } from "../../config/configuration";
 import { TicketsModule } from "../tickets/tickets.module";
 import { LocalAttachmentStorage } from "./local-attachment.storage";
@@ -35,7 +34,7 @@ import { AttachmentsSqlRepository } from "./repositories/attachments.sql-reposit
     }),
   ],
   controllers: [AttachmentsController],
-  providers: [AttachmentsService, AttachmentsSqlRepository, LocalAttachmentStorage, TicketsAccessGuard],
+  providers: [AttachmentsService, AttachmentsSqlRepository, LocalAttachmentStorage],
   exports: [AttachmentsService],
 })
 export class AttachmentsModule {}

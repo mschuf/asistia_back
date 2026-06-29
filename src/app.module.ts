@@ -32,10 +32,6 @@ import { AiModule } from "./modules/ai/ai.module";
 import { CompaniesModule } from "./modules/companies/companies.module";
 import { PromptsModule } from "./modules/prompts/prompts.module";
 import { ReportsModule } from "./modules/reports/reports.module";
-import { ProveedoresModule } from "./modules/proveedores/proveedores.module";
-import { PersonasModule } from "./modules/personas/personas.module";
-import { MotivosVisitaModule } from "./modules/motivos-visita/motivos-visita.module";
-import { VisitasModule } from "./modules/visitas/visitas.module";
 import { ErsModule } from "./modules/ers/ers.module";
 
 @Module({
@@ -114,10 +110,6 @@ import { ErsModule } from "./modules/ers/ers.module";
     CompaniesModule,
     PromptsModule,
     ReportsModule,
-    ProveedoresModule,
-    PersonasModule,
-    MotivosVisitaModule,
-    VisitasModule,
     ErsModule,
   ],
   providers: [
