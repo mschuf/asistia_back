@@ -41,9 +41,9 @@ export class ErsService {
       });
     }
 
-    if (user.role !== "technician" && context.requesterId !== user.id) {
+    if (user.role !== "technician") {
       throw new BusinessException({
-        message: "You can only escalate tickets where you are the requester",
+        message: "Only TI users can escalate tickets to ERS",
         code: API_ERROR_CODE.FORBIDDEN,
         status: HttpStatus.FORBIDDEN,
       });
@@ -153,7 +153,7 @@ export class ErsService {
       dto.teamMemberIds = uniqueTeamIds;
     }
 
-    const ok = await this.ersSqlRepository.saveTiEdition(projectId, dto);
+    const ok = await this.ersSqlRepository.saveTiEdition(projectId, user.id, dto);
     if (!ok) {
       throw new BusinessException({
         message: `ERS project ${projectId} not found`,

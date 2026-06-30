@@ -369,25 +369,10 @@ export class TicketsService {
         }
 
         const previousTechnician = usersById.get(input.previousTechnicianId!);
-        const previousTechnicianRecipient = await this.resolveMailRecipient(
-          previousTechnician ?? null,
-        );
         const notify: TicketReassignedEvent["notify"] = [];
-        const seenEmails = new Set<string>();
-        const addRecipient = (
-          recipient: MailRecipient | null,
-          role: TicketReassignedEvent["notify"][number]["role"],
-        ) => {
-          if (!recipient) return;
-          const email = recipient.email.trim().toLowerCase();
-          if (seenEmails.has(email)) return;
-          seenEmails.add(email);
-          notify.push({ ...recipient, role });
-        };
-
-        addRecipient(requesterRecipient, "requester");
-        addRecipient(technicianRecipient, "new_technician");
-        addRecipient(previousTechnicianRecipient, "previous_technician");
+        if (technicianRecipient) {
+          notify.push({ ...technicianRecipient, role: "new_technician" });
+        }
 
         if (notify.length > 0) {
           const payload: TicketReassignedEvent = {

@@ -81,6 +81,7 @@ export class ErsController {
    * @returns Detalle del ERS creado.
    */
   @Post("escalar")
+  @Roles("technician")
   @ApiOperation({ summary: "Scale a ticket into a project (ERS transaction 1)" })
   @ApiResponse({ status: 201, type: ErsDetailResponseDto })
   @ResponseMessage("Ticket scaled to ERS project")

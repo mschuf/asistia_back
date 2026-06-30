@@ -53,6 +53,28 @@ export class ErsTaskInputDto {
 
 /** Guardado único de la vista TI. */
 export class UpdateErsDto {
+  @ApiPropertyOptional({ example: "Portal RRHH", description: "Nombre visible del proyecto" })
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(255)
+  projectName?: string;
+
+  @ApiPropertyOptional({ example: "Reducir tiempos de gestión.", description: "Objetivo del requerimiento" })
+  @IsOptional()
+  @IsString()
+  objective?: string;
+
+  @ApiPropertyOptional({ example: "Detalle funcional del requerimiento.", description: "Descripción detallada" })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional({ example: "Impacta a 250 colaboradores.", description: "Medición de impacto de negocio" })
+  @IsOptional()
+  @IsString()
+  impact?: string;
+
   @ApiPropertyOptional({ example: 80, description: "Aprobador de proyecto (users_id)" })
   @IsOptional()
   @Type(() => Number)

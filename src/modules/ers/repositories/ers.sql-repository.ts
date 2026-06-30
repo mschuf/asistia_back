@@ -92,6 +92,10 @@ interface ProjectIdRow extends RowDataPacket {
   id: number;
 }
 
+interface ImpactNoteRow extends RowDataPacket {
+  id: number;
+}
+
 const ERS_SORT_SQL: Record<string, string> = {
   projectId: "p.id",
   projectName: "p.name",
@@ -328,7 +332,13 @@ export class ErsSqlRepository {
           COALESCE(NULLIF(CONCAT(COALESCE(appr.firstname, ''), ' ', COALESCE(appr.realname, '')), ' '), appr.name) AS approver_name,
           ps.id AS project_state_id,
           ps.name AS project_state_name,
-          ROUND(COALESCE(AVG(COALESCE(pt.percent_done, 0)), 0), 0) AS progress,
+          ROUND(COALESCE(AVG(
+            CASE
+              WHEN pt.id IS NULL THEN NULL
+              WHEN LOWER(COALESCE(pts.name, '')) REGEXP 'cancel|rechaz|anulad' THEN NULL
+              ELSE COALESCE(pt.percent_done, 0)
+            END
+          ), 0), 0) AS progress,
           DATE_FORMAT(p.date_creation, '%Y-%m-%dT%H:%i:%s.000Z') AS created_at,
           DATE_FORMAT(p.date_mod, '%Y-%m-%dT%H:%i:%s.000Z') AS updated_at
        FROM glpi_projects p
@@ -349,6 +359,8 @@ export class ErsSqlRepository {
          ON ps.id = p.projectstates_id
        LEFT JOIN glpi_projecttasks pt
          ON pt.projects_id = p.id
+       LEFT JOIN glpi_projectstates pts
+         ON pts.id = pt.projectstates_id
        ${whereSql}
        GROUP BY
          p.id, p.name, ip.items_id, req.id, requester_name, loc.id, location_name,
@@ -418,7 +430,13 @@ export class ErsSqlRepository {
           ROUND(COALESCE((
             SELECT AVG(COALESCE(tk.percent_done, 0))
             FROM glpi_projecttasks tk
+            LEFT JOIN glpi_projectstates ts
+              ON ts.id = tk.projectstates_id
             WHERE tk.projects_id = p.id
+              AND (
+                tk.projectstates_id IS NULL
+                OR LOWER(COALESCE(ts.name, '')) NOT REGEXP 'cancel|rechaz|anulad'
+              )
           ), 0), 0) AS progress,
           DATE_FORMAT(p.date_mod, '%Y-%m-%dT%H:%i:%s.000Z') AS updated_at
        FROM glpi_projects p
@@ -527,14 +545,17 @@ export class ErsSqlRepository {
    * @param input - Payload completo de edición TI.
    * @returns `true` si el proyecto existía y se actualizó.
    */
-  async saveTiEdition(projectId: number, input: UpdateErsDto): Promise<boolean> {
+  async saveTiEdition(projectId: number, actorId: number, input: UpdateErsDto): Promise<boolean> {
     return this.mysql.withTransaction(async (connection) => {
       const exists = await this.projectExists(connection, projectId);
       if (!exists) return false;
 
       const updateOptions: QueryOptions = {
         sql: `UPDATE glpi_projects
-              SET users_id = :approverId,
+              SET name = COALESCE(:projectName, name),
+                  content = COALESCE(:description, content),
+                  comment = COALESCE(:objective, comment),
+                  users_id = :approverId,
                   projectstates_id = :projectStateId,
                   date_mod = NOW()
               WHERE id = :projectId
@@ -543,10 +564,18 @@ export class ErsSqlRepository {
       };
       await connection.query(updateOptions, {
         projectId,
+        projectName: this.toTextOrNull(input.projectName),
+        description: this.toTextOrNull(input.description),
+        objective: this.toTextOrNull(input.objective),
         approverId: this.toPositiveOrNull(input.approverId) ?? 0,
         projectStateId: this.toPositiveOrNull(input.projectStateId) ?? 0,
       } as QueryValues);
 
+      await this.syncImpactNote(connection, {
+        projectId,
+        actorId,
+        impact: input.impact ?? "",
+      });
       await this.replaceProjectTeam(connection, projectId, input.teamMemberIds);
       await this.replaceProjectTasks(connection, projectId, input.tasks);
       return true;
@@ -694,6 +723,66 @@ export class ErsSqlRepository {
     } as QueryValues);
   }
 
+  private async syncImpactNote(
+    connection: PoolConnection,
+    input: { projectId: number; actorId: number; impact: string },
+  ): Promise<void> {
+    const normalizedImpact = input.impact.trim();
+    if (!normalizedImpact) {
+      await this.deleteImpactNote(connection, input.projectId);
+      return;
+    }
+
+    const existingNoteId = await this.findLatestImpactNoteId(connection, input.projectId);
+    if (!existingNoteId) {
+      await this.insertImpactNote(connection, input);
+      return;
+    }
+
+    const updateOptions: QueryOptions = {
+      sql: `UPDATE glpi_notepads
+            SET users_id = :actorId,
+                content = :content,
+                date_mod = NOW()
+            WHERE id = :noteId`,
+      namedPlaceholders: true,
+    };
+    await connection.query(updateOptions, {
+      actorId: input.actorId,
+      noteId: existingNoteId,
+      content: this.wrapImpact(normalizedImpact),
+    } as QueryValues);
+  }
+
+  private async findLatestImpactNoteId(
+    connection: PoolConnection,
+    projectId: number,
+  ): Promise<number | null> {
+    const options: QueryOptions = {
+      sql: `SELECT n.id
+            FROM glpi_notepads n
+            WHERE n.itemtype = 'Project'
+              AND n.items_id = :projectId
+              AND LOWER(COALESCE(n.content, '')) LIKE '%[impacto]%'
+            ORDER BY n.id DESC
+            LIMIT 1`,
+      namedPlaceholders: true,
+    };
+    const [rows] = await connection.query<ImpactNoteRow[]>(options, { projectId } as QueryValues);
+    return this.toPositiveOrNull(rows[0]?.id);
+  }
+
+  private async deleteImpactNote(connection: PoolConnection, projectId: number): Promise<void> {
+    const options: QueryOptions = {
+      sql: `DELETE FROM glpi_notepads
+            WHERE itemtype = 'Project'
+              AND items_id = :projectId
+              AND LOWER(COALESCE(content, '')) LIKE '%[impacto]%'`,
+      namedPlaceholders: true,
+    };
+    await connection.query(options, { projectId } as QueryValues);
+  }
+
   private async insertProjectTeamUser(
     connection: PoolConnection,
     projectId: number,
@@ -776,8 +865,7 @@ export class ErsSqlRepository {
                 users_id,
                 plan_start_date,
                 plan_end_date,
-                date_mod,
-                is_deleted
+                date_mod
               ) VALUES (
                 :projectId,
                 :name,
@@ -787,8 +875,7 @@ export class ErsSqlRepository {
                 :userId,
                 :planStartDate,
                 :planEndDate,
-                NOW(),
-                0
+                NOW()
               )`,
         namedPlaceholders: true,
       };
