@@ -35,7 +35,7 @@ export class ErsService {
     const context = await this.ersSqlRepository.findTicketEscalationContext(dto.ticketId);
     if (!context) {
       throw new BusinessException({
-        message: `Ticket ${dto.ticketId} not found`,
+        message: `No se encontró el ticket ${dto.ticketId}`,
         code: API_ERROR_CODE.NOT_FOUND,
         status: HttpStatus.NOT_FOUND,
       });
@@ -43,7 +43,7 @@ export class ErsService {
 
     if (user.role !== "technician") {
       throw new BusinessException({
-        message: "Only TI users can escalate tickets to ERS",
+        message: "Solo usuarios TI pueden escalar tickets a ERS",
         code: API_ERROR_CODE.FORBIDDEN,
         status: HttpStatus.FORBIDDEN,
       });
@@ -54,7 +54,7 @@ export class ErsService {
     const invalidResponsible = requestedResponsibleIds.filter((id) => !allowedResponsibleIds.has(id));
     if (invalidResponsible.length > 0) {
       throw new BusinessException({
-        message: "Some responsible users are not valid technicians for the requester location",
+        message: "Algunos responsables no son técnicos válidos para la sede del solicitante",
         code: API_ERROR_CODE.INVALID_TECHNICIAN,
         status: HttpStatus.BAD_REQUEST,
         details: { invalidResponsibleIds: invalidResponsible },
@@ -66,7 +66,7 @@ export class ErsService {
       const detail = await this.ersSqlRepository.findByProjectId(projectId);
       if (!detail) {
         throw new BusinessException({
-          message: "ERS project created but could not be loaded",
+          message: "Se creó el proyecto ERS pero no se pudo cargar",
           code: API_ERROR_CODE.UNKNOWN,
           status: HttpStatus.INTERNAL_SERVER_ERROR,
         });
@@ -76,13 +76,13 @@ export class ErsService {
       if (error instanceof BusinessException) throw error;
       if ((error as Error).message === "ticket_already_scaled") {
         throw new BusinessException({
-          message: "Ticket is already linked to an ERS project",
+          message: "El ticket ya está vinculado a un proyecto ERS",
           code: API_ERROR_CODE.CONFLICT,
           status: HttpStatus.CONFLICT,
         });
       }
       throw new BusinessException({
-        message: "Could not complete ERS escalation transaction",
+        message: "No se pudo completar la transacción de escalado ERS",
         code: API_ERROR_CODE.UNKNOWN,
         status: HttpStatus.INTERNAL_SERVER_ERROR,
       });
@@ -112,7 +112,7 @@ export class ErsService {
     const detail = await this.ersSqlRepository.findByProjectId(projectId);
     if (!detail) {
       throw new BusinessException({
-        message: `ERS project ${projectId} not found`,
+        message: `No se encontró el proyecto ERS ${projectId}`,
         code: API_ERROR_CODE.NOT_FOUND,
         status: HttpStatus.NOT_FOUND,
       });
@@ -120,7 +120,7 @@ export class ErsService {
 
     if (user.role !== "technician" && detail.requesterId !== user.id) {
       throw new BusinessException({
-        message: "You can only view your own ERS projects",
+        message: "Solo puedes ver tus propios proyectos ERS",
         code: API_ERROR_CODE.FORBIDDEN,
         status: HttpStatus.FORBIDDEN,
       });
@@ -142,7 +142,7 @@ export class ErsService {
   ): Promise<ErsDetail> {
     if (user.role !== "technician") {
       throw new BusinessException({
-        message: "Only technicians can edit ERS TI data",
+        message: "Solo los técnicos pueden editar datos TI de ERS",
         code: API_ERROR_CODE.FORBIDDEN,
         status: HttpStatus.FORBIDDEN,
       });
@@ -156,7 +156,7 @@ export class ErsService {
     const ok = await this.ersSqlRepository.saveTiEdition(projectId, user.id, dto);
     if (!ok) {
       throw new BusinessException({
-        message: `ERS project ${projectId} not found`,
+        message: `No se encontró el proyecto ERS ${projectId}`,
         code: API_ERROR_CODE.NOT_FOUND,
         status: HttpStatus.NOT_FOUND,
       });

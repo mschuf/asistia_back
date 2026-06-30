@@ -39,7 +39,7 @@ export class ErsController {
   @Get()
   @ApiOperation({ summary: "List ERS projects" })
   @ApiResponse({ status: 200, type: ErsListResponseDto })
-  @ResponseMessage("ERS projects retrieved")
+  @ResponseMessage("Proyectos ERS obtenidos")
   async list(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListErsQueryDto,
@@ -54,7 +54,7 @@ export class ErsController {
   @Get("states")
   @ApiOperation({ summary: "List GLPI project states" })
   @ApiResponse({ status: 200, type: [ErsProjectStateResponseDto] })
-  @ResponseMessage("ERS project states retrieved")
+  @ResponseMessage("Estados de proyecto ERS obtenidos")
   async states(): Promise<ErsProjectStateResponseDto[]> {
     return this.ersService.listProjectStates();
   }
@@ -67,7 +67,7 @@ export class ErsController {
   @Get("technicians")
   @ApiOperation({ summary: "List eligible technicians for ERS selects" })
   @ApiResponse({ status: 200, type: ErsTechnicianListResponseDto })
-  @ResponseMessage("ERS technicians retrieved")
+  @ResponseMessage("Técnicos ERS obtenidos")
   async technicians(
     @Query() query: ListErsTechniciansQueryDto,
   ): Promise<ErsTechnicianListResponseDto> {
@@ -84,7 +84,7 @@ export class ErsController {
   @Roles("technician")
   @ApiOperation({ summary: "Scale a ticket into a project (ERS transaction 1)" })
   @ApiResponse({ status: 201, type: ErsDetailResponseDto })
-  @ResponseMessage("Ticket scaled to ERS project")
+  @ResponseMessage("Ticket escalado a proyecto ERS")
   async escalate(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: EscalarTicketDto,
@@ -101,7 +101,7 @@ export class ErsController {
   @Get(":projectId")
   @ApiOperation({ summary: "Get ERS project detail by id" })
   @ApiResponse({ status: 200, type: ErsDetailResponseDto })
-  @ResponseMessage("ERS project retrieved")
+  @ResponseMessage("Proyecto ERS obtenido")
   async findById(
     @CurrentUser() user: AuthenticatedUser,
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -120,7 +120,7 @@ export class ErsController {
   @Roles("technician")
   @ApiOperation({ summary: "Save TI ERS edition in a single transaction (transaction 2)" })
   @ApiResponse({ status: 200, type: ErsDetailResponseDto })
-  @ResponseMessage("ERS project updated")
+  @ResponseMessage("Proyecto ERS actualizado")
   async saveTiEdition(
     @CurrentUser() user: AuthenticatedUser,
     @Param("projectId", ParseIntPipe) projectId: number,

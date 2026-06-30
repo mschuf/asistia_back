@@ -6,6 +6,7 @@ import { Injectable } from "@nestjs/common";
 import type { QueryOptions, QueryValues, RowDataPacket } from "mysql2";
 import type { PoolConnection, ResultSetHeader } from "mysql2/promise";
 import { MysqlService } from "../../mysql/mysql.service";
+import { appendResolutionNote } from "../../tickets/domain/ticket-resolution.helpers";
 import type { EscalarTicketDto } from "../dto/escalar-ticket.dto";
 import type { ListErsQueryDto } from "../dto/list-ers-query.dto";
 import type { ErsTaskInputDto, UpdateErsDto } from "../dto/update-ers.dto";
@@ -95,6 +96,12 @@ interface ProjectIdRow extends RowDataPacket {
 interface ImpactNoteRow extends RowDataPacket {
   id: number;
 }
+
+interface TicketContentRow extends RowDataPacket {
+  content: string | null;
+}
+
+const ERS_ESCALATION_CLOSURE_NOTE = "Cerrado y escalado a Proyecto ERS.";
 
 const ERS_SORT_SQL: Record<string, string> = {
   projectId: "p.id",
@@ -205,6 +212,7 @@ export class ErsSqlRepository {
         await this.insertProjectTeamUser(connection, projectId, userId);
       }
 
+      await this.appendEscalationClosureNote(connection, context.ticketId);
       await this.closeTicket(connection, context.ticketId);
       return projectId;
     });
@@ -794,6 +802,36 @@ export class ErsSqlRepository {
       namedPlaceholders: true,
     };
     await connection.query(options, { projectId, userId } as QueryValues);
+  }
+
+  private async appendEscalationClosureNote(connection: PoolConnection, ticketId: number): Promise<void> {
+    const currentContent = await this.getTicketContentInTx(connection, ticketId);
+    const updatedContent = appendResolutionNote(currentContent, ERS_ESCALATION_CLOSURE_NOTE);
+    const options: QueryOptions = {
+      sql: `UPDATE glpi_tickets
+            SET content = :content,
+                date_mod = NOW()
+            WHERE id = :ticketId
+              AND COALESCE(is_deleted, 0) = 0`,
+      namedPlaceholders: true,
+    };
+    await connection.query(options, { ticketId, content: updatedContent } as QueryValues);
+  }
+
+  private async getTicketContentInTx(
+    connection: PoolConnection,
+    ticketId: number,
+  ): Promise<string | null> {
+    const options: QueryOptions = {
+      sql: `SELECT content
+            FROM glpi_tickets
+            WHERE id = :ticketId
+              AND COALESCE(is_deleted, 0) = 0
+            LIMIT 1`,
+      namedPlaceholders: true,
+    };
+    const [rows] = await connection.query<TicketContentRow[]>(options, { ticketId } as QueryValues);
+    return rows[0]?.content ?? null;
   }
 
   private async closeTicket(connection: PoolConnection, ticketId: number): Promise<void> {
