@@ -4,13 +4,14 @@
  */
 import { Module } from "@nestjs/common";
 import { CatalogModule } from "../catalog/catalog.module";
+import { ErsHistoryModule } from "../ers-history/ers-history.module";
 import { MysqlModule } from "../mysql/mysql.module";
 import { ErsController } from "./ers.controller";
 import { ErsService } from "./ers.service";
 import { ErsSqlRepository } from "./repositories/ers.sql-repository";
 
 @Module({
-  imports: [MysqlModule, CatalogModule],
+  imports: [MysqlModule, CatalogModule, ErsHistoryModule],
   controllers: [ErsController],
   providers: [ErsService, ErsSqlRepository],
   exports: [ErsService],

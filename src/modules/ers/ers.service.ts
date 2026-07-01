@@ -7,6 +7,7 @@ import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { CatalogService } from "../catalog/catalog.service";
+import { ErsHistoryService } from "../ers-history/ers-history.service";
 import { UsersTechniciansSqlRepository } from "../glpi/repositories/users-technicians.sql-repository";
 import { isTiGroupName, normalizeRoleToken } from "../glpi/role.utils";
 import type { EscalarTicketDto } from "./dto/escalar-ticket.dto";
@@ -14,7 +15,14 @@ import type { ListErsQueryDto } from "./dto/list-ers-query.dto";
 import type { ListErsTechniciansQueryDto } from "./dto/list-ers-technicians-query.dto";
 import type { UpdateErsDto } from "./dto/update-ers.dto";
 import { ErsSqlRepository } from "./repositories/ers.sql-repository";
-import type { ErsDetail, ErsProjectState, ErsTechnician } from "./ers.types";
+import type { ErsDetail, ErsProjectState, ErsTask, ErsTechnician } from "./ers.types";
+
+/** Evento de historial derivado del diff de tareas. */
+interface ErsTaskHistoryEvent {
+  actionType: "create" | "update" | "delete";
+  summary: string;
+  metadata?: Record<string, unknown>;
+}
 
 /** Servicio de reglas de negocio para ERS. */
 @Injectable()
@@ -23,6 +31,7 @@ export class ErsService {
     private readonly ersSqlRepository: ErsSqlRepository,
     private readonly usersTechniciansSqlRepository: UsersTechniciansSqlRepository,
     private readonly catalogService: CatalogService,
+    private readonly ersHistoryService: ErsHistoryService,
   ) {}
 
   /**
@@ -71,6 +80,16 @@ export class ErsService {
           status: HttpStatus.INTERNAL_SERVER_ERROR,
         });
       }
+      await this.registerHistorySafe({
+        projectId,
+        actionType: "create",
+        summary: `Se creó el proyecto ERS "${detail.projectName}" a partir del ticket #${detail.ticketId}.`,
+        actorUserId: user.id,
+        metadata: {
+          ticketId: detail.ticketId,
+          projectName: detail.projectName,
+        },
+      });
       return detail;
     } catch (error) {
       if (error instanceof BusinessException) throw error;
@@ -153,6 +172,8 @@ export class ErsService {
       dto.teamMemberIds = uniqueTeamIds;
     }
 
+    const previousDetail = await this.ersSqlRepository.findByProjectId(projectId);
+
     const ok = await this.ersSqlRepository.saveTiEdition(projectId, user.id, dto);
     if (!ok) {
       throw new BusinessException({
@@ -161,7 +182,15 @@ export class ErsService {
         status: HttpStatus.NOT_FOUND,
       });
     }
-    return this.findByProjectId(user, projectId);
+    const updatedDetail = await this.findByProjectId(user, projectId);
+    await this.registerHistoryForEdition({
+      userId: user.id,
+      projectId,
+      previous: previousDetail,
+      current: updatedDetail,
+    });
+
+    return updatedDetail;
   }
 
   /**
@@ -229,6 +258,166 @@ export class ErsService {
 
   private uniquePositive(values: number[]): number[] {
     return Array.from(new Set(values.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)));
+  }
+
+  private async registerHistoryForEdition(input: {
+    userId: number;
+    projectId: number;
+    previous: ErsDetail | null;
+    current: ErsDetail;
+  }): Promise<void> {
+    const updateSummary = this.buildUpdateSummary(input.previous, input.current);
+    if (updateSummary) {
+      await this.registerHistorySafe({
+        projectId: input.projectId,
+        actionType: "update",
+        summary: updateSummary,
+        actorUserId: input.userId,
+        metadata: {
+          ticketId: input.current.ticketId,
+          projectName: input.current.projectName,
+        },
+      });
+    }
+
+    const removedTeamCount = Math.max(
+      0,
+      (input.previous?.team.length ?? 0) - input.current.team.length,
+    );
+    if (removedTeamCount > 0) {
+      await this.registerHistorySafe({
+        projectId: input.projectId,
+        actionType: "delete",
+        summary: `Se retiraron ${removedTeamCount} integrante(s) del equipo del proyecto.`,
+        actorUserId: input.userId,
+        metadata: {
+          removedTeamCount,
+        },
+      });
+    }
+
+    const taskHistoryEvents = this.buildTaskHistoryEvents(
+      input.previous?.tasks ?? [],
+      input.current.tasks,
+    );
+    for (const event of taskHistoryEvents) {
+      await this.registerHistorySafe({
+        projectId: input.projectId,
+        actionType: event.actionType,
+        summary: event.summary,
+        actorUserId: input.userId,
+        metadata: event.metadata,
+      });
+    }
+  }
+
+  private buildUpdateSummary(previous: ErsDetail | null, current: ErsDetail): string | null {
+    if (!previous) {
+      return "Se actualizó la información general del proyecto ERS.";
+    }
+
+    const changes: string[] = [];
+    if (previous.projectName !== current.projectName) changes.push("nombre del proyecto");
+    if ((previous.objective ?? "") !== (current.objective ?? "")) changes.push("objetivo");
+    if ((previous.description ?? "") !== (current.description ?? "")) changes.push("descripción");
+    if ((previous.impact ?? "") !== (current.impact ?? "")) changes.push("impacto");
+    if (previous.approverId !== current.approverId) changes.push("aprobador");
+    if (previous.projectStateId !== current.projectStateId) changes.push("estado");
+    if (previous.team.length !== current.team.length) changes.push("equipo");
+
+    if (changes.length === 0) {
+      return null;
+    }
+    return `Se actualizó: ${changes.join(", ")}.`;
+  }
+
+  private buildTaskHistoryEvents(previousTasks: ErsTask[], currentTasks: ErsTask[]): ErsTaskHistoryEvent[] {
+    const events: ErsTaskHistoryEvent[] = [];
+    const unmatchedPrevious = [...previousTasks];
+    const addedTasks: ErsTask[] = [];
+    const modifiedPairs: Array<{ previous: ErsTask; current: ErsTask }> = [];
+
+    for (const currentTask of currentTasks) {
+      const matchIndex = unmatchedPrevious.findIndex((task) => task.name === currentTask.name);
+      if (matchIndex >= 0) {
+        const [previousTask] = unmatchedPrevious.splice(matchIndex, 1);
+        modifiedPairs.push({ previous: previousTask, current: currentTask });
+      } else {
+        addedTasks.push(currentTask);
+      }
+    }
+
+    for (const task of addedTasks) {
+      events.push({
+        actionType: "create",
+        summary: `Se agregó la tarea "${task.name}".`,
+        metadata: { taskName: task.name },
+      });
+    }
+
+    for (const task of unmatchedPrevious) {
+      events.push({
+        actionType: "delete",
+        summary: `Se eliminó la tarea "${task.name}".`,
+        metadata: { taskName: task.name },
+      });
+    }
+
+    for (const { previous, current } of modifiedPairs) {
+      const changedFields = this.getTaskChangedFieldLabels(previous, current);
+      if (changedFields.length === 0) continue;
+
+      events.push({
+        actionType: "update",
+        summary: `Se modificó la tarea "${current.name}": ${changedFields.join(", ")}.`,
+        metadata: {
+          taskName: current.name,
+          changedFields,
+        },
+      });
+    }
+
+    return events;
+  }
+
+  private getTaskChangedFieldLabels(previous: ErsTask, current: ErsTask): string[] {
+    const changes: string[] = [];
+    if (this.normalizeOptionalText(previous.content) !== this.normalizeOptionalText(current.content)) {
+      changes.push("descripción");
+    }
+    if (previous.percentDone !== current.percentDone) changes.push("avance");
+    if (previous.projectStateId !== current.projectStateId) changes.push("estado");
+    if (previous.userId !== current.userId) changes.push("responsable");
+    if (this.normalizeOptionalDate(previous.planStartDate) !== this.normalizeOptionalDate(current.planStartDate)) {
+      changes.push("fecha de inicio");
+    }
+    if (this.normalizeOptionalDate(previous.planEndDate) !== this.normalizeOptionalDate(current.planEndDate)) {
+      changes.push("fecha de fin");
+    }
+    return changes;
+  }
+
+  private normalizeOptionalText(value: string | null | undefined): string {
+    return (value ?? "").trim();
+  }
+
+  private normalizeOptionalDate(value: string | null | undefined): string | null {
+    if (!value) return null;
+    return value.slice(0, 10);
+  }
+
+  private async registerHistorySafe(input: {
+    projectId: number;
+    actionType: "create" | "update" | "delete";
+    summary: string;
+    actorUserId: number;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    try {
+      await this.ersHistoryService.registerEvent(input);
+    } catch {
+      // No bloquea la transacción funcional de ERS si falla la auditoría.
+    }
   }
 }
 
