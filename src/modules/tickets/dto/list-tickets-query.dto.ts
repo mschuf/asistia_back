@@ -13,6 +13,7 @@ import { TICKET_TYPE, type TicketType } from "../domain/ticket-type";
 export const HISTORY_SORT_BY = [
   "id",
   "createdAt",
+  "openFor",
   "requester",
   "location",
   "type",

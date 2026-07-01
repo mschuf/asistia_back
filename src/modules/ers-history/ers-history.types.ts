@@ -16,6 +16,8 @@ export interface ErsHistoryItem {
   actorUserId: number;
   actorDisplayName: string;
   happenedAt: string;
+  beforeState: Record<string, unknown> | null;
+  afterState: Record<string, unknown> | null;
 }
 
 /** Metadatos opcionales para enriquecer un evento de historial. */
@@ -33,5 +35,7 @@ export interface CreateErsHistoryInput {
   actorUserId: number;
   actorDisplayName: string;
   metadata?: ErsHistoryMetadata;
+  beforeState?: Record<string, unknown> | null;
+  afterState?: Record<string, unknown> | null;
 }
 

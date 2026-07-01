@@ -110,8 +110,10 @@ export class ErsHistorySqlRepository {
           summary,
           actor_user_id,
           actor_display_name,
-          metadata_json
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+          metadata_json,
+          before_state,
+          after_state
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb)
        RETURNING
           id,
           project_id AS "projectId",
@@ -120,7 +122,9 @@ export class ErsHistorySqlRepository {
           summary,
           actor_user_id AS "actorUserId",
           actor_display_name AS "actorDisplayName",
-          happened_at AS "happenedAt"`,
+          happened_at AS "happenedAt",
+          before_state AS "beforeState",
+          after_state AS "afterState"`,
       [
         input.projectId,
         input.actionType,
@@ -129,6 +133,8 @@ export class ErsHistorySqlRepository {
         input.actorUserId,
         input.actorDisplayName.trim(),
         JSON.stringify(input.metadata ?? {}),
+        input.beforeState ? JSON.stringify(input.beforeState) : null,
+        input.afterState ? JSON.stringify(input.afterState) : null,
       ],
     );
     return rows[0];
@@ -167,7 +173,9 @@ export class ErsHistorySqlRepository {
           summary,
           actor_user_id AS "actorUserId",
           actor_display_name AS "actorDisplayName",
-          happened_at AS "happenedAt"
+          happened_at AS "happenedAt",
+          before_state AS "beforeState",
+          after_state AS "afterState"
        FROM public.ers_project_history
        WHERE project_id = $1
        ORDER BY happened_at DESC, id DESC

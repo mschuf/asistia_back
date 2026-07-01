@@ -163,24 +163,24 @@ export class TicketsMetricsSqlRepository {
   }> {
     const rows = await this.mysql.query<SiteAggregateRow>(
       `SELECT
-         SUM(CASE WHEN status_glpi IN (${MY_GROUP_STATUS_IN}) THEN 1 ELSE 0 END) AS open_count,
+         SUM(CASE WHEN t.status IN (${MY_GROUP_STATUS_IN}) THEN 1 ELSE 0 END) AS open_count,
          SUM(
            CASE
-             WHEN status_glpi IN (${MY_GROUP_STATUS_IN})
-              AND YEAR(created_at) = YEAR(UTC_TIMESTAMP())
-              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             WHEN t.status IN (${MY_GROUP_STATUS_IN})
+              AND YEAR(t.date) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(t.date) = MONTH(UTC_TIMESTAMP())
              THEN 1 ELSE 0
            END
          ) AS open_this_month,
          SUM(
            CASE
-             WHEN YEAR(created_at) = YEAR(UTC_TIMESTAMP())
-              AND MONTH(created_at) = MONTH(UTC_TIMESTAMP())
+             WHEN YEAR(t.date) = YEAR(UTC_TIMESTAMP())
+              AND MONTH(t.date) = MONTH(UTC_TIMESTAMP())
              THEN 1 ELSE 0
            END
          ) AS total_this_month
-       FROM v_asistia_ticket_history
-       WHERE is_deleted = 0`,
+       FROM glpi_tickets t
+       WHERE t.is_deleted = 0`,
     );
 
     const row = rows[0];

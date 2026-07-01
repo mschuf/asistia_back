@@ -1863,6 +1863,8 @@ export class TicketsService {
         : null,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
+      solvedAt: ticket.solvedAt,
+      closedAt: ticket.closedAt,
     };
   }
 }

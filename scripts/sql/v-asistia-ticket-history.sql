@@ -1,9 +1,6 @@
--- Vista completa para GET /tickets/history (sin enriquecimiento GLPI).
--- Ejecutar como admin en la BD soporte. Ver docs/VISTA-HISTORIAL-MYSQL.md.
+-- Consulta base para GET /tickets/history (sin enriquecimiento GLPI).
+-- No crea vistas ni objetos en la BD; ejecutar como SELECT directo si se necesita validar.
 
-DROP VIEW IF EXISTS v_asistia_ticket_history;
-
-CREATE VIEW v_asistia_ticket_history AS
 SELECT
   t.id AS ticket_id,
   t.entities_id,
@@ -43,6 +40,8 @@ SELECT
   loc.name AS location_name_short,
   t.date AS created_at,
   t.date_mod AS updated_at,
+  t.solvedate AS solved_at,
+  t.closedate AS closed_at,
   req.users_id AS requester_id,
   CASE
     WHEN NULLIF(TRIM(CONCAT(

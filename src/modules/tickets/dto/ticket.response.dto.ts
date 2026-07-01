@@ -75,6 +75,12 @@ export class TicketResponseDto {
 
   @ApiProperty({ example: "2026-05-21T18:02:11Z", nullable: true })
   updatedAt!: string | null;
+
+  @ApiProperty({ example: "2026-05-21T18:02:11Z", nullable: true })
+  solvedAt!: string | null;
+
+  @ApiProperty({ example: "2026-05-21T18:02:11Z", nullable: true })
+  closedAt!: string | null;
 }
 
 /** Respuesta mínima de PATCH /tickets/:id/status. */

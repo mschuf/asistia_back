@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.ers_project_history (
   actor_display_name VARCHAR(180) NOT NULL,
   happened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   metadata_json JSONB NULL DEFAULT '{}'::jsonb,
+  before_state JSONB NULL,
+  after_state JSONB NULL,
   CONSTRAINT ck_ers_project_history_action_type
     CHECK (action_type IN ('create', 'update', 'delete')),
   CONSTRAINT ck_ers_project_history_summary_not_blank

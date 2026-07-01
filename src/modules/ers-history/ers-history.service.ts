@@ -26,6 +26,8 @@ export class ErsHistoryService {
     summary: string;
     actorUserId: number;
     metadata?: ErsHistoryMetadata;
+    beforeState?: Record<string, unknown> | null;
+    afterState?: Record<string, unknown> | null;
   }) {
     const actorDisplayName = await this.ersHistorySqlRepository.resolveActorDisplayName(input.actorUserId);
     const payload: CreateErsHistoryInput = {
@@ -35,6 +37,8 @@ export class ErsHistoryService {
       actorUserId: input.actorUserId,
       actorDisplayName,
       metadata: input.metadata,
+      beforeState: input.beforeState ?? null,
+      afterState: input.afterState ?? null,
     };
     return this.ersHistorySqlRepository.create(payload);
   }

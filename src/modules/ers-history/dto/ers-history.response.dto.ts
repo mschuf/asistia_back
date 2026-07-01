@@ -29,6 +29,12 @@ export class ErsHistoryItemResponseDto {
 
   @ApiProperty({ example: "2026-06-30T16:30:00.000Z" })
   happenedAt!: string;
+
+  @ApiProperty({ nullable: true, type: Object })
+  beforeState!: Record<string, unknown> | null;
+
+  @ApiProperty({ nullable: true, type: Object })
+  afterState!: Record<string, unknown> | null;
 }
 
 /** Respuesta paginada de historial de ERS. */

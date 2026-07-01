@@ -22,6 +22,8 @@ interface ErsTaskHistoryEvent {
   actionType: "create" | "update" | "delete";
   summary: string;
   metadata?: Record<string, unknown>;
+  beforeState?: Record<string, unknown> | null;
+  afterState?: Record<string, unknown> | null;
 }
 
 /** Servicio de reglas de negocio para ERS. */
@@ -89,6 +91,8 @@ export class ErsService {
           ticketId: detail.ticketId,
           projectName: detail.projectName,
         },
+        beforeState: null,
+        afterState: this.toHistoryState(detail),
       });
       return detail;
     } catch (error) {
@@ -277,6 +281,8 @@ export class ErsService {
           ticketId: input.current.ticketId,
           projectName: input.current.projectName,
         },
+        beforeState: this.toHistoryState(input.previous),
+        afterState: this.toHistoryState(input.current),
       });
     }
 
@@ -293,6 +299,8 @@ export class ErsService {
         metadata: {
           removedTeamCount,
         },
+        beforeState: this.toHistoryState({ team: input.previous?.team ?? [] }),
+        afterState: this.toHistoryState({ team: input.current.team }),
       });
     }
 
@@ -307,6 +315,8 @@ export class ErsService {
         summary: event.summary,
         actorUserId: input.userId,
         metadata: event.metadata,
+        beforeState: event.beforeState,
+        afterState: event.afterState,
       });
     }
   }
@@ -352,6 +362,8 @@ export class ErsService {
         actionType: "create",
         summary: `Se agregó la tarea "${task.name}".`,
         metadata: { taskName: task.name },
+        beforeState: null,
+        afterState: this.toHistoryState(task),
       });
     }
 
@@ -360,6 +372,8 @@ export class ErsService {
         actionType: "delete",
         summary: `Se eliminó la tarea "${task.name}".`,
         metadata: { taskName: task.name },
+        beforeState: this.toHistoryState(task),
+        afterState: null,
       });
     }
 
@@ -374,6 +388,8 @@ export class ErsService {
           taskName: current.name,
           changedFields,
         },
+        beforeState: this.toHistoryState(previous),
+        afterState: this.toHistoryState(current),
       });
     }
 
@@ -406,12 +422,19 @@ export class ErsService {
     return value.slice(0, 10);
   }
 
+  private toHistoryState(value: object | null | undefined): Record<string, unknown> | null {
+    if (!value) return null;
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+  }
+
   private async registerHistorySafe(input: {
     projectId: number;
     actionType: "create" | "update" | "delete";
     summary: string;
     actorUserId: number;
     metadata?: Record<string, unknown>;
+    beforeState?: Record<string, unknown> | null;
+    afterState?: Record<string, unknown> | null;
   }): Promise<void> {
     try {
       await this.ersHistoryService.registerEvent(input);
@@ -420,4 +443,6 @@ export class ErsService {
     }
   }
 }
+
+
 
