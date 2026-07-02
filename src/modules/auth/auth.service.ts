@@ -164,6 +164,7 @@ export class AuthService {
       id: glpiUser.id,
       role,
       locationId: glpiUser.locationId,
+      isSuperAdmin,
     };
     const profile: UserProfile = {
       login: glpiUser.login,
@@ -355,6 +356,7 @@ export class AuthService {
       sub: user.id,
       role: user.role,
       locationId: user.locationId,
+      isSuperAdmin: user.isSuperAdmin,
     };
     return this.jwt.signAsync(payload);
   }

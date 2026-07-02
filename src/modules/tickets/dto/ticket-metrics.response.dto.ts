@@ -2,7 +2,7 @@
  * @file ticket-metrics.response.dto.ts
  * @description DTOs de métricas agregadas de tickets para el dashboard del usuario.
  */
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 /** Métricas de un segmento (incidentes, solicitudes, sede). */
 class TicketMetricSliceDto {
@@ -17,6 +17,12 @@ class TicketMetricSliceDto {
 
   @ApiProperty({ example: 7 })
   totalThisMonth!: number;
+}
+
+/** Conteo global de tickets pendientes de asignación humana. */
+class UnassignedMetricDto {
+  @ApiProperty({ example: 12, description: "Tickets abiertos de cualquier fecha" })
+  open!: number;
 }
 
 /** Métricas de "Mis tickets" para técnicos (incluye en progreso). */
@@ -65,6 +71,12 @@ export class TicketMetricsResponseDto {
     description: "Tickets abiertos del equipo (historial: Estado Abiertos, sin filtros de actor/sede)",
   })
   myGroup!: TicketMetricSliceDto;
+
+  @ApiPropertyOptional({
+    type: UnassignedMetricDto,
+    description: "Tickets abiertos asignados al usuario de servicio asistIA (solo usuarios TI)",
+  })
+  unassigned?: UnassignedMetricDto;
 
   @ApiProperty({ type: TicketMetricSliceDto })
   mySolved!: TicketMetricSliceDto;

@@ -13,6 +13,8 @@ export interface AuthenticatedUser {
   id: number;
   role: UserRole;
   locationId: number | null;
+  /** Permite acceso funcional de TI aunque el usuario no pertenezca a un grupo TI. */
+  isSuperAdmin?: boolean;
 }
 
 /**
@@ -35,6 +37,7 @@ export interface JwtPayload {
   sub: number;
   role: UserRole;
   locationId: number | null;
+  isSuperAdmin?: boolean;
   iat?: number;
   exp?: number;
 }

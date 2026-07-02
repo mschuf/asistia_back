@@ -25,6 +25,10 @@ interface SqlUserRow extends RowDataPacket {
   is_deleted: number;
 }
 
+interface SqlCountRow extends RowDataPacket {
+  total: number;
+}
+
 /**
  * Repositorio SQL de usuarios y técnicos elegibles en GLPI.
  */
@@ -100,6 +104,78 @@ export class UsersTechniciansSqlRepository {
     );
 
     return sortUsersByName(rows.map((row) => this.toDomainUser(row)));
+  }
+
+  /** Busca y pagina usuarios activos directamente en MySQL. */
+  async searchActiveUsers(
+    search: string | undefined,
+    page: number,
+    limit: number,
+  ): Promise<{ items: DomainUser[]; total: number; page: number; limit: number }> {
+    const normalizedSearch = (search ?? "").trim().toLowerCase();
+    const params = {
+      search: normalizedSearch,
+      searchLike: `%${normalizedSearch}%`,
+      limit,
+      offset: (page - 1) * limit,
+    } as QueryValues;
+    const searchWhere = `(
+      :search = ''
+      OR CAST(u.id AS CHAR) LIKE :searchLike
+      OR LOWER(COALESCE(u.name, '')) LIKE :searchLike
+      OR LOWER(COALESCE(u.firstname, '')) LIKE :searchLike
+      OR LOWER(COALESCE(u.realname, '')) LIKE :searchLike
+      OR LOWER(CONCAT_WS(' ', u.firstname, u.realname)) LIKE :searchLike
+      OR EXISTS (
+        SELECT 1
+        FROM glpi_useremails ue_search
+        WHERE ue_search.users_id = u.id
+          AND LOWER(COALESCE(ue_search.email, '')) LIKE :searchLike
+      )
+    )`;
+
+    const countRows = await this.mysql.query<SqlCountRow>(
+      `SELECT COUNT(*) AS total
+       FROM glpi_users u
+       WHERE u.is_active = 1
+         AND COALESCE(u.is_deleted, 0) = 0
+         AND ${searchWhere}`,
+      params,
+    );
+    const rows = await this.mysql.query<SqlUserRow>(
+      `SELECT
+          u.id,
+          u.name,
+          u.firstname,
+          u.realname,
+          ue.email AS default_email,
+          u.phone,
+          u.mobile,
+          u.locations_id,
+          u.groups_id,
+          u.entities_id,
+          ut.name AS user_title,
+          u.is_active,
+          COALESCE(u.is_deleted, 0) AS is_deleted
+       FROM glpi_users u
+       LEFT JOIN glpi_useremails ue
+         ON ue.users_id = u.id AND ue.is_default = 1
+       LEFT JOIN glpi_usertitles ut
+         ON ut.id = u.usertitles_id
+       WHERE u.is_active = 1
+         AND COALESCE(u.is_deleted, 0) = 0
+         AND ${searchWhere}
+       ORDER BY COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.firstname, u.realname)), ''), u.name) ASC
+       LIMIT :limit OFFSET :offset`,
+      params,
+    );
+
+    return {
+      items: rows.map((row) => this.toDomainUser(row)),
+      total: Number(countRows[0]?.total ?? 0),
+      page,
+      limit,
+    };
   }
 
   /**

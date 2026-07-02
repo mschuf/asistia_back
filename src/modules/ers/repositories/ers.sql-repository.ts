@@ -13,7 +13,10 @@ import type { ErsTaskInputDto, UpdateErsDto } from "../dto/update-ers.dto";
 import type {
   ErsAccessScope,
   ErsDetail,
+  ErsEligibleTicket,
   ErsListItem,
+  ErsMetricSlice,
+  ErsMetrics,
   ErsProjectState,
   ErsTask,
   ErsTeamMember,
@@ -26,6 +29,7 @@ interface TicketContextRow extends RowDataPacket {
   entities_id: number;
   requester_id: number | null;
   locations_id: number | null;
+  status: number;
 }
 
 interface ProjectStateRow extends RowDataPacket {
@@ -38,7 +42,7 @@ interface ProjectStateRow extends RowDataPacket {
 interface ErsListRow extends RowDataPacket {
   project_id: number;
   project_name: string;
-  ticket_id: number;
+  ticket_id: number | null;
   requester_id: number | null;
   requester_name: string | null;
   location_id: number | null;
@@ -55,7 +59,7 @@ interface ErsListRow extends RowDataPacket {
 interface ErsMainDetailRow extends RowDataPacket {
   project_id: number;
   project_name: string;
-  ticket_id: number;
+  ticket_id: number | null;
   requester_id: number | null;
   requester_name: string | null;
   location_id: number | null;
@@ -93,12 +97,42 @@ interface ProjectIdRow extends RowDataPacket {
   id: number;
 }
 
+interface TicketEligibilityRow extends RowDataPacket {
+  id: number;
+}
+
 interface ImpactNoteRow extends RowDataPacket {
   id: number;
 }
 
 interface TicketContentRow extends RowDataPacket {
   content: string | null;
+}
+
+interface ErsMetricsRow extends RowDataPacket {
+  group_active: number | null;
+  group_active_month: number | null;
+  group_total_month: number | null;
+  site_active: number | null;
+  site_active_month: number | null;
+  site_total_month: number | null;
+  mine_active: number | null;
+  mine_active_month: number | null;
+  mine_total_month: number | null;
+}
+
+interface ErsLocationMetricRow extends RowDataPacket {
+  location_id: number | null;
+  location_name: string | null;
+  active_count: number;
+}
+
+interface EligibleTicketRow extends RowDataPacket {
+  ticket_id: number;
+  subject: string;
+  requester_name: string | null;
+  location_id: number | null;
+  location_name: string | null;
 }
 
 const ERS_ESCALATION_CLOSURE_NOTE = "Cerrado y escalado a Proyecto ERS.";
@@ -131,7 +165,8 @@ export class ErsSqlRepository {
           t.name AS ticket_name,
           t.entities_id,
           req.users_id AS requester_id,
-          t.locations_id
+          t.locations_id,
+          t.status
        FROM glpi_tickets t
        LEFT JOIN glpi_tickets_users req
          ON req.tickets_id = t.id
@@ -150,6 +185,7 @@ export class ErsSqlRepository {
       entityId: Number(row.entities_id ?? 0),
       requesterId: this.toPositiveOrNull(row.requester_id),
       locationId: this.toPositiveOrNull(row.locations_id),
+      status: Number(row.status ?? 0),
     };
   }
 
@@ -183,6 +219,10 @@ export class ErsSqlRepository {
     context: TicketEscalationContext,
   ): Promise<number> {
     return this.mysql.withTransaction(async (connection) => {
+      const eligible = await this.isTicketEligibleInTx(connection, context.ticketId);
+      if (!eligible) {
+        throw new Error('ticket_not_eligible');
+      }
       const alreadyLinked = await this.hasProjectLinkInTx(connection, context.ticketId);
       if (alreadyLinked) {
         throw new Error("ticket_already_scaled");
@@ -278,6 +318,20 @@ export class ErsSqlRepository {
     if ((query.projectName ?? "").trim()) {
       whereParts.push("LOWER(COALESCE(p.name, '')) LIKE :projectName");
       params.projectName = `%${query.projectName!.trim().toLowerCase()}%`;
+    }
+
+    if (query.createdFrom) {
+      whereParts.push("p.date_creation >= :createdFrom");
+      params.createdFrom = query.createdFrom;
+    }
+    if (query.createdTo) {
+      whereParts.push("p.date_creation < DATE_ADD(:createdTo, INTERVAL 1 DAY)");
+      params.createdTo = query.createdTo;
+    }
+
+    if (query.requesterId) {
+      whereParts.push("req.id = :requesterId");
+      params.requesterId = query.requesterId;
     }
 
     if ((query.requesterName ?? "").trim()) {
@@ -406,10 +460,330 @@ export class ErsSqlRepository {
   }
 
   /**
-   * Obtiene el detalle de un ERS por ID de proyecto.
-   * @param projectId - Proyecto GLPI.
-   * @returns Detalle completo o `null` si no existe.
+   * Calcula indicadores ERS sobre todos los proyectos GLPI no eliminados.
    */
+  async getMetrics(userId: number, locationId: number | null): Promise<ErsMetrics> {
+    const canonicalTicketJoin = `
+      LEFT JOIN glpi_itils_projects ip
+        ON ip.id = (
+          SELECT MIN(ip_first.id)
+          FROM glpi_itils_projects ip_first
+          WHERE ip_first.projects_id = p.id
+            AND ip_first.itemtype = 'Ticket'
+        )
+      LEFT JOIN glpi_tickets t ON t.id = ip.items_id
+      LEFT JOIN glpi_locations loc ON loc.id = t.locations_id
+      LEFT JOIN glpi_projectstates ps ON ps.id = p.projectstates_id`;
+    const activeSql = 'COALESCE(ps.is_finished, 0) = 0';
+    const monthSql = `YEAR(p.date_creation) = YEAR(UTC_TIMESTAMP())
+      AND MONTH(p.date_creation) = MONTH(UTC_TIMESTAMP())`;
+    const rows = await this.mysql.query<ErsMetricsRow>(
+      `SELECT
+          SUM(CASE WHEN ${activeSql} THEN 1 ELSE 0 END) AS group_active,
+          SUM(CASE WHEN ${activeSql} AND ${monthSql} THEN 1 ELSE 0 END) AS group_active_month,
+          SUM(CASE WHEN ${monthSql} THEN 1 ELSE 0 END) AS group_total_month,
+          SUM(CASE WHEN ${activeSql} AND loc.id = :locationId THEN 1 ELSE 0 END) AS site_active,
+          SUM(CASE WHEN ${activeSql} AND loc.id = :locationId AND ${monthSql} THEN 1 ELSE 0 END) AS site_active_month,
+          SUM(CASE WHEN loc.id = :locationId AND ${monthSql} THEN 1 ELSE 0 END) AS site_total_month,
+          SUM(CASE WHEN ${activeSql} AND EXISTS (
+            SELECT 1 FROM glpi_projectteams mine
+            WHERE mine.projects_id = p.id AND mine.itemtype = 'User' AND mine.items_id = :userId
+          ) THEN 1 ELSE 0 END) AS mine_active,
+          SUM(CASE WHEN ${activeSql} AND ${monthSql} AND EXISTS (
+            SELECT 1 FROM glpi_projectteams mine
+            WHERE mine.projects_id = p.id AND mine.itemtype = 'User' AND mine.items_id = :userId
+          ) THEN 1 ELSE 0 END) AS mine_active_month,
+          SUM(CASE WHEN ${monthSql} AND EXISTS (
+            SELECT 1 FROM glpi_projectteams mine
+            WHERE mine.projects_id = p.id AND mine.itemtype = 'User' AND mine.items_id = :userId
+          ) THEN 1 ELSE 0 END) AS mine_total_month
+       FROM glpi_projects p
+       ${canonicalTicketJoin}
+       WHERE COALESCE(p.is_deleted, 0) = 0`,
+      { userId, locationId: locationId ?? 0 } as QueryValues,
+    );
+    const locationRows = await this.mysql.query<ErsLocationMetricRow>(
+      `SELECT
+          loc.id AS location_id,
+          COALESCE(loc.completename, loc.name, 'Sin sede') AS location_name,
+          COUNT(*) AS active_count
+       FROM glpi_projects p
+       ${canonicalTicketJoin}
+       WHERE COALESCE(p.is_deleted, 0) = 0
+         AND ${activeSql}
+       GROUP BY loc.id, location_name
+       ORDER BY active_count DESC, location_name ASC`,
+    );
+    const row = rows[0];
+    const slice = (active: unknown, activeMonth: unknown, totalMonth: unknown): ErsMetricSlice => {
+      const activeValue = Number(active ?? 0);
+      const activeThisMonth = Number(activeMonth ?? 0);
+      const totalThisMonth = Number(totalMonth ?? 0);
+      return {
+        active: activeValue,
+        activeThisMonth,
+        totalThisMonth,
+        activePercent: totalThisMonth > 0 ? Math.round((activeThisMonth / totalThisMonth) * 100) : 0,
+      };
+    };
+    return {
+      myGroup: slice(row?.group_active, row?.group_active_month, row?.group_total_month),
+      mySite: locationId == null
+        ? null
+        : slice(row?.site_active, row?.site_active_month, row?.site_total_month),
+      myProjects: slice(row?.mine_active, row?.mine_active_month, row?.mine_total_month),
+      activeByLocation: locationRows.map((item) => ({
+        locationId: this.toPositiveOrNull(item.location_id),
+        name: this.toTextOrNull(item.location_name) ?? 'Sin sede',
+        active: Number(item.active_count ?? 0),
+      })),
+    };
+  }
+
+  /** Lista tickets activos aún no vinculados a proyectos. */
+  async listEligibleTickets(
+    search: string | undefined,
+    page = 1,
+    limit = 15,
+  ): Promise<{ items: ErsEligibleTicket[]; total: number; page: number; limit: number }> {
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.max(1, Math.min(limit, 200));
+    const offset = (safePage - 1) * safeLimit;
+    const params: Record<string, unknown> = {};
+    const whereParts = [
+      'COALESCE(t.is_deleted, 0) = 0',
+      't.status NOT IN (5, 6)',
+      `NOT EXISTS (
+        SELECT 1 FROM glpi_itils_projects linked
+        WHERE linked.itemtype = 'Ticket' AND linked.items_id = t.id
+      )`,
+    ];
+    if ((search ?? '').trim()) {
+      whereParts.push(
+        `(CAST(t.id AS CHAR) LIKE :search
+          OR LOWER(COALESCE(t.name, '')) LIKE :search
+          OR LOWER(COALESCE(CONCAT(req.firstname, ' ', req.realname), req.name, '')) LIKE :search
+          OR LOWER(COALESCE(loc.completename, loc.name, '')) LIKE :search)`,
+      );
+      params.search = `%${search!.trim().toLowerCase()}%`;
+    }
+    const joins = `
+      LEFT JOIN glpi_tickets_users req_tu
+        ON req_tu.id = (
+          SELECT MIN(req_first.id) FROM glpi_tickets_users req_first
+          WHERE req_first.tickets_id = t.id AND req_first.type = 1
+        )
+      LEFT JOIN glpi_users req ON req.id = req_tu.users_id
+      LEFT JOIN glpi_locations loc ON loc.id = t.locations_id`;
+    const whereSql = `WHERE ${whereParts.join(' AND ')}`;
+    const countRows = await this.mysql.query<{ total: number } & RowDataPacket>(
+      `SELECT COUNT(*) AS total FROM glpi_tickets t ${joins} ${whereSql}`,
+      params as QueryValues,
+    );
+    const rows = await this.mysql.query<EligibleTicketRow>(
+      `SELECT
+          t.id AS ticket_id,
+          t.name AS subject,
+          COALESCE(NULLIF(CONCAT(COALESCE(req.firstname, ''), ' ', COALESCE(req.realname, '')), ' '), req.name) AS requester_name,
+          loc.id AS location_id,
+          COALESCE(loc.completename, loc.name) AS location_name
+       FROM glpi_tickets t
+       ${joins}
+       ${whereSql}
+       ORDER BY t.date_mod DESC, t.id DESC
+       LIMIT :limit OFFSET :offset`,
+      { ...params, limit: safeLimit, offset } as QueryValues,
+    );
+    return {
+      items: rows.map((item) => ({
+        ticketId: Number(item.ticket_id),
+        subject: String(item.subject ?? '').trim(),
+        requesterName: this.toTextOrNull(item.requester_name),
+        locationId: this.toPositiveOrNull(item.location_id),
+        locationName: this.toTextOrNull(item.location_name),
+      })),
+      total: Number(countRows[0]?.total ?? 0),
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  /** Lista todos los proyectos con ticket canónico opcional. */
+  async listAllProjects(
+    query: ListErsQueryDto,
+    scope: ErsAccessScope,
+  ): Promise<{ items: ErsListItem[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.max(1, query.limit ?? 15);
+    const offset = (page - 1) * limit;
+    const whereParts = ['COALESCE(p.is_deleted, 0) = 0'];
+    const params: Record<string, unknown> = {};
+
+    if (scope.role !== 'technician') {
+      whereParts.push(
+        `EXISTS (
+          SELECT 1
+          FROM glpi_itils_projects ip_scope
+          INNER JOIN glpi_tickets_users tu_scope
+            ON tu_scope.tickets_id = ip_scope.items_id
+           AND tu_scope.type = 1
+          WHERE ip_scope.projects_id = p.id
+            AND ip_scope.itemtype = 'Ticket'
+            AND tu_scope.users_id = :scopeUserId
+        )`,
+      );
+      params.scopeUserId = scope.userId;
+    }
+
+    if ((query.search ?? '').trim()) {
+      whereParts.push(
+        `(CAST(p.id AS CHAR) LIKE :search
+          OR LOWER(COALESCE(p.name, '')) LIKE :search
+          OR CAST(ip.items_id AS CHAR) LIKE :search
+          OR LOWER(COALESCE(CONCAT(req.firstname, ' ', req.realname), req.name, '')) LIKE :search
+          OR LOWER(COALESCE(loc.completename, loc.name, '')) LIKE :search
+          OR LOWER(COALESCE(ps.name, '')) LIKE :search
+          OR LOWER(COALESCE(CONCAT(appr.firstname, ' ', appr.realname), appr.name, '')) LIKE :search
+          OR LOWER(COALESCE(DATE_FORMAT(p.date_creation, '%d/%m/%Y'), '')) LIKE :search)`,
+      );
+      params.search = `%${query.search!.trim().toLowerCase()}%`;
+    }
+    if ((query.projectName ?? '').trim()) {
+      whereParts.push(`LOWER(COALESCE(p.name, '')) LIKE :projectName`);
+      params.projectName = `%${query.projectName!.trim().toLowerCase()}%`;
+    }
+    if (query.createdFrom) {
+      whereParts.push('p.date_creation >= :createdFrom');
+      params.createdFrom = query.createdFrom;
+    }
+    if (query.createdTo) {
+      whereParts.push('p.date_creation < DATE_ADD(:createdTo, INTERVAL 1 DAY)');
+      params.createdTo = query.createdTo;
+    }
+    if (query.requesterId) {
+      whereParts.push('req.id = :requesterId');
+      params.requesterId = query.requesterId;
+    }
+    if ((query.requesterName ?? '').trim()) {
+      whereParts.push(`LOWER(COALESCE(CONCAT(req.firstname, ' ', req.realname), req.name, '')) LIKE :requesterName`);
+      params.requesterName = `%${query.requesterName!.trim().toLowerCase()}%`;
+    }
+    if ((query.locationName ?? '').trim()) {
+      whereParts.push(`LOWER(COALESCE(loc.completename, loc.name, '')) LIKE :locationName`);
+      params.locationName = `%${query.locationName!.trim().toLowerCase()}%`;
+    }
+    if ((query.approverName ?? '').trim()) {
+      whereParts.push(`LOWER(COALESCE(CONCAT(appr.firstname, ' ', appr.realname), appr.name, '')) LIKE :approverName`);
+      params.approverName = `%${query.approverName!.trim().toLowerCase()}%`;
+    }
+    if (query.projectStateId) {
+      whereParts.push('p.projectstates_id = :projectStateId');
+      params.projectStateId = query.projectStateId;
+    }
+    if (query.lifecycle === 'active') whereParts.push('COALESCE(ps.is_finished, 0) = 0');
+    if (query.lifecycle === 'finished') whereParts.push('COALESCE(ps.is_finished, 0) = 1');
+    if (query.locationId) {
+      whereParts.push('loc.id = :locationId');
+      params.locationId = query.locationId;
+    }
+    if (query.assignedMemberId) {
+      whereParts.push(
+        `EXISTS (
+          SELECT 1 FROM glpi_projectteams team_scope
+          WHERE team_scope.projects_id = p.id
+            AND team_scope.itemtype = 'User'
+            AND team_scope.items_id = :assignedMemberId
+        )`,
+      );
+      params.assignedMemberId = query.assignedMemberId;
+    }
+
+    const canonicalTicketJoin = `
+      LEFT JOIN glpi_itils_projects ip
+        ON ip.id = (
+          SELECT MIN(ip_first.id)
+          FROM glpi_itils_projects ip_first
+          WHERE ip_first.projects_id = p.id
+            AND ip_first.itemtype = 'Ticket'
+        )
+      LEFT JOIN glpi_tickets t ON t.id = ip.items_id
+      LEFT JOIN glpi_tickets_users req_tu
+        ON req_tu.id = (
+          SELECT MIN(req_first.id)
+          FROM glpi_tickets_users req_first
+          WHERE req_first.tickets_id = t.id
+            AND req_first.type = 1
+        )
+      LEFT JOIN glpi_users req ON req.id = req_tu.users_id
+      LEFT JOIN glpi_locations loc ON loc.id = t.locations_id
+      LEFT JOIN glpi_users appr ON appr.id = p.users_id
+      LEFT JOIN glpi_projectstates ps ON ps.id = p.projectstates_id`;
+    const whereSql = `WHERE ${whereParts.join(' AND ')}`;
+    const sortColumn = ERS_SORT_SQL[query.sortBy ?? 'updatedAt'] ?? ERS_SORT_SQL.updatedAt;
+    const sortDirection = query.sortOrder === 'asc' ? 'ASC' : 'DESC';
+
+    const countRows = await this.mysql.query<{ total: number } & RowDataPacket>(
+      `SELECT COUNT(*) AS total
+       FROM glpi_projects p
+       ${canonicalTicketJoin}
+       ${whereSql}`,
+      params as QueryValues,
+    );
+
+    const rows = await this.mysql.query<ErsListRow>(
+      `SELECT
+          p.id AS project_id,
+          p.name AS project_name,
+          ip.items_id AS ticket_id,
+          req.id AS requester_id,
+          COALESCE(NULLIF(CONCAT(COALESCE(req.firstname, ''), ' ', COALESCE(req.realname, '')), ' '), req.name) AS requester_name,
+          loc.id AS location_id,
+          COALESCE(loc.completename, loc.name) AS location_name,
+          appr.id AS approver_id,
+          COALESCE(NULLIF(CONCAT(COALESCE(appr.firstname, ''), ' ', COALESCE(appr.realname, '')), ' '), appr.name) AS approver_name,
+          ps.id AS project_state_id,
+          ps.name AS project_state_name,
+          ROUND(COALESCE((
+            SELECT AVG(COALESCE(pt.percent_done, 0))
+            FROM glpi_projecttasks pt
+            LEFT JOIN glpi_projectstates pts ON pts.id = pt.projectstates_id
+            WHERE pt.projects_id = p.id
+              AND (pt.projectstates_id IS NULL OR LOWER(COALESCE(pts.name, '')) NOT REGEXP 'cancel|rechaz|anulad')
+          ), 0), 0) AS progress,
+          DATE_FORMAT(p.date_creation, '%Y-%m-%dT%H:%i:%s.000Z') AS created_at,
+          DATE_FORMAT(p.date_mod, '%Y-%m-%dT%H:%i:%s.000Z') AS updated_at
+       FROM glpi_projects p
+       ${canonicalTicketJoin}
+       ${whereSql}
+       ORDER BY ${sortColumn} ${sortDirection}
+       LIMIT :limit OFFSET :offset`,
+      { ...params, limit, offset } as QueryValues,
+    );
+
+    return {
+      items: rows.map((row) => ({
+        projectId: Number(row.project_id),
+        projectName: String(row.project_name ?? '').trim(),
+        ticketId: this.toPositiveOrNull(row.ticket_id),
+        requesterId: this.toPositiveOrNull(row.requester_id),
+        requesterName: this.toTextOrNull(row.requester_name),
+        locationId: this.toPositiveOrNull(row.location_id),
+        locationName: this.toTextOrNull(row.location_name),
+        approverId: this.toPositiveOrNull(row.approver_id),
+        approverName: this.toTextOrNull(row.approver_name),
+        projectStateId: this.toPositiveOrNull(row.project_state_id),
+        projectStateName: this.toTextOrNull(row.project_state_name),
+        progress: this.clampPercent(row.progress),
+        createdAt: this.toTextOrNull(row.created_at),
+        updatedAt: this.toTextOrNull(row.updated_at),
+      })),
+      total: Number(countRows[0]?.total ?? 0),
+      page,
+      limit,
+    };
+  }
+
+  /** Obtiene detalle de un proyecto con ticket canónico opcional. */
   async findByProjectId(projectId: number): Promise<ErsDetail | null> {
     const mainRows = await this.mysql.query<ErsMainDetailRow>(
       `SELECT
@@ -448,14 +822,22 @@ export class ErsSqlRepository {
           ), 0), 0) AS progress,
           DATE_FORMAT(p.date_mod, '%Y-%m-%dT%H:%i:%s.000Z') AS updated_at
        FROM glpi_projects p
-       INNER JOIN glpi_itils_projects ip
-         ON ip.projects_id = p.id
-        AND ip.itemtype = 'Ticket'
+       LEFT JOIN glpi_itils_projects ip
+         ON ip.id = (
+          SELECT MIN(ip_first.id)
+          FROM glpi_itils_projects ip_first
+          WHERE ip_first.projects_id = p.id
+            AND ip_first.itemtype = 'Ticket'
+         )
        LEFT JOIN glpi_tickets t
          ON t.id = ip.items_id
        LEFT JOIN glpi_tickets_users req_tu
-         ON req_tu.tickets_id = t.id
-        AND req_tu.type = 1
+         ON req_tu.id = (
+          SELECT MIN(req_first.id)
+          FROM glpi_tickets_users req_first
+          WHERE req_first.tickets_id = t.id
+            AND req_first.type = 1
+         )
        LEFT JOIN glpi_users req
          ON req.id = req_tu.users_id
        LEFT JOIN glpi_locations loc
@@ -528,7 +910,7 @@ export class ErsSqlRepository {
     return {
       projectId: Number(main.project_id),
       projectName: String(main.project_name ?? "").trim(),
-      ticketId: Number(main.ticket_id),
+      ticketId: this.toPositiveOrNull(main.ticket_id),
       requesterId: this.toPositiveOrNull(main.requester_id),
       requesterName: this.toTextOrNull(main.requester_name),
       locationId: this.toPositiveOrNull(main.location_id),
@@ -621,6 +1003,20 @@ export class ErsSqlRepository {
     return rows.length > 0;
   }
 
+  private async isTicketEligibleInTx(connection: PoolConnection, ticketId: number): Promise<boolean> {
+    const options: QueryOptions = {
+      sql: `SELECT id
+            FROM glpi_tickets
+            WHERE id = :ticketId
+              AND COALESCE(is_deleted, 0) = 0
+              AND status NOT IN (5, 6)
+            LIMIT 1`,
+      namedPlaceholders: true,
+    };
+    const [rows] = await connection.query<TicketEligibilityRow[]>(options, { ticketId } as QueryValues);
+    return rows.length > 0;
+  }
+
   private async resolveDefaultProjectStateId(connection: PoolConnection): Promise<number | null> {
     const options: QueryOptions = {
       sql: `SELECT id
@@ -653,6 +1049,7 @@ export class ErsSqlRepository {
               comment,
               users_id,
               projectstates_id,
+              percent_done,
               entities_id,
               date,
               date_creation,
@@ -665,6 +1062,7 @@ export class ErsSqlRepository {
               :comment,
               0,
               :projectStateId,
+              0,
               :entityId,
               NOW(),
               NOW(),
@@ -928,6 +1326,33 @@ export class ErsSqlRepository {
         planEndDate: task.planEndDate ?? null,
       } as QueryValues);
     }
+
+    await this.syncProjectProgress(connection, projectId);
+  }
+
+  /** Persiste en GLPI el promedio de avance de las tareas no canceladas. */
+  private async syncProjectProgress(
+    connection: PoolConnection,
+    projectId: number,
+  ): Promise<void> {
+    const options: QueryOptions = {
+      sql: `UPDATE glpi_projects p
+            SET p.percent_done = ROUND(COALESCE((
+              SELECT AVG(COALESCE(t.percent_done, 0))
+              FROM glpi_projecttasks t
+              LEFT JOIN glpi_projectstates state
+                ON state.id = t.projectstates_id
+              WHERE t.projects_id = p.id
+                AND (
+                  t.projectstates_id IS NULL
+                  OR LOWER(COALESCE(state.name, '')) NOT REGEXP 'cancel|rechaz|anulad'
+                )
+            ), 0), 0)
+            WHERE p.id = :projectId
+              AND COALESCE(p.is_deleted, 0) = 0`,
+      namedPlaceholders: true,
+    };
+    await connection.query(options, { projectId } as QueryValues);
   }
 
   private wrapImpact(value: string): string {

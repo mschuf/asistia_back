@@ -6,6 +6,7 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { hasTechnicianAccess } from "../../common/utils/auth-access";
 import type { ListErsHistoryQueryDto } from "./dto/list-ers-history-query.dto";
 import type { CreateErsHistoryInput, ErsHistoryActionType, ErsHistoryItem, ErsHistoryMetadata } from "./ers-history.types";
 import { ErsHistorySqlRepository } from "./repositories/ers-history.sql-repository";
@@ -64,7 +65,7 @@ export class ErsHistoryService {
       });
     }
 
-    if (user.role !== "technician" && access.requesterId !== user.id) {
+    if (!hasTechnicianAccess(user) && access.requesterId !== user.id) {
       throw new BusinessException({
         message: "Solo puedes ver el historial de tus propios proyectos ERS",
         code: API_ERROR_CODE.FORBIDDEN,

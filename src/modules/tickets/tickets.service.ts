@@ -31,6 +31,7 @@ import { RESOLUTION_NOTE_MIN_LENGTH } from "./dto/update-ticket-status.dto";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { hasTechnicianAccess } from "../../common/utils/auth-access";
 import type { AppConfig } from "../../config/configuration";
 import { LdapProvider } from "../auth/strategies/ldap.provider";
 import {
@@ -69,6 +70,9 @@ const METRICS_SITE_LIMIT = 500;
 
 /** Límite para tickets abiertos globales (Indicadores por sede). */
 const METRICS_GLOBAL_OPEN_LIMIT = 9999;
+
+/** Usuario de servicio que representa la bandeja pendiente de asignación humana. */
+const ASISTIA_UNASSIGNED_TECHNICIAN_ID = 1368;
 
 /** Máximo de tickets por página en el listado activo vía GLPI. */
 const TICKETS_LIST_MAX_PAGE_SIZE = 15;
@@ -401,7 +405,7 @@ export class TicketsService {
    * @throws Ninguno; ante error SQL en métricas hace fallback a GLPI.
    */
   async getMetrics(user: AuthenticatedUser): Promise<TicketMetricsResponseDto> {
-    if (user.role === "technician") {
+    if (hasTechnicianAccess(user)) {
       const metricsSource = this.config.get("glpi.metricsSource", { infer: true });
       if (metricsSource === "sql") {
         try {
@@ -579,7 +583,7 @@ export class TicketsService {
       TicketMapper.mapStatusToGlpi(status),
     );
 
-    const [assignedTickets, locations, mySitePool, globalOpenPool] =
+    const [assignedTickets, unassignedTickets, locations, mySitePool, globalOpenPool] =
       await this.asService(async (key) => {
         const mySitePromise =
           user.locationId != null
@@ -591,8 +595,12 @@ export class TicketsService {
               )
             : Promise.resolve([] as DomainTicket[]);
 
-        const [assigned, locs, mySiteItems, globalOpenItems] = await Promise.all([
+        const [assigned, unassigned, locs, mySiteItems, globalOpenItems] = await Promise.all([
           this.ticketsRepo.listAssignedTicketsForMetrics(key, user.id),
+          this.ticketsRepo.listAssignedTicketsForMetrics(
+            key,
+            ASISTIA_UNASSIGNED_TECHNICIAN_ID,
+          ),
           this.catalogService.listLocations(),
           mySitePromise,
           this.ticketsRepo.listAllOpenTicketsForLocationMetrics(
@@ -602,12 +610,15 @@ export class TicketsService {
           ),
         ]);
 
-        return [assigned, locs, mySiteItems, globalOpenItems] as const;
+        return [assigned, unassigned, locs, mySiteItems, globalOpenItems] as const;
       });
 
     const myTickets = computeMyTicketsMetrics(assignedTickets);
     const myIncidents = computeTypeMetrics(assignedTickets, "incident");
     const myRequests = computeTypeMetrics(assignedTickets, "request");
+    const unassigned = {
+      open: unassignedTickets.filter(isActiveTicket).filter(isTicketOpen).length,
+    };
     const mySite = user.locationId != null ? computeSiteMetrics(mySitePool) : null;
 
     const locationNameById = new Map(
@@ -622,6 +633,7 @@ export class TicketsService {
       myIncidents,
       myRequests,
       myGroup,
+      unassigned,
       mySolved: EMPTY_METRIC_SLICE,
       myClosed: EMPTY_METRIC_SLICE,
       openByLocation,
@@ -671,7 +683,7 @@ export class TicketsService {
     }
 
     const useInvolvingMe =
-      user.role === "technician" &&
+      hasTechnicianAccess(user) &&
       query.involvingMe &&
       !query.technicianId &&
       !query.requesterId;
@@ -685,7 +697,7 @@ export class TicketsService {
       involvingUserId: useInvolvingMe ? user.id : undefined,
       requesterId: useInvolvingMe
         ? undefined
-        : user.role === "technician"
+        : hasTechnicianAccess(user)
           ? query.requesterId ?? undefined
           : user.id,
       technicianId: useInvolvingMe
@@ -747,7 +759,7 @@ export class TicketsService {
       status: TicketsService.resolveListStatusFilter(query),
       type: query.type ? TicketMapper.mapTypeToGlpi(query.type) : undefined,
       search: query.search,
-      requesterId: user.role === "technician" ? undefined : user.id,
+      requesterId: hasTechnicianAccess(user) ? undefined : user.id,
       technicianId: query.assignedToMe
         ? user.id
         : query.technicianId ?? undefined,
@@ -757,7 +769,7 @@ export class TicketsService {
     const result = await this.asService((key) => this.ticketsRepo.list(key, filter));
 
     let items = result.items.filter(isActiveTicket);
-    if (user.role !== "technician") {
+    if (!hasTechnicianAccess(user)) {
       items = items.filter((ticket) => ticket.requesterId === user.id);
     }
 
@@ -799,7 +811,7 @@ export class TicketsService {
         status: HttpStatus.NOT_FOUND,
       });
     }
-    if (user.role !== "technician" && ticket.requesterId !== user.id) {
+    if (!hasTechnicianAccess(user) && ticket.requesterId !== user.id) {
       throw new BusinessException({
         message: "You do not have access to this ticket",
         code: API_ERROR_CODE.FORBIDDEN,
@@ -859,7 +871,7 @@ export class TicketsService {
         ticketId: created.id,
         requesterId,
         technicianId: assignedTechnicianId ?? null,
-        assignSource: user.role === "technician" ? "manual" : "sql",
+        assignSource: hasTechnicianAccess(user) ? "manual" : "sql",
         assignStrategy: assignment.strategy,
         locationId: locationId ?? null,
       },
@@ -1010,7 +1022,7 @@ export class TicketsService {
       });
     }
 
-    if (user.role !== "technician" && ticket.requesterId !== user.id) {
+    if (!hasTechnicianAccess(user) && ticket.requesterId !== user.id) {
       throw new BusinessException({
         message: "You do not have permission to update this ticket",
         code: API_ERROR_CODE.FORBIDDEN,
@@ -1025,7 +1037,7 @@ export class TicketsService {
       });
     }
 
-    const technicianResolving = user.role === "technician" && status === TICKET_STATUS.SOLVED;
+    const technicianResolving = hasTechnicianAccess(user) && status === TICKET_STATUS.SOLVED;
     const closingTicket = status === TICKET_STATUS.CLOSED;
     if (technicianResolving) {
       const trimmedNote = resolutionNote?.trim() ?? "";
@@ -1445,7 +1457,7 @@ export class TicketsService {
     requested?: number,
   ): Promise<number> {
     if (!requested || requested === user.id) return user.id;
-    if (user.role !== "technician") {
+    if (!hasTechnicianAccess(user)) {
       throw new BusinessException({
         message: "Only technicians can create tickets on behalf of other users",
         code: API_ERROR_CODE.FORBIDDEN,
@@ -1551,7 +1563,7 @@ export class TicketsService {
     dto: CreateTicketDto,
     locationId: number | undefined,
   ): Promise<ResolvedTicketAssignment> {
-    if (user.role === "technician") {
+    if (hasTechnicianAccess(user)) {
       if (dto.assignedTechnicianId) {
         await this.assertTechnicianExists(dto.assignedTechnicianId);
       }

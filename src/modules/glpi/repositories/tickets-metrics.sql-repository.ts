@@ -16,6 +16,7 @@ import {
 import type { TicketMetricsResponseDto } from "../../tickets/dto/ticket-metrics.response.dto";
 
 const METRICS_SITE_LIMIT = 50000;
+const ASISTIA_UNASSIGNED_TECHNICIAN_ID = 1368;
 const OPEN_STATUS_IN = OPEN_STATUS_GLPI.join(", ");
 const MY_GROUP_STATUS_IN = MY_GROUP_HISTORY_STATUS_GLPI.join(", ");
 const BASE_TICKET_HISTORY_SQL = `
@@ -49,6 +50,10 @@ interface SiteAggregateRow extends RowDataPacket {
   open_count: number | string | null;
   open_this_month: number | string | null;
   total_this_month: number | string | null;
+}
+
+interface OpenCountRow extends RowDataPacket {
+  open_count: number | string | null;
 }
 
 interface RequesterStatusAggregateRow extends RowDataPacket {
@@ -115,12 +120,13 @@ export class TicketsMetricsSqlRepository {
     input: MetricsForTechnicianInput,
   ): Promise<TicketMetricsResponseDto>  {
     const technicianId = input.technicianId;
-    const [myTickets, myIncidents, myRequests, myGroup, mySite, openByLocationRows] =
+    const [myTickets, myIncidents, myRequests, myGroup, unassigned, mySite, openByLocationRows] =
       await Promise.all([
         this.aggregateMyTickets(technicianId),
         this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.INCIDENT),
         this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.REQUEST),
         this.aggregateMyGroupSlice(),
+        this.aggregateAssignedOpenSlice(ASISTIA_UNASSIGNED_TECHNICIAN_ID),
         input.locationId != null
           ? this.aggregateSiteSlice(input.locationId)
           : Promise.resolve(null),
@@ -142,6 +148,7 @@ export class TicketsMetricsSqlRepository {
       myIncidents,
       myRequests,
       myGroup,
+      unassigned,
       mySolved: EMPTY_METRIC_SLICE,
       myClosed: EMPTY_METRIC_SLICE,
       openByLocation,
@@ -218,6 +225,31 @@ export class TicketsMetricsSqlRepository {
       openPercent: openPercent(openThisMonth, totalThisMonth),
       openThisMonth,
       totalThisMonth,
+    };
+  }
+
+  /** Agrega tickets abiertos asignados a un técnico concreto. */
+  private async aggregateAssignedOpenSlice(
+    technicianId: number,
+  ): Promise<{ open: number }> {
+    const rows = await this.mysql.query<OpenCountRow>(
+      `SELECT
+         COUNT(*) AS open_count
+       FROM glpi_tickets t
+       WHERE t.is_deleted = 0
+         AND t.status IN (${OPEN_STATUS_IN})
+         AND EXISTS (
+           SELECT 1
+           FROM glpi_tickets_users tu
+           WHERE tu.tickets_id = t.id
+             AND tu.type = ${GLPI_TICKET_USER_TYPE.ASSIGNED}
+             AND tu.users_id = :technicianId
+         )`,
+      { technicianId } as QueryValues,
+    );
+    const row = rows[0];
+    return {
+      open: Number(row?.open_count ?? 0),
     };
   }
 

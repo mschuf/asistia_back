@@ -8,6 +8,7 @@ import { ROLES_KEY } from "../decorators/roles.decorator";
 import type { AuthenticatedUser, UserRole } from "../types/authenticated-user";
 import { BusinessException } from "../exceptions/business.exception";
 import { API_ERROR_CODE } from "../types/api-error-code";
+import { hasTechnicianAccess } from "../utils/auth-access";
 
 /**
  * Verifica que el usuario autenticado cumpla los roles exigidos por el handler.
@@ -44,7 +45,9 @@ export class RolesGuard implements CanActivate {
       });
     }
 
-    if (!requiredRoles.includes(user.role)) {
+    const allowedAsSuperAdmin =
+      requiredRoles.includes("technician") && hasTechnicianAccess(user);
+    if (!requiredRoles.includes(user.role) && !allowedAsSuperAdmin) {
       throw new BusinessException({
         message: "You do not have permission to access this resource",
         code: API_ERROR_CODE.FORBIDDEN,

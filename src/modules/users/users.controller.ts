@@ -12,6 +12,7 @@ import { ResponseMessage } from "../../common/interceptors/response-message.deco
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { hasTechnicianAccess } from "../../common/utils/auth-access";
 import { AuthService } from "../auth/auth.service";
 import { UsersService } from "./users.service";
 import { UserResponseDto } from "./dto/user.response.dto";
@@ -104,7 +105,7 @@ export class UsersController {
     @CurrentUser() current: AuthenticatedUser,
     @Param("id", ParseIntPipe) id: number,
   ): Promise<UserResponseDto> {
-    if (current.role !== "technician" && current.id !== id) {
+    if (!hasTechnicianAccess(current) && current.id !== id) {
       throw new BusinessException({
         message: "You can only view your own profile",
         code: API_ERROR_CODE.FORBIDDEN,

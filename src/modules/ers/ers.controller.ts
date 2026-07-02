@@ -4,6 +4,7 @@
  */
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagger";
+import { LocationResponseDto } from "../catalog/dto/location.response.dto";
 import { Roles } from "../../common/decorators/roles.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
@@ -13,11 +14,14 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { EscalarTicketDto } from "./dto/escalar-ticket.dto";
 import {
   ErsDetailResponseDto,
+  ErsEligibleTicketListResponseDto,
   ErsListResponseDto,
+  ErsMetricsResponseDto,
   ErsProjectStateResponseDto,
   ErsTechnicianListResponseDto,
 } from "./dto/ers.response.dto";
 import { ListErsQueryDto } from "./dto/list-ers-query.dto";
+import { ListErsEligibleTicketsQueryDto } from "./dto/list-ers-eligible-tickets-query.dto";
 import { ListErsTechniciansQueryDto } from "./dto/list-ers-technicians-query.dto";
 import { UpdateErsDto } from "./dto/update-ers.dto";
 import { ErsService } from "./ers.service";
@@ -47,6 +51,24 @@ export class ErsController {
     return this.ersService.list(user, query);
   }
 
+  @Get('metrics')
+  @Roles('technician')
+  @ApiOperation({ summary: 'Get ERS project metrics' })
+  @ApiResponse({ status: 200, type: ErsMetricsResponseDto })
+  @ResponseMessage('Indicadores ERS obtenidos')
+  async metrics(@CurrentUser() user: AuthenticatedUser) {
+    return this.ersService.metrics(user);
+  }
+
+  @Get('eligible-tickets')
+  @Roles('technician')
+  @ApiOperation({ summary: 'List tickets eligible for ERS escalation' })
+  @ApiResponse({ status: 200, type: ErsEligibleTicketListResponseDto })
+  @ResponseMessage('Tickets elegibles para ERS obtenidos')
+  async eligibleTickets(@Query() query: ListErsEligibleTicketsQueryDto) {
+    return this.ersService.listEligibleTickets(query);
+  }
+
   /**
    * Lista catálogo de estados de proyecto.
    * @returns Estados de proyecto.
@@ -72,6 +94,26 @@ export class ErsController {
     @Query() query: ListErsTechniciansQueryDto,
   ): Promise<ErsTechnicianListResponseDto> {
     return this.ersService.listTechniciansByLocation(query);
+  }
+
+  @Get("requesters")
+  @Roles("technician")
+  @ApiOperation({ summary: "List active GLPI requesters directly from MySQL" })
+  @ApiResponse({ status: 200, type: ErsTechnicianListResponseDto })
+  @ResponseMessage("Solicitantes ERS obtenidos")
+  async requesters(
+    @Query() query: ListErsTechniciansQueryDto,
+  ): Promise<ErsTechnicianListResponseDto> {
+    return this.ersService.listRequesters(query);
+  }
+
+  @Get("locations")
+  @Roles("technician")
+  @ApiOperation({ summary: "List GLPI locations directly from MySQL" })
+  @ApiResponse({ status: 200, type: [LocationResponseDto] })
+  @ResponseMessage("Sedes ERS obtenidas")
+  async locations(): Promise<LocationResponseDto[]> {
+    return this.ersService.listFilterLocations();
   }
 
   /**

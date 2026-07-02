@@ -12,8 +12,8 @@ export class ErsListItemResponseDto {
   @ApiProperty({ example: "Portal RRHH" })
   projectName!: string;
 
-  @ApiProperty({ example: 1203 })
-  ticketId!: number;
+  @ApiProperty({ example: 1203, nullable: true })
+  ticketId!: number | null;
 
   @ApiProperty({ example: 45, nullable: true })
   requesterId!: number | null;
@@ -53,6 +53,76 @@ export class ErsListItemResponseDto {
 export class ErsListResponseDto {
   @ApiProperty({ type: () => [ErsListItemResponseDto] })
   items!: ErsListItemResponseDto[];
+
+  @ApiProperty({ example: 24 })
+  total!: number;
+
+  @ApiProperty({ example: 1 })
+  page!: number;
+
+  @ApiProperty({ example: 15 })
+  limit!: number;
+}
+
+export class ErsMetricSliceResponseDto {
+  @ApiProperty({ example: 12 })
+  active!: number;
+
+  @ApiProperty({ example: 75 })
+  activePercent!: number;
+
+  @ApiProperty({ example: 3 })
+  activeThisMonth!: number;
+
+  @ApiProperty({ example: 4 })
+  totalThisMonth!: number;
+}
+
+export class ErsActiveByLocationResponseDto {
+  @ApiProperty({ example: 8, nullable: true })
+  locationId!: number | null;
+
+  @ApiProperty({ example: "Casa Central" })
+  name!: string;
+
+  @ApiProperty({ example: 6 })
+  active!: number;
+}
+
+export class ErsMetricsResponseDto {
+  @ApiProperty({ type: () => ErsMetricSliceResponseDto })
+  myGroup!: ErsMetricSliceResponseDto;
+
+  @ApiProperty({ type: () => ErsMetricSliceResponseDto, nullable: true })
+  mySite!: ErsMetricSliceResponseDto | null;
+
+  @ApiProperty({ type: () => ErsMetricSliceResponseDto })
+  myProjects!: ErsMetricSliceResponseDto;
+
+  @ApiProperty({ type: () => [ErsActiveByLocationResponseDto] })
+  activeByLocation!: ErsActiveByLocationResponseDto[];
+}
+
+export class ErsEligibleTicketResponseDto {
+  @ApiProperty({ example: 1203 })
+  ticketId!: number;
+
+  @ApiProperty({ example: "Implementar acceso al portal" })
+  subject!: string;
+
+  @ApiProperty({ example: "Ana Pérez", nullable: true })
+  requesterName!: string | null;
+
+  @ApiProperty({ example: 8, nullable: true })
+  locationId!: number | null;
+
+  @ApiProperty({ example: "Casa Central", nullable: true })
+  locationName!: string | null;
+}
+
+export class ErsEligibleTicketListResponseDto {
+  @ApiProperty({ type: () => [ErsEligibleTicketResponseDto] })
+  items!: ErsEligibleTicketResponseDto[];
 
   @ApiProperty({ example: 24 })
   total!: number;
@@ -114,8 +184,8 @@ export class ErsDetailResponseDto {
   @ApiProperty({ example: "Portal RRHH" })
   projectName!: string;
 
-  @ApiProperty({ example: 1203 })
-  ticketId!: number;
+  @ApiProperty({ example: 1203, nullable: true })
+  ticketId!: number | null;
 
   @ApiProperty({ nullable: true, example: 45 })
   requesterId!: number | null;

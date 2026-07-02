@@ -11,7 +11,7 @@ import type { CreateErsHistoryInput, ErsHistoryItem } from "../ers-history.types
 interface ErsProjectAccessRow extends RowDataPacket {
   project_id: number;
   project_name: string;
-  ticket_id: number;
+  ticket_id: number | null;
   requester_id: number | null;
 }
 
@@ -41,7 +41,7 @@ export class ErsHistorySqlRepository {
   async findProjectAccess(projectId: number): Promise<{
     projectId: number;
     projectName: string;
-    ticketId: number;
+    ticketId: number | null;
     requesterId: number | null;
   } | null> {
     const rows = await this.mysql.query<ErsProjectAccessRow>(
@@ -51,12 +51,20 @@ export class ErsHistorySqlRepository {
           ip.items_id AS ticket_id,
           req_tu.users_id AS requester_id
        FROM glpi_projects p
-       INNER JOIN glpi_itils_projects ip
-         ON ip.projects_id = p.id
-        AND ip.itemtype = 'Ticket'
+       LEFT JOIN glpi_itils_projects ip
+         ON ip.id = (
+          SELECT MIN(ip_first.id)
+          FROM glpi_itils_projects ip_first
+          WHERE ip_first.projects_id = p.id
+            AND ip_first.itemtype = 'Ticket'
+         )
        LEFT JOIN glpi_tickets_users req_tu
-         ON req_tu.tickets_id = ip.items_id
-        AND req_tu.type = 1
+         ON req_tu.id = (
+          SELECT MIN(req_first.id)
+          FROM glpi_tickets_users req_first
+          WHERE req_first.tickets_id = ip.items_id
+            AND req_first.type = 1
+         )
        WHERE p.id = :projectId
          AND COALESCE(p.is_deleted, 0) = 0
        LIMIT 1`,
@@ -68,7 +76,7 @@ export class ErsHistorySqlRepository {
     return {
       projectId: Number(row.project_id),
       projectName: String(row.project_name ?? "").trim(),
-      ticketId: Number(row.ticket_id),
+      ticketId: this.toPositiveOrNull(row.ticket_id),
       requesterId: this.toPositiveOrNull(row.requester_id),
     };
   }

@@ -6,12 +6,16 @@ import { HttpStatus, Injectable } from "@nestjs/common";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { hasTechnicianAccess } from "../../common/utils/auth-access";
 import { CatalogService } from "../catalog/catalog.service";
 import { ErsHistoryService } from "../ers-history/ers-history.service";
+import { LocationsSqlRepository } from "../glpi/repositories/locations.sql-repository";
 import { UsersTechniciansSqlRepository } from "../glpi/repositories/users-technicians.sql-repository";
+import type { DomainLocation } from "../glpi/mappers/location.mapper";
 import { isTiGroupName, normalizeRoleToken } from "../glpi/role.utils";
 import type { EscalarTicketDto } from "./dto/escalar-ticket.dto";
 import type { ListErsQueryDto } from "./dto/list-ers-query.dto";
+import type { ListErsEligibleTicketsQueryDto } from "./dto/list-ers-eligible-tickets-query.dto";
 import type { ListErsTechniciansQueryDto } from "./dto/list-ers-technicians-query.dto";
 import type { UpdateErsDto } from "./dto/update-ers.dto";
 import { ErsSqlRepository } from "./repositories/ers.sql-repository";
@@ -32,6 +36,7 @@ export class ErsService {
   constructor(
     private readonly ersSqlRepository: ErsSqlRepository,
     private readonly usersTechniciansSqlRepository: UsersTechniciansSqlRepository,
+    private readonly locationsSqlRepository: LocationsSqlRepository,
     private readonly catalogService: CatalogService,
     private readonly ersHistoryService: ErsHistoryService,
   ) {}
@@ -52,11 +57,19 @@ export class ErsService {
       });
     }
 
-    if (user.role !== "technician") {
+    if (!hasTechnicianAccess(user)) {
       throw new BusinessException({
         message: "Solo usuarios TI pueden escalar tickets a ERS",
         code: API_ERROR_CODE.FORBIDDEN,
         status: HttpStatus.FORBIDDEN,
+      });
+    }
+
+    if ([5, 6].includes(context.status)) {
+      throw new BusinessException({
+        message: 'Solo se pueden escalar tickets activos',
+        code: API_ERROR_CODE.CONFLICT,
+        status: HttpStatus.CONFLICT,
       });
     }
 
@@ -97,6 +110,13 @@ export class ErsService {
       return detail;
     } catch (error) {
       if (error instanceof BusinessException) throw error;
+      if ((error as Error).message === 'ticket_not_eligible') {
+        throw new BusinessException({
+          message: 'El ticket ya no está disponible para escalar',
+          code: API_ERROR_CODE.CONFLICT,
+          status: HttpStatus.CONFLICT,
+        });
+      }
       if ((error as Error).message === "ticket_already_scaled") {
         throw new BusinessException({
           message: "El ticket ya está vinculado a un proyecto ERS",
@@ -119,10 +139,22 @@ export class ErsService {
    * @returns Lista paginada.
    */
   async list(user: AuthenticatedUser, query: ListErsQueryDto) {
-    return this.ersSqlRepository.list(query, {
+    return this.ersSqlRepository.listAllProjects(query, {
       userId: user.id,
-      role: user.role,
+      role: hasTechnicianAccess(user) ? "technician" : user.role,
     });
+  }
+
+  async metrics(user: AuthenticatedUser) {
+    return this.ersSqlRepository.getMetrics(user.id, user.locationId);
+  }
+
+  async listEligibleTickets(query: ListErsEligibleTicketsQueryDto) {
+    return this.ersSqlRepository.listEligibleTickets(
+      query.search,
+      query.page ?? 1,
+      query.limit ?? 15,
+    );
   }
 
   /**
@@ -141,7 +173,7 @@ export class ErsService {
       });
     }
 
-    if (user.role !== "technician" && detail.requesterId !== user.id) {
+    if (!hasTechnicianAccess(user) && detail.requesterId !== user.id) {
       throw new BusinessException({
         message: "Solo puedes ver tus propios proyectos ERS",
         code: API_ERROR_CODE.FORBIDDEN,
@@ -163,7 +195,7 @@ export class ErsService {
     projectId: number,
     dto: UpdateErsDto,
   ): Promise<ErsDetail> {
-    if (user.role !== "technician") {
+    if (!hasTechnicianAccess(user)) {
       throw new BusinessException({
         message: "Solo los técnicos pueden editar datos TI de ERS",
         code: API_ERROR_CODE.FORBIDDEN,
@@ -222,7 +254,7 @@ export class ErsService {
     const search = (query.search ?? "").trim().toLowerCase();
     const filtered = search
       ? all.filter((user) => {
-          const full = `${user.fullName} ${user.login}`.toLowerCase();
+          const full = `${user.id} ${user.fullName} ${user.login}`.toLowerCase();
           return full.includes(search);
         })
       : all;
@@ -242,6 +274,35 @@ export class ErsService {
       page,
       limit,
     };
+  }
+
+  /** Lista solicitantes activos directamente desde MySQL de GLPI. */
+  async listRequesters(
+    query: ListErsTechniciansQueryDto,
+  ): Promise<{ items: ErsTechnician[]; total: number; page: number; limit: number }> {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.max(1, query.limit ?? 50);
+    const result = await this.usersTechniciansSqlRepository.searchActiveUsers(
+      query.search,
+      page,
+      limit,
+    );
+
+    return {
+      items: result.items.map((user) => ({
+        id: user.id,
+        fullName: user.fullName,
+        locationId: user.locationId,
+      })),
+      total: result.total,
+      page,
+      limit,
+    };
+  }
+
+  /** Lista sedes con usuarios activos directamente desde MySQL de GLPI. */
+  async listFilterLocations(): Promise<DomainLocation[]> {
+    return this.locationsSqlRepository.listLocationsWithActiveUsers();
   }
 
   private async resolveTiGroupIds(): Promise<number[]> {

@@ -4,7 +4,7 @@
  */
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsISO8601, IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
 
 /** Columnas ordenables del listado de ERS. */
@@ -46,6 +46,25 @@ export class ListErsQueryDto extends PaginationDto {
   @IsString()
   projectName?: string;
 
+  @ApiPropertyOptional({ description: "Fecha de creación desde (YYYY-MM-DD)", example: "2026-07-01" })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsISO8601({ strict: true })
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ description: "Fecha de creación hasta (YYYY-MM-DD)", example: "2026-07-31" })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  @IsISO8601({ strict: true })
+  createdTo?: string;
+
+  @ApiPropertyOptional({ type: Number, description: "ID del solicitante en GLPI" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  requesterId?: number;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -67,6 +86,25 @@ export class ListErsQueryDto extends PaginationDto {
   @IsInt()
   @Min(1)
   projectStateId?: number;
+
+  @ApiPropertyOptional({ enum: ['active', 'finished'] })
+  @IsOptional()
+  @IsIn(['active', 'finished'])
+  lifecycle?: 'active' | 'finished';
+
+  @ApiPropertyOptional({ type: Number })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  locationId?: number;
+
+  @ApiPropertyOptional({ type: Number, description: "ID del integrante asignado en GLPI" })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  assignedMemberId?: number;
 
   @ApiPropertyOptional({ enum: ERS_SORT_BY })
   @IsOptional()

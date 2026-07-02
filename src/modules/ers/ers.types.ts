@@ -9,7 +9,7 @@ import type { UserRole } from "../../common/types/authenticated-user";
 export interface ErsListItem {
   projectId: number;
   projectName: string;
-  ticketId: number;
+  ticketId: number | null;
   requesterId: number | null;
   requesterName: string | null;
   locationId: number | null;
@@ -47,7 +47,7 @@ export interface ErsTask {
 export interface ErsDetail {
   projectId: number;
   projectName: string;
-  ticketId: number;
+  ticketId: number | null;
   requesterId: number | null;
   requesterName: string | null;
   locationId: number | null;
@@ -87,6 +87,35 @@ export interface TicketEscalationContext {
   entityId: number;
   requesterId: number | null;
   locationId: number | null;
+  status: number;
+}
+
+export interface ErsMetricSlice {
+  active: number;
+  activePercent: number;
+  activeThisMonth: number;
+  totalThisMonth: number;
+}
+
+export interface ErsActiveByLocationMetric {
+  locationId: number | null;
+  name: string;
+  active: number;
+}
+
+export interface ErsMetrics {
+  myGroup: ErsMetricSlice;
+  mySite: ErsMetricSlice | null;
+  myProjects: ErsMetricSlice;
+  activeByLocation: ErsActiveByLocationMetric[];
+}
+
+export interface ErsEligibleTicket {
+  ticketId: number;
+  subject: string;
+  requesterName: string | null;
+  locationId: number | null;
+  locationName: string | null;
 }
 
 /** Filtro de acceso por rol para consultas de ERS. */
