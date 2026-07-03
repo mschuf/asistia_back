@@ -12,6 +12,7 @@ import { RolesGuard } from "../../common/guards/roles.guard";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { EscalarTicketDto } from "./dto/escalar-ticket.dto";
+import { CreateErsDto } from "./dto/create-ers.dto";
 import {
   ErsDetailResponseDto,
   ErsEligibleTicketListResponseDto,
@@ -33,6 +34,18 @@ import { ErsService } from "./ers.service";
 @Controller("ers")
 export class ErsController {
   constructor(private readonly ersService: ErsService) {}
+
+  @Post()
+  @Roles("technician")
+  @ApiOperation({ summary: "Create ticket and complete ERS project atomically" })
+  @ApiResponse({ status: 201, type: ErsDetailResponseDto })
+  @ResponseMessage("Proyecto ERS creado")
+  async create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateErsDto,
+  ): Promise<ErsDetailResponseDto> {
+    return this.ersService.createStandalone(user, dto);
+  }
 
   /**
    * Lista ERS con paginación server-side.

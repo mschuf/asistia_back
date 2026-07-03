@@ -80,6 +80,9 @@ export interface AppConfig {
     /** Fuente para listado general de usuarios en `/users`. */
     usersSource: "api" | "sql";
   };
+  ers: {
+    ticketType: "incident" | "request";
+  };
   mysql: {
     host: string;
     port: number;
@@ -379,6 +382,12 @@ export function buildConfig(): AppConfig {
       assignSource: readGlpiReadSource("GLPI_ASSIGN_SOURCE", "sql"),
       techniciansSource: readGlpiReadSource("GLPI_TECHNICIANS_SOURCE", "sql"),
       usersSource: readGlpiReadSource("GLPI_USERS_SOURCE", "sql"),
+    },
+    ers: {
+      ticketType:
+        readString("ERS_TICKET_TYPE", "request").toLowerCase() === "incident"
+          ? "incident"
+          : "request",
     },
     mysql: {
       host: readString("MYSQL_HOST", ""),

@@ -6,7 +6,13 @@ import { Injectable } from "@nestjs/common";
 import type { QueryOptions, QueryValues, RowDataPacket } from "mysql2";
 import type { PoolConnection, ResultSetHeader } from "mysql2/promise";
 import { MysqlService } from "../../mysql/mysql.service";
+import {
+  GLPI_TICKET_STATUS,
+  GLPI_TICKET_URGENCY,
+} from "../../glpi/glpi.constants";
+import { TicketsCreateSqlRepository } from "../../glpi/repositories/tickets-create.sql-repository";
 import { appendResolutionNote } from "../../tickets/domain/ticket-resolution.helpers";
+import type { CreateErsDto } from "../dto/create-ers.dto";
 import type { EscalarTicketDto } from "../dto/escalar-ticket.dto";
 import type { ListErsQueryDto } from "../dto/list-ers-query.dto";
 import type { ErsTaskInputDto, UpdateErsDto } from "../dto/update-ers.dto";
@@ -151,7 +157,57 @@ const ERS_SORT_SQL: Record<string, string> = {
 /** Repositorio SQL del módulo ERS. */
 @Injectable()
 export class ErsSqlRepository {
-  constructor(private readonly mysql: MysqlService) {}
+  constructor(
+    private readonly mysql: MysqlService,
+    private readonly ticketsCreateSqlRepository: TicketsCreateSqlRepository,
+  ) {}
+
+  /** Crea ticket, proyecto y todos sus datos en una única transacción MySQL. */
+  async createStandaloneProject(
+    input: CreateErsDto,
+    context: {
+      actorId: number;
+      entityId: number;
+      ticketType: number;
+    },
+  ): Promise<{ ticketId: number; projectId: number }> {
+    return this.mysql.withTransaction(async (connection) => {
+      const ticketId = await this.ticketsCreateSqlRepository.createInTransaction(connection, {
+        name: input.projectName.trim(),
+        content: input.description.trim(),
+        type: context.ticketType,
+        status: GLPI_TICKET_STATUS.NEW,
+        urgency: GLPI_TICKET_URGENCY.MEDIUM,
+        itilcategories_id: 0,
+        locations_id: input.locationId,
+        entities_id: context.entityId,
+        requesters_id: input.requesterId,
+      });
+
+      const defaultStateId = await this.resolveDefaultProjectStateId(connection);
+      const projectId = await this.insertProject(connection, {
+        projectName: input.projectName,
+        objective: input.objective,
+        description: input.description,
+        entityId: context.entityId,
+        projectStateId: this.toPositiveOrNull(input.projectStateId) ?? defaultStateId,
+        approverId: this.toPositiveOrNull(input.approverId),
+      });
+
+      await this.insertTicketProjectLink(connection, ticketId, projectId);
+      await this.syncImpactNote(connection, {
+        projectId,
+        actorId: context.actorId,
+        impact: input.impact ?? "",
+      });
+      await this.replaceProjectTeam(connection, projectId, input.teamMemberIds);
+      await this.replaceProjectTasks(connection, projectId, input.tasks);
+      await this.appendEscalationClosureNote(connection, ticketId);
+      await this.closeTicket(connection, ticketId);
+
+      return { ticketId, projectId };
+    });
+  }
 
   /**
    * Recupera datos del ticket necesarios para escalar a proyecto.
@@ -1039,6 +1095,7 @@ export class ErsSqlRepository {
       description?: string;
       entityId: number;
       projectStateId: number | null;
+      approverId?: number | null;
     },
   ): Promise<number> {
     const options: QueryOptions = {
@@ -1060,7 +1117,7 @@ export class ErsSqlRepository {
               '',
               :content,
               :comment,
-              0,
+              :approverId,
               :projectStateId,
               0,
               :entityId,
@@ -1076,6 +1133,7 @@ export class ErsSqlRepository {
       content: (input.description ?? "").trim(),
       comment: (input.objective ?? "").trim(),
       projectStateId: input.projectStateId ?? 0,
+      approverId: input.approverId ?? 0,
       entityId: input.entityId,
     } as QueryValues);
 

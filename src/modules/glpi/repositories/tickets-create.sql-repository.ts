@@ -42,27 +42,35 @@ export class TicketsCreateSqlRepository {
    */
   async create(input: CreateTicketSqlInput): Promise<DomainTicket> {
     const ticketId = await this.mysql.withTransaction(async (connection) => {
-      const createdTicketId = await this.insertTicket(connection, input);
-      if (input.requesters_id !== undefined) {
-        await this.insertTicketUser(
-          connection,
-          createdTicketId,
-          input.requesters_id,
-          GLPI_TICKET_USER_TYPE.REQUESTER,
-        );
-      }
-      if (input.technicians_id) {
-        await this.upsertTicketUser(
-          connection,
-          createdTicketId,
-          input.technicians_id,
-          GLPI_TICKET_USER_TYPE.ASSIGNED,
-        );
-      }
-      return createdTicketId;
+      return this.createInTransaction(connection, input);
     });
 
     return TicketsCreateSqlRepository.buildTicketFromInput(ticketId, input);
+  }
+
+  /** Inserta un ticket y sus actores usando una transacción MySQL ya abierta. */
+  async createInTransaction(
+    connection: PoolConnection,
+    input: CreateTicketSqlInput,
+  ): Promise<number> {
+    const ticketId = await this.insertTicket(connection, input);
+    if (input.requesters_id !== undefined) {
+      await this.insertTicketUser(
+        connection,
+        ticketId,
+        input.requesters_id,
+        GLPI_TICKET_USER_TYPE.REQUESTER,
+      );
+    }
+    if (input.technicians_id) {
+      await this.upsertTicketUser(
+        connection,
+        ticketId,
+        input.technicians_id,
+        GLPI_TICKET_USER_TYPE.ASSIGNED,
+      );
+    }
+    return ticketId;
   }
 
   /**

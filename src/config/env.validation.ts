@@ -132,6 +132,10 @@ class EnvSchema {
   GLPI_SERVICE_USER_ID?: string;
 
   @IsOptional()
+  @IsIn(["incident", "request"])
+  ERS_TICKET_TYPE?: string;
+
+  @IsOptional()
   @IsIn(["api", "sql"])
   GLPI_HISTORY_SOURCE?: string;
 

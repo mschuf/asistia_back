@@ -3,6 +3,8 @@
  * @description Orquesta reglas de negocio del módulo ERS (transacciones 1 y 2).
  */
 import { HttpStatus, Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import type { AppConfig } from "../../config/configuration";
 import { BusinessException } from "../../common/exceptions/business.exception";
 import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -12,8 +14,10 @@ import { ErsHistoryService } from "../ers-history/ers-history.service";
 import { LocationsSqlRepository } from "../glpi/repositories/locations.sql-repository";
 import { UsersTechniciansSqlRepository } from "../glpi/repositories/users-technicians.sql-repository";
 import type { DomainLocation } from "../glpi/mappers/location.mapper";
+import { TicketMapper } from "../glpi/mappers/ticket.mapper";
 import { isTiGroupName, normalizeRoleToken } from "../glpi/role.utils";
 import type { EscalarTicketDto } from "./dto/escalar-ticket.dto";
+import type { CreateErsDto } from "./dto/create-ers.dto";
 import type { ListErsQueryDto } from "./dto/list-ers-query.dto";
 import type { ListErsEligibleTicketsQueryDto } from "./dto/list-ers-eligible-tickets-query.dto";
 import type { ListErsTechniciansQueryDto } from "./dto/list-ers-technicians-query.dto";
@@ -39,7 +43,104 @@ export class ErsService {
     private readonly locationsSqlRepository: LocationsSqlRepository,
     private readonly catalogService: CatalogService,
     private readonly ersHistoryService: ErsHistoryService,
+    private readonly config: ConfigService<AppConfig, true>,
   ) {}
+
+  /** Crea un ticket técnico cerrado y su proyecto ERS completo de forma atómica. */
+  async createStandalone(user: AuthenticatedUser, dto: CreateErsDto): Promise<ErsDetail> {
+    if (!hasTechnicianAccess(user)) {
+      throw new BusinessException({
+        message: "Solo usuarios TI pueden crear proyectos ERS",
+        code: API_ERROR_CODE.FORBIDDEN,
+        status: HttpStatus.FORBIDDEN,
+      });
+    }
+    if (
+      dto.tasks.some(
+        (task) =>
+          !task.name.trim() ||
+          !(task.content ?? "").trim() ||
+          !task.projectStateId ||
+          !task.userId ||
+          !task.planStartDate ||
+          !task.planEndDate,
+      )
+    ) {
+      throw new BusinessException({
+        message: "Las tareas deben incluir nombre, descripción, estado, responsable y fechas",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    const [requester, locations] = await Promise.all([
+      this.usersTechniciansSqlRepository.findById(dto.requesterId),
+      this.locationsSqlRepository.listLocationsWithActiveUsers(),
+    ]);
+    if (!requester?.isActive) {
+      throw new BusinessException({
+        message: "El solicitante seleccionado no existe o no está activo",
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+    if (!locations.some((location) => location.id === dto.locationId)) {
+      throw new BusinessException({
+        message: "La sede seleccionada no existe o no está disponible",
+        code: API_ERROR_CODE.INVALID_LOCATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
+    const allowedTechnicianIds = await this.resolveTechnicianIdsByLocation(dto.locationId);
+    const referencedTechnicianIds = this.uniquePositive([
+      ...(dto.approverId ? [dto.approverId] : []),
+      ...dto.teamMemberIds,
+      ...dto.tasks.flatMap((task) => (task.userId ? [task.userId] : [])),
+    ]);
+    const invalidTechnicianIds = referencedTechnicianIds.filter(
+      (id) => !allowedTechnicianIds.has(id),
+    );
+    if (invalidTechnicianIds.length > 0) {
+      throw new BusinessException({
+        message: "Algunos usuarios seleccionados no son técnicos válidos para la sede",
+        code: API_ERROR_CODE.INVALID_TECHNICIAN,
+        status: HttpStatus.BAD_REQUEST,
+        details: { invalidTechnicianIds },
+      });
+    }
+
+    try {
+      const created = await this.ersSqlRepository.createStandaloneProject(dto, {
+        actorId: user.id,
+        entityId:
+          requester.entityId ?? this.config.get("glpi.defaultEntity", { infer: true }),
+        ticketType: TicketMapper.mapTypeToGlpi(
+          this.config.get("ers.ticketType", { infer: true }),
+        ),
+      });
+      const detail = await this.ersSqlRepository.findByProjectId(created.projectId);
+      if (!detail) throw new Error("created_project_not_found");
+
+      await this.registerHistorySafe({
+        projectId: detail.projectId,
+        actionType: "create",
+        summary: `Se creó el proyecto ERS "${detail.projectName}" y el ticket técnico #${created.ticketId}.`,
+        actorUserId: user.id,
+        metadata: { ticketId: created.ticketId, projectName: detail.projectName },
+        beforeState: null,
+        afterState: this.toHistoryState(detail),
+      });
+      return detail;
+    } catch (error) {
+      if (error instanceof BusinessException) throw error;
+      throw new BusinessException({
+        message: "No se pudo crear el ticket y proyecto ERS",
+        code: API_ERROR_CODE.UNKNOWN,
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+      });
+    }
+  }
 
   /**
    * Transacción 1: escala ticket a proyecto y cierra ticket al final.
