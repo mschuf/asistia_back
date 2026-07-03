@@ -258,6 +258,9 @@ export class ErsTechnicianResponseDto {
 
   @ApiProperty({ nullable: true, example: 8 })
   locationId!: number | null;
+
+  @ApiProperty({ nullable: true, example: "Casa Central" })
+  locationName!: string | null;
 }
 
 /** Respuesta paginada de técnicos. */

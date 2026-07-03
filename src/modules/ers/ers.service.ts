@@ -92,15 +92,25 @@ export class ErsService {
       });
     }
 
-    const allowedTechnicianIds = await this.resolveTechnicianIdsByLocation(dto.locationId);
-    const referencedTechnicianIds = this.uniquePositive([
-      ...(dto.approverId ? [dto.approverId] : []),
-      ...dto.teamMemberIds,
-      ...dto.tasks.flatMap((task) => (task.userId ? [task.userId] : [])),
+    const [siteTechnicianIds, activeTechnicianIds] = await Promise.all([
+      this.resolveTechnicianIdsByLocation(dto.locationId),
+      this.resolveTechnicianIdsByLocation(null),
     ]);
-    const invalidTechnicianIds = referencedTechnicianIds.filter(
-      (id) => !allowedTechnicianIds.has(id),
+    const teamMemberIds = this.uniquePositive(dto.teamMemberIds);
+    const validTeamMemberIds = new Set(
+      teamMemberIds.filter((id) => activeTechnicianIds.has(id)),
     );
+    const invalidTechnicianIds = this.uniquePositive([
+      ...(dto.approverId && !siteTechnicianIds.has(dto.approverId) ? [dto.approverId] : []),
+      ...teamMemberIds.filter((id) => !activeTechnicianIds.has(id)),
+      ...dto.tasks.flatMap((task) =>
+        task.userId &&
+        !siteTechnicianIds.has(task.userId) &&
+        !validTeamMemberIds.has(task.userId)
+          ? [task.userId]
+          : [],
+      ),
+    ]);
     if (invalidTechnicianIds.length > 0) {
       throw new BusinessException({
         message: "Algunos usuarios seleccionados no son técnicos válidos para la sede",
@@ -347,18 +357,25 @@ export class ErsService {
     query: ListErsTechniciansQueryDto,
   ): Promise<{ items: ErsTechnician[]; total: number; page: number; limit: number }> {
     const tiGroupIds = await this.resolveTiGroupIds();
-    const all = await this.usersTechniciansSqlRepository.listEligibleTechniciansForLocation(
-      tiGroupIds,
-      query.locationId ?? null,
+    const [all, locations] = await Promise.all([
+      this.usersTechniciansSqlRepository.listEligibleTechniciansForLocation(
+        tiGroupIds,
+        query.locationId ?? null,
+      ),
+      this.locationsSqlRepository.listLocationsWithActiveUsers(),
+    ]);
+    const locationNames = new Map(
+      locations.map((location) => [location.id, location.fullPath || location.name]),
     );
+    const activeTechnicians = all.filter((user) => user.isActive);
 
     const search = (query.search ?? "").trim().toLowerCase();
     const filtered = search
-      ? all.filter((user) => {
+      ? activeTechnicians.filter((user) => {
           const full = `${user.id} ${user.fullName} ${user.login}`.toLowerCase();
           return full.includes(search);
         })
-      : all;
+      : activeTechnicians;
 
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.max(1, query.limit ?? 50);
@@ -367,6 +384,7 @@ export class ErsService {
       id: user.id,
       fullName: user.fullName,
       locationId: user.locationId,
+      locationName: user.locationId ? locationNames.get(user.locationId) ?? null : null,
     }));
 
     return {
@@ -383,10 +401,12 @@ export class ErsService {
   ): Promise<{ items: ErsTechnician[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.max(1, query.limit ?? 50);
-    const result = await this.usersTechniciansSqlRepository.searchActiveUsers(
-      query.search,
-      page,
-      limit,
+    const [result, locations] = await Promise.all([
+      this.usersTechniciansSqlRepository.searchActiveUsers(query.search, page, limit),
+      this.locationsSqlRepository.listLocationsWithActiveUsers(),
+    ]);
+    const locationNames = new Map(
+      locations.map((location) => [location.id, location.fullPath || location.name]),
     );
 
     return {
@@ -394,6 +414,7 @@ export class ErsService {
         id: user.id,
         fullName: user.fullName,
         locationId: user.locationId,
+        locationName: user.locationId ? locationNames.get(user.locationId) ?? null : null,
       })),
       total: result.total,
       page,
