@@ -30,6 +30,9 @@ export interface GlpiRequestOptions {
   multipart?: boolean;
   skipAuth?: boolean;
   authorization?: string;
+  responseType?: AxiosRequestConfig["responseType"];
+  timeoutMs?: number;
+  retry?: boolean;
 }
 
 export interface GlpiResponse<T> {
@@ -164,7 +167,7 @@ export class GlpiClient {
             `message=${ax.message ?? "n/a"}`,
         );
       }
-      if (this.shouldRetry(error, attempt)) {
+      if (opts.retry !== false && this.shouldRetry(error, attempt)) {
         const delay = 1000 * 2 ** attempt;
         await this.sleep(delay);
         return this.executeWithRetry<T>(opts, attempt + 1);
@@ -228,7 +231,8 @@ export class GlpiClient {
       params: opts.query,
       data: opts.body,
       headers,
-      timeout,
+      timeout: opts.timeoutMs ?? timeout,
+      responseType: opts.responseType,
       validateStatus: (status) => status < 500,
     };
   }

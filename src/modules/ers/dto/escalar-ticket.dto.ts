@@ -34,6 +34,17 @@ export class EscalarTicketDto {
   @IsString()
   description?: string;
 
+  @ApiPropertyOptional({
+    example: 1,
+    minimum: 0,
+    description: "Sistema relacionado (projecttypes_id); 0 indica sin sistema relacionado",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  projectTypeId?: number;
+
   @ApiPropertyOptional({ example: "Afecta directamente a 250 usuarios de sede central." })
   @IsOptional()
   @IsString()

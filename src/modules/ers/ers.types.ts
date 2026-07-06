@@ -50,17 +50,28 @@ export interface ErsDetail {
   ticketId: number | null;
   requesterId: number | null;
   requesterName: string | null;
+  requesterSectors: string[];
   locationId: number | null;
   locationName: string | null;
   objective: string | null;
   description: string | null;
   impact: string | null;
+  requestType: string | null;
+  priority: number;
+  approved: boolean;
   approverId: number | null;
   approverName: string | null;
   projectStateId: number | null;
   projectStateName: string | null;
+  projectTypeId: number | null;
+  projectTypeName: string | null;
   progress: number;
+  createdAt: string | null;
   updatedAt: string | null;
+  ticketCreatedAt: string | null;
+  ticketStatus: number | null;
+  ticketSolvedAt: string | null;
+  ticketClosedAt: string | null;
   team: ErsTeamMember[];
   tasks: ErsTask[];
 }
@@ -79,6 +90,12 @@ export interface ErsTechnician {
   fullName: string;
   locationId: number | null;
   locationName: string | null;
+}
+
+/** Tipo de proyecto GLPI utilizado como sistema relacionado. */
+export interface ErsProjectType {
+  id: number;
+  name: string;
 }
 
 /** Contexto mínimo del ticket antes de escalar. */

@@ -24,6 +24,7 @@ import type {
   ErsMetricSlice,
   ErsMetrics,
   ErsProjectState,
+  ErsProjectType,
   ErsTask,
   ErsTeamMember,
   TicketEscalationContext,
@@ -43,6 +44,11 @@ interface ProjectStateRow extends RowDataPacket {
   name: string;
   color: string | null;
   is_finished: number;
+}
+
+interface ProjectTypeRow extends RowDataPacket {
+  id: number;
+  name: string;
 }
 
 interface ErsListRow extends RowDataPacket {
@@ -73,12 +79,26 @@ interface ErsMainDetailRow extends RowDataPacket {
   objective: string | null;
   description: string | null;
   impact: string | null;
+  request_type: string | null;
+  priority: number | null;
+  approved: string | null;
   approver_id: number | null;
   approver_name: string | null;
   project_state_id: number | null;
   project_state_name: string | null;
+  project_type_id: number | null;
+  project_type_name: string | null;
   progress: number | null;
+  created_at: string | null;
   updated_at: string | null;
+  ticket_created_at: string | null;
+  ticket_status: number | null;
+  ticket_solved_at: string | null;
+  ticket_closed_at: string | null;
+}
+
+interface ErsRequesterSectorRow extends RowDataPacket {
+  sector_name: string;
 }
 
 interface ErsTeamRow extends RowDataPacket {
@@ -191,7 +211,9 @@ export class ErsSqlRepository {
         description: input.description,
         entityId: context.entityId,
         projectStateId: this.toPositiveOrNull(input.projectStateId) ?? defaultStateId,
+        projectTypeId: this.toPositiveOrNull(input.projectTypeId),
         approverId: this.toPositiveOrNull(input.approverId),
+        priority: input.priority,
       });
 
       await this.insertTicketProjectLink(connection, ticketId, projectId);
@@ -199,6 +221,16 @@ export class ErsSqlRepository {
         projectId,
         actorId: context.actorId,
         impact: input.impact ?? "",
+      });
+      await this.syncRequestTypeNote(connection, {
+        projectId,
+        actorId: context.actorId,
+        requestType: input.requestType,
+      });
+      await this.syncApprovedNote(connection, {
+        projectId,
+        actorId: context.actorId,
+        approved: input.approved,
       });
       await this.replaceProjectTeam(connection, projectId, input.teamMemberIds);
       await this.replaceProjectTasks(connection, projectId, input.tasks);
@@ -291,6 +323,7 @@ export class ErsSqlRepository {
         description: input.description,
         entityId: context.entityId,
         projectStateId: defaultStateId,
+        projectTypeId: this.toPositiveOrNull(input.projectTypeId),
       });
 
       await this.insertTicketProjectLink(connection, context.ticketId, projectId);
@@ -861,10 +894,31 @@ export class ErsSqlRepository {
             ORDER BY n.id DESC
             LIMIT 1
           ) AS impact,
+          (
+            SELECT n.content
+            FROM glpi_notepads n
+            WHERE n.itemtype = 'Project'
+              AND n.items_id = p.id
+              AND LOWER(COALESCE(n.content, '')) LIKE '%[tipo]%'
+            ORDER BY n.id DESC
+            LIMIT 1
+          ) AS request_type,
+          p.priority,
+          (
+            SELECT n.content
+            FROM glpi_notepads n
+            WHERE n.itemtype = 'Project'
+              AND n.items_id = p.id
+              AND LOWER(COALESCE(n.content, '')) LIKE '%[aprobado]%'
+            ORDER BY n.id DESC
+            LIMIT 1
+          ) AS approved,
           appr.id AS approver_id,
           COALESCE(NULLIF(CONCAT(COALESCE(appr.firstname, ''), ' ', COALESCE(appr.realname, '')), ' '), appr.name) AS approver_name,
           ps.id AS project_state_id,
           ps.name AS project_state_name,
+          project_type.id AS project_type_id,
+          project_type.name AS project_type_name,
           ROUND(COALESCE((
             SELECT AVG(COALESCE(tk.percent_done, 0))
             FROM glpi_projecttasks tk
@@ -876,7 +930,12 @@ export class ErsSqlRepository {
                 OR LOWER(COALESCE(ts.name, '')) NOT REGEXP 'cancel|rechaz|anulad'
               )
           ), 0), 0) AS progress,
-          DATE_FORMAT(p.date_mod, '%Y-%m-%dT%H:%i:%s.000Z') AS updated_at
+          DATE_FORMAT(p.date_creation, '%Y-%m-%dT%H:%i:%s.000Z') AS created_at,
+          DATE_FORMAT(p.date_mod, '%Y-%m-%dT%H:%i:%s.000Z') AS updated_at,
+          DATE_FORMAT(t.date, '%Y-%m-%dT%H:%i:%s.000Z') AS ticket_created_at,
+          t.status AS ticket_status,
+          DATE_FORMAT(t.solvedate, '%Y-%m-%dT%H:%i:%s.000Z') AS ticket_solved_at,
+          DATE_FORMAT(t.closedate, '%Y-%m-%dT%H:%i:%s.000Z') AS ticket_closed_at
        FROM glpi_projects p
        LEFT JOIN glpi_itils_projects ip
          ON ip.id = (
@@ -902,6 +961,8 @@ export class ErsSqlRepository {
          ON appr.id = p.users_id
        LEFT JOIN glpi_projectstates ps
          ON ps.id = p.projectstates_id
+       LEFT JOIN glpi_projecttypes project_type
+         ON project_type.id = p.projecttypes_id
        WHERE p.id = :projectId
          AND COALESCE(p.is_deleted, 0) = 0
        LIMIT 1`,
@@ -909,6 +970,21 @@ export class ErsSqlRepository {
     );
     const main = mainRows[0];
     if (!main) return null;
+
+    const requesterId = this.toPositiveOrNull(main.requester_id);
+    const requesterSectorRows = requesterId
+      ? await this.mysql.query<ErsRequesterSectorRow>(
+          `SELECT DISTINCT
+              COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) AS sector_name
+           FROM glpi_groups_users gu
+           INNER JOIN glpi_groups g
+             ON g.id = gu.groups_id
+           WHERE gu.users_id = :requesterId
+             AND COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) IS NOT NULL
+           ORDER BY sector_name ASC`,
+          { requesterId } as QueryValues,
+        )
+      : [];
 
     const teamRows = await this.mysql.query<ErsTeamRow>(
       `SELECT
@@ -963,23 +1039,36 @@ export class ErsSqlRepository {
       planEndDate: this.toTextOrNull(row.plan_end_date),
     }));
 
+    const storedApproved = this.extractApproved(main.approved);
+
     return {
       projectId: Number(main.project_id),
       projectName: String(main.project_name ?? "").trim(),
       ticketId: this.toPositiveOrNull(main.ticket_id),
-      requesterId: this.toPositiveOrNull(main.requester_id),
+      requesterId,
       requesterName: this.toTextOrNull(main.requester_name),
+      requesterSectors: requesterSectorRows.map((row) => String(row.sector_name).trim()),
       locationId: this.toPositiveOrNull(main.location_id),
       locationName: this.toTextOrNull(main.location_name),
       objective: this.toTextOrNull(main.objective),
       description: this.toTextOrNull(main.description),
       impact: this.extractImpactText(main.impact),
+      requestType: this.extractRequestType(main.request_type),
+      priority: this.toPriority(main.priority),
+      approved: storedApproved ?? false,
       approverId: this.toPositiveOrNull(main.approver_id),
       approverName: this.toTextOrNull(main.approver_name),
       projectStateId: this.toPositiveOrNull(main.project_state_id),
       projectStateName: this.toTextOrNull(main.project_state_name),
+      projectTypeId: this.toPositiveOrNull(main.project_type_id),
+      projectTypeName: this.toTextOrNull(main.project_type_name),
       progress: this.clampPercent(main.progress),
+      createdAt: this.toTextOrNull(main.created_at),
       updatedAt: this.toTextOrNull(main.updated_at),
+      ticketCreatedAt: this.toTextOrNull(main.ticket_created_at),
+      ticketStatus: this.toPositiveOrNull(main.ticket_status),
+      ticketSolvedAt: this.toTextOrNull(main.ticket_solved_at),
+      ticketClosedAt: this.toTextOrNull(main.ticket_closed_at),
       team,
       tasks,
     };
@@ -1003,6 +1092,8 @@ export class ErsSqlRepository {
                   comment = COALESCE(:objective, comment),
                   users_id = :approverId,
                   projectstates_id = :projectStateId,
+                  projecttypes_id = COALESCE(:projectTypeId, projecttypes_id),
+                  priority = :priority,
                   date_mod = NOW()
               WHERE id = :projectId
                 AND COALESCE(is_deleted, 0) = 0`,
@@ -1015,6 +1106,11 @@ export class ErsSqlRepository {
         objective: this.toTextOrNull(input.objective),
         approverId: this.toPositiveOrNull(input.approverId) ?? 0,
         projectStateId: this.toPositiveOrNull(input.projectStateId) ?? 0,
+        projectTypeId:
+          input.projectTypeId === undefined
+            ? null
+            : this.toPositiveOrNull(input.projectTypeId) ?? 0,
+        priority: input.priority,
       } as QueryValues);
 
       await this.syncImpactNote(connection, {
@@ -1022,8 +1118,20 @@ export class ErsSqlRepository {
         actorId,
         impact: input.impact ?? "",
       });
+      await this.syncRequestTypeNote(connection, {
+        projectId,
+        actorId,
+        requestType: input.requestType,
+      });
+      await this.syncApprovedNote(connection, {
+        projectId,
+        actorId,
+        approved: input.approved,
+      });
       await this.replaceProjectTeam(connection, projectId, input.teamMemberIds);
-      await this.replaceProjectTasks(connection, projectId, input.tasks);
+      if (input.approved) {
+        await this.replaceProjectTasks(connection, projectId, input.tasks);
+      }
       return true;
     });
   }
@@ -1044,6 +1152,32 @@ export class ErsSqlRepository {
       color: this.toTextOrNull(row.color),
       isFinished: Number(row.is_finished) === 1,
     }));
+  }
+
+  /** Lista los sistemas relacionados configurados en GLPI. */
+  async listProjectTypes(): Promise<ErsProjectType[]> {
+    const rows = await this.mysql.query<ProjectTypeRow>(
+      `SELECT id, name
+       FROM glpi_projecttypes
+       WHERE COALESCE(name, '') <> ''
+       ORDER BY name ASC, id ASC`,
+    );
+    return rows.map((row) => ({
+      id: Number(row.id),
+      name: String(row.name ?? "").trim(),
+    }));
+  }
+
+  /** Comprueba que un sistema relacionado exista en GLPI. */
+  async projectTypeExists(projectTypeId: number): Promise<boolean> {
+    const rows = await this.mysql.query<ProjectIdRow>(
+      `SELECT id
+       FROM glpi_projecttypes
+       WHERE id = :projectTypeId
+       LIMIT 1`,
+      { projectTypeId } as QueryValues,
+    );
+    return rows.length > 0;
   }
 
   private async hasProjectLinkInTx(connection: PoolConnection, ticketId: number): Promise<boolean> {
@@ -1095,7 +1229,9 @@ export class ErsSqlRepository {
       description?: string;
       entityId: number;
       projectStateId: number | null;
+      projectTypeId?: number | null;
       approverId?: number | null;
+      priority?: number;
     },
   ): Promise<number> {
     const options: QueryOptions = {
@@ -1106,6 +1242,8 @@ export class ErsSqlRepository {
               comment,
               users_id,
               projectstates_id,
+              projecttypes_id,
+              priority,
               percent_done,
               entities_id,
               date,
@@ -1119,6 +1257,8 @@ export class ErsSqlRepository {
               :comment,
               :approverId,
               :projectStateId,
+              :projectTypeId,
+              :priority,
               0,
               :entityId,
               NOW(),
@@ -1133,7 +1273,9 @@ export class ErsSqlRepository {
       content: (input.description ?? "").trim(),
       comment: (input.objective ?? "").trim(),
       projectStateId: input.projectStateId ?? 0,
+      projectTypeId: input.projectTypeId ?? 0,
       approverId: input.approverId ?? 0,
+      priority: input.priority ?? 3,
       entityId: input.entityId,
     } as QueryValues);
 
@@ -1228,6 +1370,128 @@ export class ErsSqlRepository {
             WHERE n.itemtype = 'Project'
               AND n.items_id = :projectId
               AND LOWER(COALESCE(n.content, '')) LIKE '%[impacto]%'
+            ORDER BY n.id DESC
+            LIMIT 1`,
+      namedPlaceholders: true,
+    };
+    const [rows] = await connection.query<ImpactNoteRow[]>(options, { projectId } as QueryValues);
+    return this.toPositiveOrNull(rows[0]?.id);
+  }
+
+  private async syncRequestTypeNote(
+    connection: PoolConnection,
+    input: { projectId: number; actorId: number; requestType: string },
+  ): Promise<void> {
+    const content = this.wrapRequestType(input.requestType.trim());
+    const noteId = await this.findLatestRequestTypeNoteId(connection, input.projectId);
+    if (!noteId) {
+      const options: QueryOptions = {
+        sql: `INSERT INTO glpi_notepads (
+                users_id,
+                itemtype,
+                items_id,
+                date,
+                date_mod,
+                content
+              ) VALUES (
+                :actorId,
+                'Project',
+                :projectId,
+                NOW(),
+                NOW(),
+                :content
+              )`,
+        namedPlaceholders: true,
+      };
+      await connection.query(options, {
+        actorId: input.actorId,
+        projectId: input.projectId,
+        content,
+      } as QueryValues);
+      return;
+    }
+
+    const options: QueryOptions = {
+      sql: `UPDATE glpi_notepads
+            SET users_id = :actorId,
+                content = :content,
+                date_mod = NOW()
+            WHERE id = :noteId`,
+      namedPlaceholders: true,
+    };
+    await connection.query(options, {
+      actorId: input.actorId,
+      content,
+      noteId,
+    } as QueryValues);
+  }
+
+  private async findLatestRequestTypeNoteId(
+    connection: PoolConnection,
+    projectId: number,
+  ): Promise<number | null> {
+    const options: QueryOptions = {
+      sql: `SELECT n.id
+            FROM glpi_notepads n
+            WHERE n.itemtype = 'Project'
+              AND n.items_id = :projectId
+              AND LOWER(COALESCE(n.content, '')) LIKE '%[tipo]%'
+            ORDER BY n.id DESC
+            LIMIT 1`,
+      namedPlaceholders: true,
+    };
+    const [rows] = await connection.query<ImpactNoteRow[]>(options, { projectId } as QueryValues);
+    return this.toPositiveOrNull(rows[0]?.id);
+  }
+
+  private async syncApprovedNote(
+    connection: PoolConnection,
+    input: { projectId: number; actorId: number; approved: boolean },
+  ): Promise<void> {
+    const content = this.wrapApproved(input.approved);
+    const noteId = await this.findLatestApprovedNoteId(connection, input.projectId);
+    if (!noteId) {
+      const options: QueryOptions = {
+        sql: `INSERT INTO glpi_notepads (
+                users_id, itemtype, items_id, date, date_mod, content
+              ) VALUES (
+                :actorId, 'Project', :projectId, NOW(), NOW(), :content
+              )`,
+        namedPlaceholders: true,
+      };
+      await connection.query(options, {
+        actorId: input.actorId,
+        projectId: input.projectId,
+        content,
+      } as QueryValues);
+      return;
+    }
+
+    const options: QueryOptions = {
+      sql: `UPDATE glpi_notepads
+            SET users_id = :actorId,
+                content = :content,
+                date_mod = NOW()
+            WHERE id = :noteId`,
+      namedPlaceholders: true,
+    };
+    await connection.query(options, {
+      actorId: input.actorId,
+      content,
+      noteId,
+    } as QueryValues);
+  }
+
+  private async findLatestApprovedNoteId(
+    connection: PoolConnection,
+    projectId: number,
+  ): Promise<number | null> {
+    const options: QueryOptions = {
+      sql: `SELECT n.id
+            FROM glpi_notepads n
+            WHERE n.itemtype = 'Project'
+              AND n.items_id = :projectId
+              AND LOWER(COALESCE(n.content, '')) LIKE '%[aprobado]%'
             ORDER BY n.id DESC
             LIMIT 1`,
       namedPlaceholders: true,
@@ -1426,6 +1690,31 @@ export class ErsSqlRepository {
     return normalized.length > 0 ? normalized : null;
   }
 
+  private wrapRequestType(value: string): string {
+    return `[TIPO]${value}[/TIPO]`;
+  }
+
+  private extractRequestType(value: string | null): string | null {
+    if (!value) return null;
+    const match = value.match(/\[TIPO\]([\s\S]*?)\[\/TIPO\]/i);
+    if (!match) return this.toTextOrNull(value);
+    return this.toTextOrNull(match[1]);
+  }
+
+  private wrapApproved(value: boolean): string {
+    return `[APROBADO]${value ? "SI" : "NO"}[/APROBADO]`;
+  }
+
+  private extractApproved(value: string | null): boolean | null {
+    if (!value) return null;
+    const match = value.match(/\[APROBADO\]([\s\S]*?)\[\/APROBADO\]/i);
+    if (!match) return null;
+    const normalized = (match[1] ?? "").trim().toLocaleUpperCase("es");
+    if (normalized === "SI" || normalized === "SÍ") return true;
+    if (normalized === "NO") return false;
+    return null;
+  }
+
   private toPositiveOrNull(value: unknown): number | null {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
@@ -1441,6 +1730,12 @@ export class ErsSqlRepository {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 0;
     return Math.max(0, Math.min(100, Math.round(parsed)));
+  }
+
+  private toPriority(value: unknown): number {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 6) return 3;
+    return parsed;
   }
 
   private uniquePositive(values: number[]): number[] {

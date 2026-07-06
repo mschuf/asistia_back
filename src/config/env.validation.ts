@@ -136,6 +136,10 @@ class EnvSchema {
   ERS_TICKET_TYPE?: string;
 
   @IsOptional()
+  @IsString()
+  ERS_REQUEST_TYPES?: string;
+
+  @IsOptional()
   @IsIn(["api", "sql"])
   GLPI_HISTORY_SOURCE?: string;
 

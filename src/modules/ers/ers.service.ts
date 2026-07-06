@@ -23,7 +23,7 @@ import type { ListErsEligibleTicketsQueryDto } from "./dto/list-ers-eligible-tic
 import type { ListErsTechniciansQueryDto } from "./dto/list-ers-technicians-query.dto";
 import type { UpdateErsDto } from "./dto/update-ers.dto";
 import { ErsSqlRepository } from "./repositories/ers.sql-repository";
-import type { ErsDetail, ErsProjectState, ErsTask, ErsTechnician } from "./ers.types";
+import type { ErsDetail, ErsProjectState, ErsProjectType, ErsTask, ErsTechnician } from "./ers.types";
 
 /** Evento de historial derivado del diff de tareas. */
 interface ErsTaskHistoryEvent {
@@ -55,6 +55,14 @@ export class ErsService {
         status: HttpStatus.FORBIDDEN,
       });
     }
+    dto.requestType = this.validateRequestType(dto.requestType);
+    if (!dto.approved && dto.tasks.length > 0) {
+      throw new BusinessException({
+        message: "El proyecto debe estar aprobado para crear tareas",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
     if (
       dto.tasks.some(
         (task) =>
@@ -72,6 +80,8 @@ export class ErsService {
         status: HttpStatus.BAD_REQUEST,
       });
     }
+
+    await this.assertProjectTypeValid(dto.projectTypeId);
 
     const [requester, locations] = await Promise.all([
       this.usersTechniciansSqlRepository.findById(dto.requesterId),
@@ -101,7 +111,9 @@ export class ErsService {
       teamMemberIds.filter((id) => activeTechnicianIds.has(id)),
     );
     const invalidTechnicianIds = this.uniquePositive([
-      ...(dto.approverId && !siteTechnicianIds.has(dto.approverId) ? [dto.approverId] : []),
+      ...(dto.approverId && dto.approverId !== user.id && !siteTechnicianIds.has(dto.approverId)
+        ? [dto.approverId]
+        : []),
       ...teamMemberIds.filter((id) => !activeTechnicianIds.has(id)),
       ...dto.tasks.flatMap((task) =>
         task.userId &&
@@ -184,12 +196,14 @@ export class ErsService {
       });
     }
 
-    const allowedResponsibleIds = await this.resolveTechnicianIdsByLocation(context.locationId);
+    await this.assertProjectTypeValid(dto.projectTypeId);
+
+    const allowedResponsibleIds = await this.resolveTechnicianIdsByLocation(null);
     const requestedResponsibleIds = this.uniquePositive(dto.responsibleIds);
     const invalidResponsible = requestedResponsibleIds.filter((id) => !allowedResponsibleIds.has(id));
     if (invalidResponsible.length > 0) {
       throw new BusinessException({
-        message: "Algunos responsables no son técnicos válidos para la sede del solicitante",
+        message: "Algunos responsables no son técnicos activos válidos",
         code: API_ERROR_CODE.INVALID_TECHNICIAN,
         status: HttpStatus.BAD_REQUEST,
         details: { invalidResponsibleIds: invalidResponsible },
@@ -314,12 +328,23 @@ export class ErsService {
       });
     }
 
+    dto.requestType = this.validateRequestType(dto.requestType);
+
+    await this.assertProjectTypeValid(dto.projectTypeId);
+
     const uniqueTeamIds = this.uniquePositive(dto.teamMemberIds);
     if (uniqueTeamIds.length !== dto.teamMemberIds.length) {
       dto.teamMemberIds = uniqueTeamIds;
     }
 
     const previousDetail = await this.ersSqlRepository.findByProjectId(projectId);
+    if (!dto.approved && dto.tasks.length > (previousDetail?.tasks.length ?? 0)) {
+      throw new BusinessException({
+        message: "El proyecto debe estar aprobado para crear tareas",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
 
     const ok = await this.ersSqlRepository.saveTiEdition(projectId, user.id, dto);
     if (!ok) {
@@ -346,6 +371,16 @@ export class ErsService {
    */
   async listProjectStates(): Promise<ErsProjectState[]> {
     return this.ersSqlRepository.listProjectStates();
+  }
+
+  /** Lista los tipos de proyecto disponibles como sistemas relacionados. */
+  async listProjectTypes(): Promise<ErsProjectType[]> {
+    return this.ersSqlRepository.listProjectTypes();
+  }
+
+  /** Lista tipos de requerimiento configurados para ERS. */
+  async listRequestTypes(): Promise<string[]> {
+    return this.config.get("ers.requestTypes", { infer: true });
   }
 
   /**
@@ -514,8 +549,12 @@ export class ErsService {
     if ((previous.objective ?? "") !== (current.objective ?? "")) changes.push("objetivo");
     if ((previous.description ?? "") !== (current.description ?? "")) changes.push("descripción");
     if ((previous.impact ?? "") !== (current.impact ?? "")) changes.push("impacto");
+    if ((previous.requestType ?? "") !== (current.requestType ?? "")) changes.push("tipo de requerimiento");
+    if (previous.priority !== current.priority) changes.push("prioridad TI");
+    if (previous.approved !== current.approved) changes.push("aprobación");
     if (previous.approverId !== current.approverId) changes.push("aprobador");
     if (previous.projectStateId !== current.projectStateId) changes.push("estado");
+    if (previous.projectTypeId !== current.projectTypeId) changes.push("sistema relacionado");
     if (previous.team.length !== current.team.length) changes.push("equipo");
 
     if (changes.length === 0) {
@@ -603,6 +642,32 @@ export class ErsService {
   private normalizeOptionalDate(value: string | null | undefined): string | null {
     if (!value) return null;
     return value.slice(0, 10);
+  }
+
+  private async assertProjectTypeValid(projectTypeId: number | undefined): Promise<void> {
+    const normalizedId = Number(projectTypeId ?? 0);
+    if (normalizedId === 0) return;
+    if (await this.ersSqlRepository.projectTypeExists(normalizedId)) return;
+
+    throw new BusinessException({
+      message: "El sistema relacionado seleccionado no existe",
+      code: API_ERROR_CODE.VALIDATION,
+      status: HttpStatus.BAD_REQUEST,
+      details: { projectTypeId: normalizedId },
+    });
+  }
+
+  private validateRequestType(value: string): string {
+    const normalized = value.trim();
+    const allowed = this.config.get("ers.requestTypes", { infer: true });
+    if (allowed.includes(normalized)) return normalized;
+
+    throw new BusinessException({
+      message: "El tipo de requerimiento seleccionado no es válido",
+      code: API_ERROR_CODE.VALIDATION,
+      status: HttpStatus.BAD_REQUEST,
+      details: { requestType: normalized },
+    });
   }
 
   private toHistoryState(value: object | null | undefined): Record<string, unknown> | null {

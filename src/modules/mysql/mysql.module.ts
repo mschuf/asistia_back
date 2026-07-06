@@ -36,7 +36,7 @@ import { MysqlService } from "./mysql.service";
           connectionLimit,
           connectTimeout,
           namedPlaceholders: true,
-          timezone: "Z",
+          timezone: "-03:00",
         });
       },
     },

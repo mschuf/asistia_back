@@ -4,7 +4,7 @@
  */
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsISO8601, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from "class-validator";
 
 /** Ítem de tarea de proyecto enviado por la UI TI. */
 export class ErsTaskInputDto {
@@ -53,6 +53,24 @@ export class ErsTaskInputDto {
 
 /** Guardado único de la vista TI. */
 export class UpdateErsDto {
+  @ApiProperty({ example: false, description: "Indica si el proyecto fue aprobado y puede crear tareas" })
+  @IsBoolean()
+  approved!: boolean;
+
+  @ApiProperty({ example: "Mejora", description: "Tipo de requerimiento configurado para ERS" })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  @Matches(/\S/, { message: "requestType must contain visible characters" })
+  requestType!: string;
+
+  @ApiProperty({ example: 3, minimum: 1, maximum: 6, description: "Prioridad TI (glpi_projects.priority)" })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(6)
+  priority!: number;
+
   @ApiPropertyOptional({ example: "Portal RRHH", description: "Nombre visible del proyecto" })
   @IsOptional()
   @IsString()
@@ -88,6 +106,17 @@ export class UpdateErsDto {
   @IsInt()
   @Min(1)
   projectStateId?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    minimum: 0,
+    description: "Sistema relacionado (projecttypes_id); 0 elimina la relación",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  projectTypeId?: number;
 
   @ApiProperty({
     type: Number,

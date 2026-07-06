@@ -82,6 +82,7 @@ export interface AppConfig {
   };
   ers: {
     ticketType: "incident" | "request";
+    requestTypes: string[];
   };
   mysql: {
     host: string;
@@ -388,6 +389,17 @@ export function buildConfig(): AppConfig {
         readString("ERS_TICKET_TYPE", "request").toLowerCase() === "incident"
           ? "incident"
           : "request",
+      requestTypes: Array.from(
+        new Set(
+          readList("ERS_REQUEST_TYPES", [
+            "Nueva Funcionalidad",
+            "Corrección",
+            "Mejora",
+            "Reporte",
+            "Seguridad",
+          ]),
+        ),
+      ),
     },
     mysql: {
       host: readString("MYSQL_HOST", ""),

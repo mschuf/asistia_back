@@ -193,6 +193,9 @@ export class ErsDetailResponseDto {
   @ApiProperty({ nullable: true, example: "Ana Pérez" })
   requesterName!: string | null;
 
+  @ApiProperty({ type: [String], example: ["Administración", "Finanzas"] })
+  requesterSectors!: string[];
+
   @ApiProperty({ nullable: true, example: 8 })
   locationId!: number | null;
 
@@ -208,6 +211,15 @@ export class ErsDetailResponseDto {
   @ApiProperty({ nullable: true, example: "Impacta a 250 colaboradores." })
   impact!: string | null;
 
+  @ApiProperty({ nullable: true, example: "Nueva Funcionalidad" })
+  requestType!: string | null;
+
+  @ApiProperty({ example: 3, minimum: 1, maximum: 6 })
+  priority!: number;
+
+  @ApiProperty({ example: true })
+  approved!: boolean;
+
   @ApiProperty({ nullable: true, example: 80 })
   approverId!: number | null;
 
@@ -220,11 +232,32 @@ export class ErsDetailResponseDto {
   @ApiProperty({ nullable: true, example: "En curso" })
   projectStateName!: string | null;
 
+  @ApiProperty({ nullable: true, example: 1 })
+  projectTypeId!: number | null;
+
+  @ApiProperty({ nullable: true, example: "SAP" })
+  projectTypeName!: string | null;
+
   @ApiProperty({ example: 65 })
   progress!: number;
 
+  @ApiProperty({ nullable: true, example: "2026-06-30T13:00:00.000Z" })
+  createdAt!: string | null;
+
   @ApiProperty({ nullable: true, example: "2026-06-26T13:00:00.000Z" })
   updatedAt!: string | null;
+
+  @ApiProperty({ nullable: true, example: "2026-06-29T10:15:00.000Z" })
+  ticketCreatedAt!: string | null;
+
+  @ApiProperty({ nullable: true, example: 6, minimum: 1, maximum: 6 })
+  ticketStatus!: number | null;
+
+  @ApiProperty({ nullable: true, example: "2026-06-30T12:45:00.000Z" })
+  ticketSolvedAt!: string | null;
+
+  @ApiProperty({ nullable: true, example: "2026-06-30T13:00:00.000Z" })
+  ticketClosedAt!: string | null;
 
   @ApiProperty({ type: () => [ErsTeamMemberResponseDto] })
   team!: ErsTeamMemberResponseDto[];
@@ -261,6 +294,15 @@ export class ErsTechnicianResponseDto {
 
   @ApiProperty({ nullable: true, example: "Casa Central" })
   locationName!: string | null;
+}
+
+/** Tipo de proyecto disponible como sistema relacionado. */
+export class ErsProjectTypeResponseDto {
+  @ApiProperty({ example: 1 })
+  id!: number;
+
+  @ApiProperty({ example: "SAP" })
+  name!: string;
 }
 
 /** Respuesta paginada de técnicos. */

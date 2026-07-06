@@ -7,10 +7,12 @@ import { Type } from "class-transformer";
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -20,6 +22,10 @@ import { ErsTaskInputDto } from "./update-ers.dto";
 
 /** Estado completo requerido por la pantalla de alta de ERS. */
 export class CreateErsDto {
+  @ApiProperty({ example: false, description: "Indica si el proyecto fue aprobado y puede crear tareas" })
+  @IsBoolean()
+  approved!: boolean;
+
   @ApiProperty({ example: 188, minimum: 1 })
   @Type(() => Number)
   @IsInt()
@@ -51,6 +57,20 @@ export class CreateErsDto {
   @Matches(/\S/, { message: "description must contain visible characters" })
   description!: string;
 
+  @ApiProperty({ example: "Nueva Funcionalidad", description: "Tipo de requerimiento configurado para ERS" })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  @Matches(/\S/, { message: "requestType must contain visible characters" })
+  requestType!: string;
+
+  @ApiProperty({ example: 3, minimum: 1, maximum: 6, description: "Prioridad TI (glpi_projects.priority)" })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(6)
+  priority!: number;
+
   @ApiPropertyOptional({ example: "Impacta a 250 colaboradores." })
   @IsOptional()
   @IsString()
@@ -69,6 +89,17 @@ export class CreateErsDto {
   @IsInt()
   @Min(1)
   projectStateId?: number;
+
+  @ApiPropertyOptional({
+    example: 1,
+    minimum: 0,
+    description: "Sistema relacionado (projecttypes_id); 0 indica sin sistema relacionado",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  projectTypeId?: number;
 
   @ApiProperty({ type: Number, isArray: true, example: [80, 81] })
   @IsArray()
