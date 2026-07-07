@@ -13,6 +13,7 @@ export const ERS_SORT_BY = [
   "projectName",
   "ticketId",
   "requesterName",
+  "requesterArea",
   "locationName",
   "stateName",
   "progress",

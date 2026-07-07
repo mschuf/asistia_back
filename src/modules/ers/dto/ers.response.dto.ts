@@ -21,6 +21,9 @@ export class ErsListItemResponseDto {
   @ApiProperty({ example: "Ana Pérez", nullable: true })
   requesterName!: string | null;
 
+  @ApiProperty({ example: "Administracion", nullable: true })
+  requesterArea!: string | null;
+
   @ApiProperty({ example: 8, nullable: true })
   locationId!: number | null;
 

@@ -57,6 +57,7 @@ interface ErsListRow extends RowDataPacket {
   ticket_id: number | null;
   requester_id: number | null;
   requester_name: string | null;
+  requester_area: string | null;
   location_id: number | null;
   location_name: string | null;
   approver_id: number | null;
@@ -169,6 +170,7 @@ const ERS_SORT_SQL: Record<string, string> = {
   projectName: "p.name",
   ticketId: "ip.items_id",
   requesterName: "requester_name",
+  requesterArea: "requester_area",
   locationName: "location_name",
   stateName: "project_state_name",
   progress: "progress",
@@ -394,6 +396,7 @@ export class ErsSqlRepository {
           OR LOWER(COALESCE(p.name, '')) LIKE :search
           OR CAST(ip.items_id AS CHAR) LIKE :search
           OR LOWER(COALESCE(CONCAT(req.firstname, ' ', req.realname), req.name, '')) LIKE :search
+          OR LOWER(COALESCE(req_area.requester_area, '')) LIKE :search
           OR LOWER(COALESCE(loc.completename, loc.name, '')) LIKE :search
           OR LOWER(COALESCE(ps.name, '')) LIKE :search
           OR CAST(
@@ -467,6 +470,20 @@ export class ErsSqlRepository {
         AND req_tu.type = 1
        LEFT JOIN glpi_users req
          ON req.id = req_tu.users_id
+       LEFT JOIN (
+         SELECT
+           gu.users_id,
+           GROUP_CONCAT(
+             DISTINCT COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), ''))
+             ORDER BY COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) ASC
+             SEPARATOR ', '
+           ) AS requester_area
+         FROM glpi_groups_users gu
+         INNER JOIN glpi_groups g
+           ON g.id = gu.groups_id
+         WHERE COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) IS NOT NULL
+         GROUP BY gu.users_id
+       ) req_area ON req_area.users_id = req.id
        LEFT JOIN glpi_locations loc
          ON loc.id = t.locations_id
        LEFT JOIN glpi_users appr
@@ -485,6 +502,7 @@ export class ErsSqlRepository {
           ip.items_id AS ticket_id,
           req.id AS requester_id,
           COALESCE(NULLIF(CONCAT(COALESCE(req.firstname, ''), ' ', COALESCE(req.realname, '')), ' '), req.name) AS requester_name,
+          req_area.requester_area AS requester_area,
           loc.id AS location_id,
           COALESCE(loc.completename, loc.name) AS location_name,
           appr.id AS approver_id,
@@ -519,6 +537,20 @@ export class ErsSqlRepository {
         AND req_tu.type = 1
        LEFT JOIN glpi_users req
          ON req.id = req_tu.users_id
+       LEFT JOIN (
+         SELECT
+           gu.users_id,
+           GROUP_CONCAT(
+             DISTINCT COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), ''))
+             ORDER BY COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) ASC
+             SEPARATOR ', '
+           ) AS requester_area
+         FROM glpi_groups_users gu
+         INNER JOIN glpi_groups g
+           ON g.id = gu.groups_id
+         WHERE COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) IS NOT NULL
+         GROUP BY gu.users_id
+       ) req_area ON req_area.users_id = req.id
        LEFT JOIN glpi_locations loc
          ON loc.id = t.locations_id
        LEFT JOIN glpi_users appr
@@ -531,7 +563,7 @@ export class ErsSqlRepository {
          ON pts.id = pt.projectstates_id
        ${whereSql}
        GROUP BY
-         p.id, p.name, ip.items_id, req.id, requester_name, loc.id, location_name,
+         p.id, p.name, ip.items_id, req.id, requester_name, requester_area, loc.id, location_name,
          appr.id, approver_name, ps.id, ps.name, p.date_creation, p.date_mod
        ORDER BY ${sortColumn} ${sortDirection}
        LIMIT :limit OFFSET :offset`,
@@ -549,6 +581,7 @@ export class ErsSqlRepository {
         ticketId: Number(row.ticket_id),
         requesterId: this.toPositiveOrNull(row.requester_id),
         requesterName: this.toTextOrNull(row.requester_name),
+        requesterArea: this.toTextOrNull(row.requester_area),
         locationId: this.toPositiveOrNull(row.location_id),
         locationName: this.toTextOrNull(row.location_name),
         approverId: this.toPositiveOrNull(row.approver_id),
@@ -827,6 +860,20 @@ export class ErsSqlRepository {
             AND req_first.type = 1
         )
       LEFT JOIN glpi_users req ON req.id = req_tu.users_id
+      LEFT JOIN (
+        SELECT
+          gu.users_id,
+          GROUP_CONCAT(
+            DISTINCT COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), ''))
+            ORDER BY COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) ASC
+            SEPARATOR ', '
+          ) AS requester_area
+        FROM glpi_groups_users gu
+        INNER JOIN glpi_groups g
+          ON g.id = gu.groups_id
+        WHERE COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) IS NOT NULL
+        GROUP BY gu.users_id
+      ) req_area ON req_area.users_id = req.id
       LEFT JOIN glpi_locations loc ON loc.id = t.locations_id
       LEFT JOIN glpi_users appr ON appr.id = p.users_id
       LEFT JOIN glpi_projectstates ps ON ps.id = p.projectstates_id`;
@@ -849,6 +896,7 @@ export class ErsSqlRepository {
           ip.items_id AS ticket_id,
           req.id AS requester_id,
           COALESCE(NULLIF(CONCAT(COALESCE(req.firstname, ''), ' ', COALESCE(req.realname, '')), ' '), req.name) AS requester_name,
+          req_area.requester_area AS requester_area,
           loc.id AS location_id,
           COALESCE(loc.completename, loc.name) AS location_name,
           appr.id AS approver_id,
@@ -888,6 +936,7 @@ export class ErsSqlRepository {
         ticketId: this.toPositiveOrNull(row.ticket_id),
         requesterId: this.toPositiveOrNull(row.requester_id),
         requesterName: this.toTextOrNull(row.requester_name),
+        requesterArea: this.toTextOrNull(row.requester_area),
         locationId: this.toPositiveOrNull(row.location_id),
         locationName: this.toTextOrNull(row.location_name),
         approverId: this.toPositiveOrNull(row.approver_id),

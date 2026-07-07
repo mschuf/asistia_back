@@ -12,6 +12,7 @@ export interface ErsListItem {
   ticketId: number | null;
   requesterId: number | null;
   requesterName: string | null;
+  requesterArea: string | null;
   locationId: number | null;
   locationName: string | null;
   approverId: number | null;
