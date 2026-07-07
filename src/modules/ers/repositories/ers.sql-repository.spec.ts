@@ -77,4 +77,75 @@ describe("ErsSqlRepository.findByProjectId", () => {
     expect(countSql).toContain("glpi_projectteams team_scope");
     expect(params).toMatchObject({ assignedMemberId: 25 });
   });
+
+  it("filtra proyectos ERS sin aprobar", async () => {
+    mysql.query
+      .mockResolvedValueOnce([{ total: 0 }])
+      .mockResolvedValueOnce([]);
+
+    await repository.listAllProjects(
+      { page: 1, limit: 15, lifecycle: "active", approved: "unapproved" },
+      { userId: 25, role: "technician" },
+    );
+
+    const countSql = String(mysql.query.mock.calls[0][0]);
+    expect(countSql).toContain("COALESCE(ps.is_finished, 0) = 0");
+    expect(countSql).toContain("NOT EXISTS");
+    expect(countSql).toContain("LIKE '%[aprobado]si%'");
+  });
+
+  it("mapea indicadores por sistema y por todos los grupos del solicitante", async () => {
+    mysql.query
+      .mockResolvedValueOnce([
+        {
+          group_active: 4,
+          group_active_month: 2,
+          group_total_month: 4,
+          site_active: 1,
+          site_active_month: 1,
+          site_total_month: 2,
+          mine_active: 3,
+          mine_active_month: 1,
+          mine_total_month: 2,
+          unapproved_active: 2,
+          unapproved_active_month: 1,
+          unapproved_total_month: 2,
+        },
+      ])
+      .mockResolvedValueOnce([
+        { location_id: 3, location_name: "Casa Central", active_count: 2 },
+      ])
+      .mockResolvedValueOnce([
+        { project_type_id: 4, project_type_name: "SAP", active_count: 3 },
+        { project_type_id: null, project_type_name: null, active_count: 1 },
+      ])
+      .mockResolvedValueOnce([
+        { area_name: "Administracion", active_count: 2 },
+        { area_name: "Finanzas", active_count: 2 },
+        { area_name: null, active_count: 1 },
+      ]);
+
+    await expect(repository.getMetrics(25, 3)).resolves.toMatchObject({
+      activeBySystem: [
+        { projectTypeId: 4, name: "SAP", active: 3 },
+        { projectTypeId: null, name: "Sin sistema", active: 1 },
+      ],
+      activeByArea: [
+        { name: "Administracion", active: 2 },
+        { name: "Finanzas", active: 2 },
+        { name: "Sin área/grupo", active: 1 },
+      ],
+      unapproved: {
+        active: 2,
+        activeThisMonth: 1,
+        totalThisMonth: 2,
+        activePercent: 50,
+      },
+    });
+
+    const areaSql = String(mysql.query.mock.calls[3][0]);
+    expect(areaSql).toContain("glpi_groups_users gu");
+    expect(areaSql).toContain("GROUP BY area_name");
+    expect(areaSql).not.toContain("SELECT MIN(gu");
+  });
 });

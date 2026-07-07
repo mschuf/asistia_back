@@ -29,6 +29,10 @@ export const ERS_SORT_ORDER = ["asc", "desc"] as const;
 
 export type ErsSortOrder = (typeof ERS_SORT_ORDER)[number];
 
+export const ERS_APPROVAL_FILTER = ["approved", "unapproved"] as const;
+
+export type ErsApprovalFilter = (typeof ERS_APPROVAL_FILTER)[number];
+
 /** Query params de `GET /ers`. */
 export class ListErsQueryDto extends PaginationDto {
   @ApiPropertyOptional({ minimum: 1, maximum: 50_000, default: 15 })
@@ -94,6 +98,11 @@ export class ListErsQueryDto extends PaginationDto {
   @IsOptional()
   @IsIn(['active', 'finished'])
   lifecycle?: 'active' | 'finished';
+
+  @ApiPropertyOptional({ enum: ERS_APPROVAL_FILTER })
+  @IsOptional()
+  @IsIn(ERS_APPROVAL_FILTER)
+  approved?: ErsApprovalFilter;
 
   @ApiPropertyOptional({ type: Number })
   @IsOptional()

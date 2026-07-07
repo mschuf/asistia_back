@@ -147,11 +147,25 @@ interface ErsMetricsRow extends RowDataPacket {
   mine_active: number | null;
   mine_active_month: number | null;
   mine_total_month: number | null;
+  unapproved_active: number | null;
+  unapproved_active_month: number | null;
+  unapproved_total_month: number | null;
 }
 
 interface ErsLocationMetricRow extends RowDataPacket {
   location_id: number | null;
   location_name: string | null;
+  active_count: number;
+}
+
+interface ErsSystemMetricRow extends RowDataPacket {
+  project_type_id: number | null;
+  project_type_name: string | null;
+  active_count: number;
+}
+
+interface ErsAreaMetricRow extends RowDataPacket {
+  area_name: string | null;
   active_count: number;
 }
 
@@ -454,6 +468,12 @@ export class ErsSqlRepository {
       params.projectStateId = query.projectStateId;
     }
 
+    if (query.approved === "approved") {
+      whereParts.push(this.approvedYesExistsSql("p.id"));
+    } else if (query.approved === "unapproved") {
+      whereParts.push(`NOT ${this.approvedYesExistsSql("p.id")}`);
+    }
+
     const whereSql = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
     const sortColumn = ERS_SORT_SQL[query.sortBy ?? "updatedAt"] ?? ERS_SORT_SQL.updatedAt;
     const sortDirection = query.sortOrder === "asc" ? "ASC" : "DESC";
@@ -615,6 +635,7 @@ export class ErsSqlRepository {
       LEFT JOIN glpi_locations loc ON loc.id = t.locations_id
       LEFT JOIN glpi_projectstates ps ON ps.id = p.projectstates_id`;
     const activeSql = 'COALESCE(ps.is_finished, 0) = 0';
+    const unapprovedSql = `NOT ${this.approvedYesExistsSql("p.id")}`;
     const monthSql = `YEAR(p.date_creation) = YEAR(UTC_TIMESTAMP())
       AND MONTH(p.date_creation) = MONTH(UTC_TIMESTAMP())`;
     const rows = await this.mysql.query<ErsMetricsRow>(
@@ -636,7 +657,10 @@ export class ErsSqlRepository {
           SUM(CASE WHEN ${monthSql} AND EXISTS (
             SELECT 1 FROM glpi_projectteams mine
             WHERE mine.projects_id = p.id AND mine.itemtype = 'User' AND mine.items_id = :userId
-          ) THEN 1 ELSE 0 END) AS mine_total_month
+          ) THEN 1 ELSE 0 END) AS mine_total_month,
+          SUM(CASE WHEN ${activeSql} AND ${unapprovedSql} THEN 1 ELSE 0 END) AS unapproved_active,
+          SUM(CASE WHEN ${activeSql} AND ${unapprovedSql} AND ${monthSql} THEN 1 ELSE 0 END) AS unapproved_active_month,
+          SUM(CASE WHEN ${unapprovedSql} AND ${monthSql} THEN 1 ELSE 0 END) AS unapproved_total_month
        FROM glpi_projects p
        ${canonicalTicketJoin}
        WHERE COALESCE(p.is_deleted, 0) = 0`,
@@ -653,6 +677,48 @@ export class ErsSqlRepository {
          AND ${activeSql}
        GROUP BY loc.id, location_name
        ORDER BY active_count DESC, location_name ASC`,
+    );
+    const systemRows = await this.mysql.query<ErsSystemMetricRow>(
+      `SELECT
+          project_type.id AS project_type_id,
+          COALESCE(NULLIF(TRIM(project_type.name), ''), 'Sin sistema') AS project_type_name,
+          COUNT(*) AS active_count
+       FROM glpi_projects p
+       ${canonicalTicketJoin}
+       LEFT JOIN glpi_projecttypes project_type
+         ON project_type.id = p.projecttypes_id
+       WHERE COALESCE(p.is_deleted, 0) = 0
+         AND ${activeSql}
+       GROUP BY project_type.id, project_type_name
+       ORDER BY active_count DESC, project_type_name ASC`,
+    );
+    const areaRows = await this.mysql.query<ErsAreaMetricRow>(
+      `SELECT
+          COALESCE(requester_area.area_name, 'Sin área/grupo') AS area_name,
+          COUNT(*) AS active_count
+       FROM glpi_projects p
+       ${canonicalTicketJoin}
+       LEFT JOIN glpi_tickets_users req_tu
+         ON req_tu.id = (
+          SELECT MIN(req_first.id)
+          FROM glpi_tickets_users req_first
+          WHERE req_first.tickets_id = t.id
+            AND req_first.type = 1
+         )
+       LEFT JOIN (
+         SELECT DISTINCT
+           gu.users_id,
+           COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) AS area_name
+         FROM glpi_groups_users gu
+         INNER JOIN glpi_groups g
+           ON g.id = gu.groups_id
+         WHERE COALESCE(NULLIF(TRIM(g.completename), ''), NULLIF(TRIM(g.name), '')) IS NOT NULL
+       ) requester_area
+         ON requester_area.users_id = req_tu.users_id
+       WHERE COALESCE(p.is_deleted, 0) = 0
+         AND ${activeSql}
+       GROUP BY area_name
+       ORDER BY active_count DESC, area_name ASC`,
     );
     const row = rows[0];
     const slice = (active: unknown, activeMonth: unknown, totalMonth: unknown): ErsMetricSlice => {
@@ -672,9 +738,19 @@ export class ErsSqlRepository {
         ? null
         : slice(row?.site_active, row?.site_active_month, row?.site_total_month),
       myProjects: slice(row?.mine_active, row?.mine_active_month, row?.mine_total_month),
+      unapproved: slice(row?.unapproved_active, row?.unapproved_active_month, row?.unapproved_total_month),
       activeByLocation: locationRows.map((item) => ({
         locationId: this.toPositiveOrNull(item.location_id),
         name: this.toTextOrNull(item.location_name) ?? 'Sin sede',
+        active: Number(item.active_count ?? 0),
+      })),
+      activeBySystem: systemRows.map((item) => ({
+        projectTypeId: this.toPositiveOrNull(item.project_type_id),
+        name: this.toTextOrNull(item.project_type_name) ?? 'Sin sistema',
+        active: Number(item.active_count ?? 0),
+      })),
+      activeByArea: areaRows.map((item) => ({
+        name: this.toTextOrNull(item.area_name) ?? 'Sin área/grupo',
         active: Number(item.active_count ?? 0),
       })),
     };
@@ -841,6 +917,11 @@ export class ErsSqlRepository {
         )`,
       );
       params.assignedMemberId = query.assignedMemberId;
+    }
+    if (query.approved === "approved") {
+      whereParts.push(this.approvedYesExistsSql("p.id"));
+    } else if (query.approved === "unapproved") {
+      whereParts.push(`NOT ${this.approvedYesExistsSql("p.id")}`);
     }
 
     const canonicalTicketJoin = `
@@ -1785,6 +1866,16 @@ export class ErsSqlRepository {
 
   private wrapApproved(value: boolean): string {
     return `[APROBADO]${value ? "SI" : "NO"}[/APROBADO]`;
+  }
+
+  private approvedYesExistsSql(projectAlias: string): string {
+    return `EXISTS (
+      SELECT 1
+      FROM glpi_notepads approved_yes
+      WHERE approved_yes.itemtype = 'Project'
+        AND approved_yes.items_id = ${projectAlias}
+        AND LOWER(COALESCE(approved_yes.content, '')) LIKE '%[aprobado]si%'
+    )`;
   }
 
   private extractApproved(value: string | null): boolean | null {

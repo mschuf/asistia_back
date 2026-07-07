@@ -95,6 +95,25 @@ export class ErsActiveByLocationResponseDto {
   active!: number;
 }
 
+export class ErsActiveBySystemResponseDto {
+  @ApiProperty({ example: 1, nullable: true })
+  projectTypeId!: number | null;
+
+  @ApiProperty({ example: "SAP" })
+  name!: string;
+
+  @ApiProperty({ example: 6 })
+  active!: number;
+}
+
+export class ErsActiveByAreaResponseDto {
+  @ApiProperty({ example: "Administracion" })
+  name!: string;
+
+  @ApiProperty({ example: 6 })
+  active!: number;
+}
+
 export class ErsMetricsResponseDto {
   @ApiProperty({ type: () => ErsMetricSliceResponseDto })
   myGroup!: ErsMetricSliceResponseDto;
@@ -105,8 +124,17 @@ export class ErsMetricsResponseDto {
   @ApiProperty({ type: () => ErsMetricSliceResponseDto })
   myProjects!: ErsMetricSliceResponseDto;
 
+  @ApiProperty({ type: () => ErsMetricSliceResponseDto })
+  unapproved!: ErsMetricSliceResponseDto;
+
   @ApiProperty({ type: () => [ErsActiveByLocationResponseDto] })
   activeByLocation!: ErsActiveByLocationResponseDto[];
+
+  @ApiProperty({ type: () => [ErsActiveBySystemResponseDto] })
+  activeBySystem!: ErsActiveBySystemResponseDto[];
+
+  @ApiProperty({ type: () => [ErsActiveByAreaResponseDto] })
+  activeByArea!: ErsActiveByAreaResponseDto[];
 }
 
 export class ErsEligibleTicketResponseDto {

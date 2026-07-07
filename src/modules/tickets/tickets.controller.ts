@@ -19,6 +19,8 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from "@nestjs/swagg
 import { JwtAuthGuard } from "../../common/guards/auth.guard";
 import { RolesGuard } from "../../common/guards/roles.guard";
 import { Roles } from "../../common/decorators/roles.decorator";
+import { SuperAdmin } from "../../common/decorators/super-admin.decorator";
+import { SuperAdminGuard } from "../../common/guards/super-admin.guard";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { ResponseMessage } from "../../common/interceptors/response-message.decorator";
 import { RequestTimeoutMs } from "../../common/interceptors/request-timeout.decorator";
@@ -28,12 +30,15 @@ import {
 } from "../../common/interceptors/timeout.interceptor";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { TicketsService, type HistoryListMeta } from "./tickets.service";
+import { TicketsCloseService } from "./tickets-close.service";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { UpdateTicketStatusDto } from "./dto/update-ticket-status.dto";
 import { AssignTechnicianDto } from "./dto/assign-technician.dto";
 import { UpdateTicketLocationDto } from "./dto/update-ticket-location.dto";
 import { UpdateTicketRequesterDto } from "./dto/update-ticket-requester.dto";
 import { ListTicketsQueryDto } from "./dto/list-tickets-query.dto";
+import { CloseCandidatesQueryDto } from "./dto/close-candidates-query.dto";
+import { CloseBulkDto, CloseBulkResponseDto } from "./dto/close-bulk.dto";
 import {
   CreateTicketResponseDto,
   TicketListResponseDto,
@@ -50,8 +55,11 @@ import { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("tickets")
 export class TicketsController {
-  /** Inyecta el servicio de orquestación de tickets. */
-  constructor(private readonly ticketsService: TicketsService) {}
+  /** Inyecta los servicios de orquestación de tickets y de cierre masivo SQL-only. */
+  constructor(
+    private readonly ticketsService: TicketsService,
+    private readonly ticketsCloseService: TicketsCloseService,
+  ) {}
 
   /**
    * Lista tickets visibles para el usuario autenticado.
@@ -109,6 +117,63 @@ export class TicketsController {
     const result = await this.ticketsService.listHistory(user, query, meta);
     res.setHeader("X-History-Source", meta.source);
     return result;
+  }
+
+  /**
+   * Lista tickets candidatos a cierre masivo, 100% vía SQL (super admin).
+   *
+   * ATENCIÓN: debe permanecer declarado antes de `findOne(":id")` — Express
+   * resuelve rutas en orden de declaración y `:id` capturaría "close-candidates".
+   * @param query - Filtros de estado, fecha, búsqueda, orden y paginación.
+   * @returns Listado paginado desde MySQL.
+   * @throws {BusinessException} Si no se especifica rango de fechas.
+   */
+  @Get("close-candidates")
+  @SuperAdmin()
+  @UseGuards(SuperAdminGuard)
+  @ApiOperation({ summary: "List tickets eligible for bulk close (super admin, SQL-only)" })
+  @ApiResponse({ status: 200, type: TicketListResponseDto })
+  @ResponseMessage("Close candidates retrieved")
+  async closeCandidates(
+    @Query() query: CloseCandidatesQueryDto,
+  ): Promise<TicketListResponseDto> {
+    return this.ticketsCloseService.listCandidates(query);
+  }
+
+  /**
+   * Detalle de un candidato a cierre masivo, 100% vía SQL (super admin).
+   *
+   * ATENCIÓN: debe permanecer declarado antes de `findOne(":id")` por el mismo
+   * motivo que `closeCandidates`.
+   * @param id - ID numérico del ticket.
+   * @returns Ticket enriquecido.
+   * @throws {BusinessException} 404 si no existe, está borrado o ya cerrado.
+   */
+  @Get("close-candidates/:id")
+  @SuperAdmin()
+  @UseGuards(SuperAdminGuard)
+  @ApiOperation({ summary: "Get a bulk-close candidate ticket by id (super admin, SQL-only)" })
+  @ApiResponse({ status: 200, type: TicketResponseDto })
+  @ResponseMessage("Close candidate retrieved")
+  async closeCandidateDetail(
+    @Param("id", ParseIntPipe) id: number,
+  ): Promise<TicketResponseDto> {
+    return this.ticketsCloseService.getCandidateDetail(id);
+  }
+
+  /**
+   * Cierra en bloque los tickets indicados, 100% vía SQL (super admin).
+   * @param dto - IDs de tickets a cerrar.
+   * @returns Conteo de solicitados, cerrados, omitidos y fallidos.
+   */
+  @Post("close-bulk")
+  @SuperAdmin()
+  @UseGuards(SuperAdminGuard)
+  @ApiOperation({ summary: "Bulk close tickets (super admin, SQL-only, transactional)" })
+  @ApiResponse({ status: 200, type: CloseBulkResponseDto })
+  @ResponseMessage("Bulk close completed")
+  async closeBulk(@Body() dto: CloseBulkDto): Promise<CloseBulkResponseDto> {
+    return this.ticketsCloseService.closeBulk(dto.ticketIds);
   }
 
   /**
