@@ -16,6 +16,8 @@ export const ERS_SORT_BY = [
   "locationName",
   "stateName",
   "progress",
+  "approved",
+  "createdAt",
   "updatedAt",
 ] as const;
 

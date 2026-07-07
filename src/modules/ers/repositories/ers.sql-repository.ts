@@ -61,6 +61,7 @@ interface ErsListRow extends RowDataPacket {
   location_name: string | null;
   approver_id: number | null;
   approver_name: string | null;
+  approved: string | null;
   project_state_id: number | null;
   project_state_name: string | null;
   progress: number | null;
@@ -171,6 +172,8 @@ const ERS_SORT_SQL: Record<string, string> = {
   locationName: "location_name",
   stateName: "project_state_name",
   progress: "progress",
+  approved: "LOWER(COALESCE(approved, '')) LIKE '%[aprobado]si%'",
+  createdAt: "p.date_creation",
   updatedAt: "p.date_mod",
 };
 
@@ -295,7 +298,7 @@ export class ErsSqlRepository {
   }
 
   /**
-   * Ejecuta la transacción 1 de escalado (creación inicial por final_user o técnico).
+   * Ejecuta el escalado completo desde un ticket existente.
    * @param input - Datos funcionales del ERS.
    * @param actorId - Usuario que ejecuta la acción.
    * @param context - Contexto del ticket origen.
@@ -322,25 +325,30 @@ export class ErsSqlRepository {
         objective: input.objective,
         description: input.description,
         entityId: context.entityId,
-        projectStateId: defaultStateId,
+        projectStateId: this.toPositiveOrNull(input.projectStateId) ?? defaultStateId,
         projectTypeId: this.toPositiveOrNull(input.projectTypeId),
+        approverId: this.toPositiveOrNull(input.approverId),
+        priority: input.priority,
       });
 
       await this.insertTicketProjectLink(connection, context.ticketId, projectId);
-
-      if ((input.impact ?? "").trim()) {
-        await this.insertImpactNote(connection, {
-          projectId,
-          actorId,
-          impact: input.impact ?? "",
-        });
-      }
-
-      const responsibleIds = this.uniquePositive(input.responsibleIds);
-      for (const userId of responsibleIds) {
-        await this.insertProjectTeamUser(connection, projectId, userId);
-      }
-
+      await this.syncImpactNote(connection, {
+        projectId,
+        actorId,
+        impact: input.impact ?? "",
+      });
+      await this.syncRequestTypeNote(connection, {
+        projectId,
+        actorId,
+        requestType: input.requestType,
+      });
+      await this.syncApprovedNote(connection, {
+        projectId,
+        actorId,
+        approved: input.approved,
+      });
+      await this.replaceProjectTeam(connection, projectId, input.teamMemberIds);
+      await this.replaceProjectTasks(connection, projectId, input.tasks);
       await this.appendEscalationClosureNote(connection, context.ticketId);
       await this.closeTicket(connection, context.ticketId);
       return projectId;
@@ -481,6 +489,15 @@ export class ErsSqlRepository {
           COALESCE(loc.completename, loc.name) AS location_name,
           appr.id AS approver_id,
           COALESCE(NULLIF(CONCAT(COALESCE(appr.firstname, ''), ' ', COALESCE(appr.realname, '')), ' '), appr.name) AS approver_name,
+          (
+            SELECT n.content
+            FROM glpi_notepads n
+            WHERE n.itemtype = 'Project'
+              AND n.items_id = p.id
+              AND LOWER(COALESCE(n.content, '')) LIKE '%[aprobado]%'
+            ORDER BY n.id DESC
+            LIMIT 1
+          ) AS approved,
           ps.id AS project_state_id,
           ps.name AS project_state_name,
           ROUND(COALESCE(AVG(
@@ -536,6 +553,7 @@ export class ErsSqlRepository {
         locationName: this.toTextOrNull(row.location_name),
         approverId: this.toPositiveOrNull(row.approver_id),
         approverName: this.toTextOrNull(row.approver_name),
+        approved: this.extractApproved(row.approved) ?? false,
         projectStateId: this.toPositiveOrNull(row.project_state_id),
         projectStateName: this.toTextOrNull(row.project_state_name),
         progress: this.clampPercent(row.progress),
@@ -769,7 +787,12 @@ export class ErsSqlRepository {
       whereParts.push('p.projectstates_id = :projectStateId');
       params.projectStateId = query.projectStateId;
     }
-    if (query.lifecycle === 'active') whereParts.push('COALESCE(ps.is_finished, 0) = 0');
+    if (query.lifecycle === 'active') {
+      whereParts.push(
+        `COALESCE(ps.is_finished, 0) = 0
+         AND LOWER(COALESCE(ps.name, '')) NOT REGEXP 'finaliz|cancel'`,
+      );
+    }
     if (query.lifecycle === 'finished') whereParts.push('COALESCE(ps.is_finished, 0) = 1');
     if (query.locationId) {
       whereParts.push('loc.id = :locationId');
@@ -830,6 +853,15 @@ export class ErsSqlRepository {
           COALESCE(loc.completename, loc.name) AS location_name,
           appr.id AS approver_id,
           COALESCE(NULLIF(CONCAT(COALESCE(appr.firstname, ''), ' ', COALESCE(appr.realname, '')), ' '), appr.name) AS approver_name,
+          (
+            SELECT n.content
+            FROM glpi_notepads n
+            WHERE n.itemtype = 'Project'
+              AND n.items_id = p.id
+              AND LOWER(COALESCE(n.content, '')) LIKE '%[aprobado]%'
+            ORDER BY n.id DESC
+            LIMIT 1
+          ) AS approved,
           ps.id AS project_state_id,
           ps.name AS project_state_name,
           ROUND(COALESCE((
@@ -860,6 +892,7 @@ export class ErsSqlRepository {
         locationName: this.toTextOrNull(row.location_name),
         approverId: this.toPositiveOrNull(row.approver_id),
         approverName: this.toTextOrNull(row.approver_name),
+        approved: this.extractApproved(row.approved) ?? false,
         projectStateId: this.toPositiveOrNull(row.project_state_id),
         projectStateName: this.toTextOrNull(row.project_state_name),
         progress: this.clampPercent(row.progress),

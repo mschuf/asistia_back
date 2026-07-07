@@ -161,12 +161,12 @@ export class ErsController {
   /**
    * Transacción 1: escala ticket a ERS.
    * @param user - Usuario autenticado.
-   * @param dto - Datos iniciales del ERS.
+   * @param dto - Estado completo del ERS.
    * @returns Detalle del ERS creado.
    */
   @Post("escalar")
   @Roles("technician")
-  @ApiOperation({ summary: "Scale a ticket into a project (ERS transaction 1)" })
+  @ApiOperation({ summary: "Scale a ticket into a complete ERS project" })
   @ApiResponse({ status: 201, type: ErsDetailResponseDto })
   @ResponseMessage("Ticket escalado a proyecto ERS")
   async escalate(

@@ -167,7 +167,7 @@ export class ErsService {
   /**
    * Transacción 1: escala ticket a proyecto y cierra ticket al final.
    * @param user - Usuario autenticado.
-   * @param dto - Datos iniciales del ERS.
+   * @param dto - Estado completo del ERS.
    * @returns Detalle del ERS creado.
    */
   async escalate(user: AuthenticatedUser, dto: EscalarTicketDto): Promise<ErsDetail> {
@@ -196,17 +196,61 @@ export class ErsService {
       });
     }
 
+    dto.requestType = this.validateRequestType(dto.requestType);
+    if (!dto.approved && dto.tasks.length > 0) {
+      throw new BusinessException({
+        message: "El proyecto debe estar aprobado para crear tareas",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+    if (
+      dto.tasks.some(
+        (task) =>
+          !task.name.trim() ||
+          !(task.content ?? "").trim() ||
+          !task.projectStateId ||
+          !task.userId ||
+          !task.planStartDate ||
+          !task.planEndDate,
+      )
+    ) {
+      throw new BusinessException({
+        message: "Las tareas deben incluir nombre, descripción, estado, responsable y fechas",
+        code: API_ERROR_CODE.VALIDATION,
+        status: HttpStatus.BAD_REQUEST,
+      });
+    }
+
     await this.assertProjectTypeValid(dto.projectTypeId);
 
-    const allowedResponsibleIds = await this.resolveTechnicianIdsByLocation(null);
-    const requestedResponsibleIds = this.uniquePositive(dto.responsibleIds);
-    const invalidResponsible = requestedResponsibleIds.filter((id) => !allowedResponsibleIds.has(id));
-    if (invalidResponsible.length > 0) {
+    const [siteTechnicianIds, activeTechnicianIds] = await Promise.all([
+      this.resolveTechnicianIdsByLocation(context.locationId),
+      this.resolveTechnicianIdsByLocation(null),
+    ]);
+    const teamMemberIds = this.uniquePositive(dto.teamMemberIds);
+    const validTeamMemberIds = new Set(
+      teamMemberIds.filter((id) => activeTechnicianIds.has(id)),
+    );
+    const invalidTechnicianIds = this.uniquePositive([
+      ...(dto.approverId && dto.approverId !== user.id && !siteTechnicianIds.has(dto.approverId)
+        ? [dto.approverId]
+        : []),
+      ...teamMemberIds.filter((id) => !activeTechnicianIds.has(id)),
+      ...dto.tasks.flatMap((task) =>
+        task.userId &&
+        !siteTechnicianIds.has(task.userId) &&
+        !validTeamMemberIds.has(task.userId)
+          ? [task.userId]
+          : [],
+      ),
+    ]);
+    if (invalidTechnicianIds.length > 0) {
       throw new BusinessException({
-        message: "Algunos responsables no son técnicos activos válidos",
+        message: "Algunos usuarios seleccionados no son técnicos válidos para la sede",
         code: API_ERROR_CODE.INVALID_TECHNICIAN,
         status: HttpStatus.BAD_REQUEST,
-        details: { invalidResponsibleIds: invalidResponsible },
+        details: { invalidTechnicianIds },
       });
     }
 

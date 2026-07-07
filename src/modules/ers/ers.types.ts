@@ -16,6 +16,7 @@ export interface ErsListItem {
   locationName: string | null;
   approverId: number | null;
   approverName: string | null;
+  approved: boolean;
   projectStateId: number | null;
   projectStateName: string | null;
   progress: number;

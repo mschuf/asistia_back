@@ -33,6 +33,9 @@ export class ErsListItemResponseDto {
   @ApiProperty({ example: "Carlos Ramírez", nullable: true })
   approverName!: string | null;
 
+  @ApiProperty({ example: true })
+  approved!: boolean;
+
   @ApiProperty({ example: 2, nullable: true })
   projectStateId!: number | null;
 

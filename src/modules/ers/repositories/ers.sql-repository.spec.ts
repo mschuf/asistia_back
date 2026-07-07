@@ -59,4 +59,22 @@ describe("ErsSqlRepository.findByProjectId", () => {
     expect(mysql.query.mock.calls[1][1]).toEqual({ requesterId: 7 });
     expect(mysql.query.mock.calls[1][0]).toContain("ORDER BY sector_name ASC");
   });
+
+  it("filtra proyectos activos por integrante y excluye estados finalizados o cancelados", async () => {
+    mysql.query
+      .mockResolvedValueOnce([{ total: 0 }])
+      .mockResolvedValueOnce([]);
+
+    await repository.listAllProjects(
+      { page: 1, limit: 15, lifecycle: "active", assignedMemberId: 25 },
+      { userId: 25, role: "technician" },
+    );
+
+    const countSql = String(mysql.query.mock.calls[0][0]);
+    const params = mysql.query.mock.calls[0][1];
+    expect(countSql).toContain("COALESCE(ps.is_finished, 0) = 0");
+    expect(countSql).toContain("NOT REGEXP 'finaliz|cancel'");
+    expect(countSql).toContain("glpi_projectteams team_scope");
+    expect(params).toMatchObject({ assignedMemberId: 25 });
+  });
 });
