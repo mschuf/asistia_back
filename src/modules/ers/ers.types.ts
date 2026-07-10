@@ -60,6 +60,7 @@ export interface ErsDetail {
   impact: string | null;
   requestType: string | null;
   priority: number;
+  executionOrder: number | null;
   approved: boolean;
   approverId: number | null;
   approverName: string | null;
@@ -156,5 +157,18 @@ export interface ErsEligibleTicket {
 export interface ErsAccessScope {
   userId: number;
   role: UserRole;
+}
+
+/** Proyecto con orden de ejecución asignado, para referencia al elegir uno nuevo. */
+export interface ErsExecutionOrderItem {
+  projectId: number;
+  projectName: string;
+  executionOrder: number;
+}
+
+/** Listado de órdenes de ejecución usados en una sede y el próximo libre sugerido. */
+export interface ErsExecutionOrderSuggestion {
+  items: ErsExecutionOrderItem[];
+  nextAvailable: number;
 }
 

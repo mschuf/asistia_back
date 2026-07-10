@@ -54,6 +54,7 @@ import type {
 } from "./dto/ticket.response.dto";
 import type { TicketMetricsResponseDto } from "./dto/ticket-metrics.response.dto";
 import {
+  buildOpenByAssigneeMetrics,
   buildOpenByLocationMetrics,
   computeMyTicketsMetrics,
   computeSiteMetrics,
@@ -567,6 +568,7 @@ export class TicketsService {
       mySolved,
       myClosed,
       openByLocation,
+      openByAssignee: [],
     };
   }
 
@@ -625,6 +627,17 @@ export class TicketsService {
       locations.map((loc) => [normalizeLocationId(loc.id) ?? loc.id, loc.name]),
     );
     const openByLocation = buildOpenByLocationMetrics(globalOpenPool, locationNameById);
+
+    const assigneeIds = new Set<number>();
+    for (const ticket of globalOpenPool) {
+      if (ticket.technicianId != null) assigneeIds.add(ticket.technicianId);
+    }
+    const usersById = await this.loadUsersByIds(assigneeIds);
+    const technicianNameById = new Map(
+      [...usersById.values()].map((technician) => [technician.id, technician.fullName]),
+    );
+    const openByAssignee = buildOpenByAssigneeMetrics(globalOpenPool, technicianNameById);
+
     const myGroup = await this.resolveMyGroupMetrics();
 
     return {
@@ -637,6 +650,7 @@ export class TicketsService {
       mySolved: EMPTY_METRIC_SLICE,
       myClosed: EMPTY_METRIC_SLICE,
       openByLocation,
+      openByAssignee,
     };
   }
 

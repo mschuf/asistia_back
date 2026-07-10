@@ -17,9 +17,11 @@ import { API_ERROR_CODE } from "../../common/types/api-error-code";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { EscalarTicketDto } from "./dto/escalar-ticket.dto";
 import { CreateErsDto } from "./dto/create-ers.dto";
+import { GetErsExecutionOrderQueryDto } from "./dto/get-execution-order-query.dto";
 import {
   ErsDetailResponseDto,
   ErsEligibleTicketListResponseDto,
+  ErsExecutionOrderSuggestionResponseDto,
   ErsListResponseDto,
   ErsMetricsResponseDto,
   ErsProjectStateResponseDto,
@@ -156,6 +158,23 @@ export class ErsController {
   @ResponseMessage("Sedes ERS obtenidas")
   async locations(): Promise<LocationResponseDto[]> {
     return this.ersService.listFilterLocations();
+  }
+
+  /**
+   * Lista órdenes de ejecución usados en la sede resuelta a partir de un solicitante,
+   * ticket o proyecto existente, y sugiere el próximo libre.
+   * @param query - Exactamente uno de `requesterId`, `ticketId` o `projectId`.
+   * @returns Proyectos con orden asignado y el próximo número libre.
+   */
+  @Get("execution-order")
+  @Roles("technician")
+  @ApiOperation({ summary: "List used execution orders for a sede and suggest the next free one" })
+  @ApiResponse({ status: 200, type: ErsExecutionOrderSuggestionResponseDto })
+  @ResponseMessage("Órdenes de ejecución ERS obtenidos")
+  async executionOrder(
+    @Query() query: GetErsExecutionOrderQueryDto,
+  ): Promise<ErsExecutionOrderSuggestionResponseDto> {
+    return this.ersService.listExecutionOrders(query);
   }
 
   /**

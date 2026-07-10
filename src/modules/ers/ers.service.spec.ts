@@ -13,6 +13,7 @@ describe("ErsService history", () => {
   const catalog = { listGroups: jest.fn() };
   const history = { registerEvent: jest.fn() };
   const config = { get: jest.fn(() => ["Mejora"]) };
+  const events = { emit: jest.fn() };
   const service = new ErsService(
     repository as never,
     technicians as never,
@@ -20,6 +21,7 @@ describe("ErsService history", () => {
     catalog as never,
     history as never,
     config as never,
+    events as never,
   );
 
   beforeEach(() => jest.clearAllMocks());
@@ -184,6 +186,7 @@ function detail(overrides: Partial<ErsDetail> = {}): ErsDetail {
     impact: null,
     requestType: "Mejora",
     priority: 3,
+    executionOrder: null,
     approved: true,
     approverId: null,
     approverName: null,

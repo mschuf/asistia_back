@@ -70,6 +70,12 @@ interface GlobalOpenByLocationRow extends RowDataPacket {
   open_count: number | string;
 }
 
+interface GlobalOpenByAssigneeRow extends RowDataPacket {
+  technician_id: number;
+  name: string | null;
+  open_count: number | string;
+}
+
 export interface MetricsForTechnicianInput {
   technicianId: number;
   locationId: number | null | undefined;
@@ -120,7 +126,16 @@ export class TicketsMetricsSqlRepository {
     input: MetricsForTechnicianInput,
   ): Promise<TicketMetricsResponseDto>  {
     const technicianId = input.technicianId;
-    const [myTickets, myIncidents, myRequests, myGroup, unassigned, mySite, openByLocationRows] =
+    const [
+      myTickets,
+      myIncidents,
+      myRequests,
+      myGroup,
+      unassigned,
+      mySite,
+      openByLocationRows,
+      openByAssigneeRows,
+    ] =
       await Promise.all([
         this.aggregateMyTickets(technicianId),
         this.aggregateTypeSlice(technicianId, GLPI_TICKET_TYPE.INCIDENT),
@@ -131,7 +146,17 @@ export class TicketsMetricsSqlRepository {
           ? this.aggregateSiteSlice(input.locationId)
           : Promise.resolve(null),
         this.listGlobalOpenByLocation(),
+        this.listGlobalOpenByAssignee(),
       ]);
+
+    const openByAssignee = openByAssigneeRows.map((row) => {
+      const technicianRowId = Number(row.technician_id);
+      return {
+        technicianId: technicianRowId,
+        name: row.name?.trim() || `Usuario #${technicianRowId}`,
+        open: Number(row.open_count) || 0,
+      };
+    });
 
     const openByLocation = openByLocationRows.map((row) => {
       const locationId = Number(row.location_id);
@@ -152,6 +177,7 @@ export class TicketsMetricsSqlRepository {
       mySolved: EMPTY_METRIC_SLICE,
       myClosed: EMPTY_METRIC_SLICE,
       openByLocation,
+      openByAssignee,
     };
   }
 
@@ -424,6 +450,7 @@ export class TicketsMetricsSqlRepository {
       mySolved: statusSlices.solved,
       myClosed: statusSlices.closed,
       openByLocation,
+      openByAssignee: [],
     };
   }
 
@@ -745,6 +772,35 @@ export class TicketsMetricsSqlRepository {
            AND t.locations_id > 0
          GROUP BY t.locations_id
        ) open_counts ON open_counts.location_id = loc.id
+       ORDER BY open_count DESC, name ASC`,
+    );
+  }
+
+  /**
+   * Total global de tickets abiertos por técnico asignado.
+   * @returns Resultado de la operación.
+   * @throws Error de base de datos si la consulta falla.
+   * @returns `Promise<GlobalOpenByAssigneeRow[]>`
+   */
+  private async listGlobalOpenByAssignee(): Promise<GlobalOpenByAssigneeRow[]>  {
+    return this.mysql.query<GlobalOpenByAssigneeRow>(
+      `SELECT
+         u.id AS technician_id,
+         COALESCE(NULLIF(TRIM(CONCAT(u.realname, ' ', u.firstname)), ''), u.name) AS name,
+         open_counts.open_count AS open_count
+       FROM glpi_users u
+       INNER JOIN (
+         SELECT
+           tu.users_id AS technician_id,
+           COUNT(*) AS open_count
+         FROM glpi_tickets t
+         INNER JOIN glpi_tickets_users tu
+           ON tu.tickets_id = t.id
+          AND tu.type = ${GLPI_TICKET_USER_TYPE.ASSIGNED}
+         WHERE t.is_deleted = 0
+           AND t.status IN (${OPEN_STATUS_IN})
+         GROUP BY tu.users_id
+       ) open_counts ON open_counts.technician_id = u.id
        ORDER BY open_count DESC, name ASC`,
     );
   }

@@ -70,6 +70,17 @@ export class EscalarTicketDto {
   @IsString()
   impact?: string;
 
+  @ApiPropertyOptional({
+    example: 3,
+    minimum: 1,
+    description: "Orden de ejecución del proyecto, único por sede (glpi_projects.code). Solo editable por superadmins.",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  executionOrder?: number;
+
   @ApiPropertyOptional({ example: 80 })
   @IsOptional()
   @Type(() => Number)

@@ -352,3 +352,43 @@ export function buildOpenByLocationMetrics(
         right.open - left.open || left.name.localeCompare(right.name, "es"),
     );
 }
+
+export interface OpenByAssigneeMetricRow {
+  technicianId: number;
+  name: string;
+  open: number;
+}
+
+/**
+ * Total global de abiertos por técnico asignado; solo incluye técnicos con al menos un ticket abierto.
+ * @param tickets - Tickets abiertos a agregar.
+ * @param technicianNameById - Mapa técnico → nombre para el resultado.
+ * @returns Filas ordenadas por abiertos descendente y nombre.
+ * @throws Ninguno.
+ */
+export function buildOpenByAssigneeMetrics(
+  tickets: DomainTicket[],
+  technicianNameById: ReadonlyMap<number, string>,
+): OpenByAssigneeMetricRow[] {
+  const openByAssigneeMap = new Map<number, number>();
+
+  for (const ticket of tickets) {
+    if (!isActiveTicket(ticket) || !isTicketOpen(ticket)) continue;
+    if (ticket.technicianId == null) continue;
+    openByAssigneeMap.set(
+      ticket.technicianId,
+      (openByAssigneeMap.get(ticket.technicianId) ?? 0) + 1,
+    );
+  }
+
+  return [...openByAssigneeMap.entries()]
+    .map(([technicianId, open]) => ({
+      technicianId,
+      name: technicianNameById.get(technicianId) ?? `Usuario #${technicianId}`,
+      open,
+    }))
+    .sort(
+      (left, right) =>
+        right.open - left.open || left.name.localeCompare(right.name, "es"),
+    );
+}

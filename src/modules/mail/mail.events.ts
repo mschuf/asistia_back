@@ -9,6 +9,10 @@ export const MAIL_EVENTS = {
   TICKET_STATUS_CHANGED: "mail.ticket.status_changed",
   TICKET_ASSIGNED: "mail.ticket.assigned",
   TICKET_REASSIGNED: "mail.ticket.reassigned",
+  ERS_ESCALATED: "mail.ers.escalated",
+  ERS_CREATED: "mail.ers.created",
+  ERS_TEAM_ASSIGNED: "mail.ers.team_assigned",
+  ERS_CLOSED: "mail.ers.closed",
 } as const;
 
 /** Destinatario de correo con nombre visible y dirección. */
@@ -84,4 +88,43 @@ export interface TicketReassignedEvent {
   newTechnicianName: string;
   reassignedBy: string;
   notify: TicketReassignedRecipient[];
+}
+
+/** Payload del evento emitido al solicitante cuando su ticket escala a ERS. */
+export interface ErsEscalatedEvent {
+  projectId: number;
+  projectName: string;
+  ticketId: number;
+  requesterName: string;
+  notify: MailRecipient[];
+}
+
+/** Origen de creación de un proyecto ERS. */
+export type ErsCreatedOrigin = "escalated" | "standalone";
+
+/** Payload del evento emitido al revisor (Martin) cuando se crea un ERS. */
+export interface ErsCreatedEvent {
+  projectId: number;
+  projectName: string;
+  ticketId: number | null;
+  requesterName: string;
+  origin: ErsCreatedOrigin;
+  notify: MailRecipient[];
+}
+
+/** Payload del evento emitido a los miembros de equipo asignados a un proyecto ERS. */
+export interface ErsTeamAssignedEvent {
+  projectId: number;
+  projectName: string;
+  assignedBy: string;
+  notify: MailRecipient[];
+}
+
+/** Payload del evento emitido a los implicados cuando un proyecto ERS se cierra. */
+export interface ErsClosedEvent {
+  projectId: number;
+  projectName: string;
+  ticketId: number | null;
+  finalStateName: string;
+  notify: MailRecipient[];
 }

@@ -3,9 +3,12 @@
  * @description Parámetros de consulta para GET /tickets/close-candidates (super admin).
  */
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { Transform } from "class-transformer";
-import { IsBoolean, IsIn, IsISO8601, IsOptional, IsString } from "class-validator";
+import { Transform, Type } from "class-transformer";
+import { IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, Max, Min } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
+
+/** Máximo de registros por página al elegir "Todos" en el selector de la UI. */
+export const MAX_CLOSE_CANDIDATES_PAGE_LIMIT = 50_000;
 
 /** Columnas ordenables en GET /tickets/close-candidates. */
 export const CLOSE_CANDIDATES_SORT_BY = [
@@ -28,6 +31,19 @@ export type CloseCandidatesSortOrder = (typeof CLOSE_CANDIDATES_SORT_ORDER)[numb
  * Filtros y paginación para GET /tickets/close-candidates.
  */
 export class CloseCandidatesQueryDto extends PaginationDto {
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: MAX_CLOSE_CANDIDATES_PAGE_LIMIT,
+    default: 25,
+    description: "Tickets per page",
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_CLOSE_CANDIDATES_PAGE_LIMIT)
+  declare limit?: number;
+
   @ApiPropertyOptional({
     description: "Incluir tickets abiertos (nuevo, asignado, planificado, en espera)",
     type: Boolean,

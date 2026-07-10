@@ -251,6 +251,9 @@ export class ErsDetailResponseDto {
   @ApiProperty({ example: 3, minimum: 1, maximum: 6 })
   priority!: number;
 
+  @ApiProperty({ nullable: true, example: 3, minimum: 1 })
+  executionOrder!: number | null;
+
   @ApiProperty({ example: true })
   approved!: boolean;
 
@@ -337,6 +340,27 @@ export class ErsProjectTypeResponseDto {
 
   @ApiProperty({ example: "SAP" })
   name!: string;
+}
+
+/** Proyecto con orden de ejecución asignado en una sede. */
+export class ErsExecutionOrderItemResponseDto {
+  @ApiProperty({ example: 2001 })
+  projectId!: number;
+
+  @ApiProperty({ example: "Portal RRHH" })
+  projectName!: string;
+
+  @ApiProperty({ example: 3, minimum: 1 })
+  executionOrder!: number;
+}
+
+/** Órdenes de ejecución usados en una sede y el próximo libre sugerido. */
+export class ErsExecutionOrderSuggestionResponseDto {
+  @ApiProperty({ type: () => [ErsExecutionOrderItemResponseDto] })
+  items!: ErsExecutionOrderItemResponseDto[];
+
+  @ApiProperty({ example: 4, minimum: 1 })
+  nextAvailable!: number;
 }
 
 /** Respuesta paginada de técnicos. */

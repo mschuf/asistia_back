@@ -52,6 +52,18 @@ class OpenByLocationDto {
   open!: number;
 }
 
+/** Fila de tickets abiertos agrupados por técnico asignado. */
+class OpenByAssigneeDto {
+  @ApiProperty({ example: 42 })
+  technicianId!: number;
+
+  @ApiProperty({ example: "Juan Pérez" })
+  name!: string;
+
+  @ApiProperty({ example: 5 })
+  open!: number;
+}
+
 /** Respuesta de GET /tickets/metrics. */
 export class TicketMetricsResponseDto {
   @ApiProperty({ type: MyTicketsMetricSliceDto })
@@ -86,4 +98,7 @@ export class TicketMetricsResponseDto {
 
   @ApiProperty({ type: [OpenByLocationDto] })
   openByLocation!: OpenByLocationDto[];
+
+  @ApiProperty({ type: [OpenByAssigneeDto] })
+  openByAssignee!: OpenByAssigneeDto[];
 }

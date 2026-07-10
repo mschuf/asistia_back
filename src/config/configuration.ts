@@ -122,6 +122,8 @@ export interface AppConfig {
     supportTo: string;
     /** CC incluido en todos los correos salientes. */
     defaultCc: string;
+    /** Destinatario notificado al crear un ERS (nuevo o escalado de ticket). */
+    reviewerTo: string;
     /** POST /mail/send (herramienta de prueba; desactivado por defecto). */
     testEndpointEnabled: boolean;
     /** Técnico por defecto para tickets inbound via /mail/send. */
@@ -441,6 +443,7 @@ export function buildConfig(): AppConfig {
         readTrimmedString("SMTP_FROM", readTrimmedString("SMTP_USER", "")),
       ),
       defaultCc: readTrimmedString("MAIL_DEFAULT_CC"),
+      reviewerTo: readTrimmedString("MAIL_ERS_REVIEWER_TO", ""),
       testEndpointEnabled: readBoolean("MAIL_TEST_ENDPOINT_ENABLED", false),
       inboundDefaultTechnicianId: readNumber("MAIL_INBOUND_DEFAULT_TECHNICIAN_ID", 1368),
       inboundDefaultTicketType:

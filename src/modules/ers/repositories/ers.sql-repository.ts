@@ -20,6 +20,7 @@ import type {
   ErsAccessScope,
   ErsDetail,
   ErsEligibleTicket,
+  ErsExecutionOrderItem,
   ErsListItem,
   ErsMetricSlice,
   ErsMetrics,
@@ -83,6 +84,7 @@ interface ErsMainDetailRow extends RowDataPacket {
   impact: string | null;
   request_type: string | null;
   priority: number | null;
+  execution_order: string | null;
   approved: string | null;
   approver_id: number | null;
   approver_name: string | null;
@@ -233,6 +235,7 @@ export class ErsSqlRepository {
         projectTypeId: this.toPositiveOrNull(input.projectTypeId),
         approverId: this.toPositiveOrNull(input.approverId),
         priority: input.priority,
+        executionOrder: input.executionOrder ?? null,
       });
 
       await this.insertTicketProjectLink(connection, ticketId, projectId);
@@ -314,6 +317,77 @@ export class ErsSqlRepository {
   }
 
   /**
+   * Verifica si ya existe otro proyecto con el mismo orden de ejecución en la misma sede (entidad).
+   * @param entityId - Entidad GLPI (sede) del proyecto.
+   * @param executionOrder - Orden de ejecución a validar.
+   * @param excludeProjectId - Proyecto a excluir de la búsqueda (edición del propio proyecto).
+   * @returns `true` si el orden ya está en uso por otro proyecto de la misma sede.
+   */
+  async isExecutionOrderTaken(
+    locationId: number,
+    executionOrder: number,
+    excludeProjectId?: number,
+  ): Promise<boolean> {
+    const rows = await this.mysql.query<ProjectIdRow>(
+      `SELECT p.id AS id
+       FROM glpi_projects p
+       INNER JOIN glpi_itils_projects ip
+         ON ip.projects_id = p.id
+        AND ip.itemtype = 'Ticket'
+       INNER JOIN glpi_tickets t
+         ON t.id = ip.items_id
+       WHERE t.locations_id = :locationId
+         AND p.code = :executionOrder
+         AND COALESCE(p.is_deleted, 0) = 0
+         AND p.id != :excludeProjectId
+       LIMIT 1`,
+      {
+        locationId,
+        executionOrder: String(executionOrder),
+        excludeProjectId: excludeProjectId ?? 0,
+      } as QueryValues,
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * Lista los proyectos con orden de ejecución asignado en una sede (glpi_locations, vía el ticket vinculado).
+   * @param locationId - Sede a consultar.
+   * @param excludeProjectId - Proyecto a excluir del listado (edición del propio proyecto).
+   * @returns Proyectos con su orden de ejecución, ordenados ascendentemente.
+   */
+  async listExecutionOrdersByLocation(
+    locationId: number,
+    excludeProjectId?: number,
+  ): Promise<ErsExecutionOrderItem[]> {
+    const rows = await this.mysql.query<
+      { id: number; name: string; code: string } & RowDataPacket
+    >(
+      `SELECT p.id AS id, p.name AS name, p.code AS code
+       FROM glpi_projects p
+       INNER JOIN glpi_itils_projects ip
+         ON ip.projects_id = p.id
+        AND ip.itemtype = 'Ticket'
+       INNER JOIN glpi_tickets t
+         ON t.id = ip.items_id
+       WHERE t.locations_id = :locationId
+         AND COALESCE(p.is_deleted, 0) = 0
+         AND p.code IS NOT NULL
+         AND p.code != ''
+         AND p.id != :excludeProjectId
+       ORDER BY CAST(p.code AS UNSIGNED) ASC`,
+      { locationId, excludeProjectId: excludeProjectId ?? 0 } as QueryValues,
+    );
+    return rows
+      .map((row) => ({
+        projectId: Number(row.id),
+        projectName: String(row.name ?? "").trim(),
+        executionOrder: this.toExecutionOrder(row.code),
+      }))
+      .filter((item): item is ErsExecutionOrderItem => item.executionOrder !== null);
+  }
+
+  /**
    * Ejecuta el escalado completo desde un ticket existente.
    * @param input - Datos funcionales del ERS.
    * @param actorId - Usuario que ejecuta la acción.
@@ -345,6 +419,7 @@ export class ErsSqlRepository {
         projectTypeId: this.toPositiveOrNull(input.projectTypeId),
         approverId: this.toPositiveOrNull(input.approverId),
         priority: input.priority,
+        executionOrder: input.executionOrder ?? null,
       });
 
       await this.insertTicketProjectLink(connection, context.ticketId, projectId);
@@ -1067,6 +1142,7 @@ export class ErsSqlRepository {
             LIMIT 1
           ) AS request_type,
           p.priority,
+          p.code AS execution_order,
           (
             SELECT n.content
             FROM glpi_notepads n
@@ -1218,6 +1294,7 @@ export class ErsSqlRepository {
       impact: this.extractImpactText(main.impact),
       requestType: this.extractRequestType(main.request_type),
       priority: this.toPriority(main.priority),
+      executionOrder: this.toExecutionOrder(main.execution_order),
       approved: storedApproved ?? false,
       approverId: this.toPositiveOrNull(main.approver_id),
       approverName: this.toTextOrNull(main.approver_name),
@@ -1257,6 +1334,7 @@ export class ErsSqlRepository {
                   projectstates_id = :projectStateId,
                   projecttypes_id = COALESCE(:projectTypeId, projecttypes_id),
                   priority = :priority,
+                  code = :executionOrder,
                   date_mod = NOW()
               WHERE id = :projectId
                 AND COALESCE(is_deleted, 0) = 0`,
@@ -1274,6 +1352,7 @@ export class ErsSqlRepository {
             ? null
             : this.toPositiveOrNull(input.projectTypeId) ?? 0,
         priority: input.priority,
+        executionOrder: input.executionOrder ? String(input.executionOrder) : "",
       } as QueryValues);
 
       await this.syncImpactNote(connection, {
@@ -1395,6 +1474,7 @@ export class ErsSqlRepository {
       projectTypeId?: number | null;
       approverId?: number | null;
       priority?: number;
+      executionOrder?: number | null;
     },
   ): Promise<number> {
     const options: QueryOptions = {
@@ -1415,7 +1495,7 @@ export class ErsSqlRepository {
               is_deleted
             ) VALUES (
               :name,
-              '',
+              :executionOrder,
               :content,
               :comment,
               :approverId,
@@ -1439,6 +1519,7 @@ export class ErsSqlRepository {
       projectTypeId: input.projectTypeId ?? 0,
       approverId: input.approverId ?? 0,
       priority: input.priority ?? 3,
+      executionOrder: input.executionOrder ? String(input.executionOrder) : "",
       entityId: input.entityId,
     } as QueryValues);
 
@@ -1909,6 +1990,13 @@ export class ErsSqlRepository {
     const parsed = Number(value);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 6) return 3;
     return parsed;
+  }
+
+  private toExecutionOrder(value: unknown): number | null {
+    const text = String(value ?? "").trim();
+    if (!text) return null;
+    const parsed = Number(text);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
   }
 
   private uniquePositive(values: number[]): number[] {
