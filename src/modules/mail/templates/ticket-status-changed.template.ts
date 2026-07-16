@@ -2,12 +2,14 @@
  * @file ticket-status-changed.template.ts
  * @description Plantillas de correo para notificar cambios de estado en un ticket.
  */
-import { escapeHtml } from "./html-utils";
+import { escapeHtml, formatSubjectWithTag } from "./html-utils";
 
 /** Datos de entrada para plantillas de cambio de estado. */
 export interface TicketStatusChangedTemplateInput {
   ticketId: number;
   subject: string;
+  /** Tag corto; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   previousStatus: string;
   newStatus: string;
   changedBy: string;
@@ -31,7 +33,7 @@ export function buildTicketStatusChangedHtml(input: TicketStatusChangedTemplateI
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
       <h2>Ticket #${input.ticketId}</h2>
-      <p><strong>Asunto:</strong> ${escapeHtml(input.subject)}</p>
+      <p><strong>Asunto:</strong> ${escapeHtml(formatSubjectWithTag(input.subject, input.tag))}</p>
       <p>Estado actualizado de <strong>${escapeHtml(input.previousStatus)}</strong> a <strong>${escapeHtml(input.newStatus)}</strong>.</p>
       <p>Actualizado por: ${escapeHtml(input.changedBy)}</p>
     </div>
@@ -44,5 +46,5 @@ export function buildTicketStatusChangedHtml(input: TicketStatusChangedTemplateI
  * @returns Texto plano del correo.
  */
 export function buildTicketStatusChangedText(input: TicketStatusChangedTemplateInput): string {
-  return `Ticket #${input.ticketId} - "${input.subject}". Estado: ${input.previousStatus} -> ${input.newStatus}. Actualizado por ${input.changedBy}.`;
+  return `Ticket #${input.ticketId} - "${formatSubjectWithTag(input.subject, input.tag)}". Estado: ${input.previousStatus} -> ${input.newStatus}. Actualizado por ${input.changedBy}.`;
 }

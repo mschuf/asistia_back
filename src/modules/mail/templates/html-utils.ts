@@ -25,3 +25,22 @@ export function escapeHtml(value: string): string {
 export function stripHtml(value: string): string {
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
+
+/** Longitud máxima de un tag válido (glpi_tickets.name reutilizado como tag). */
+const TAG_MAX_LENGTH = 15;
+
+/**
+ * Concatena el tag entre corchetes al asunto mostrado en el cuerpo del correo.
+ * Omite el tag si está vacío, si excede la longitud de un tag válido (título
+ * heredado) o si coincide con el propio asunto.
+ * @param subject - Asunto visible (categoría del ticket).
+ * @param tag - Tag corto del ticket o `null`.
+ * @returns `"Asunto [TAG]"` o el asunto sin cambios.
+ */
+export function formatSubjectWithTag(subject: string, tag?: string | null): string {
+  const trimmedTag = tag?.trim();
+  if (!trimmedTag) return subject;
+  if (trimmedTag.length > TAG_MAX_LENGTH) return subject;
+  if (trimmedTag === subject.trim()) return subject;
+  return `${subject} [${trimmedTag}]`;
+}

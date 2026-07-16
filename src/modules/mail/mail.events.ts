@@ -34,6 +34,8 @@ export interface TicketCreatedEvent {
   ticketId: number;
   type: string;
   subject: string;
+  /** Tag corto del ticket; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   description: string;
   requesterName: string;
   technicianName: string | null;
@@ -46,6 +48,8 @@ export interface TicketCreatedEvent {
 export interface TicketStatusChangedEvent {
   ticketId: number;
   subject: string;
+  /** Tag corto del ticket; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   previousStatus: string;
   newStatus: string;
   changedBy: string;
@@ -64,6 +68,8 @@ export interface TicketAssignedRecipient extends MailRecipient {
 export interface TicketAssignedEvent {
   ticketId: number;
   subject: string;
+  /** Tag corto del ticket; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   technicianName: string;
   assignedBy: string;
   notify: TicketAssignedRecipient[];
@@ -84,6 +90,8 @@ export interface TicketReassignedRecipient extends MailRecipient {
 export interface TicketReassignedEvent {
   ticketId: number;
   subject: string;
+  /** Tag corto del ticket; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   previousTechnicianName: string;
   newTechnicianName: string;
   reassignedBy: string;

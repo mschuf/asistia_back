@@ -307,6 +307,28 @@ export class TicketsService {
   }
 
   /**
+   * Resuelve el nombre visible (completename) de la categoría del ticket, usado
+   * como asunto en los correos ya que `glpi_tickets.name` almacena el tag.
+   * @param categoryId - ID de categoría del ticket o `null`.
+   * @returns Nombre completo de la categoría o `null` si no se puede resolver.
+   * @throws Ninguno; ante error de catálogo devuelve `null`.
+   */
+  private async resolveTicketCategoryName(categoryId: number | null): Promise<string | null> {
+    if (!categoryId) return null;
+    try {
+      const categories = await this.catalogService.listCategories();
+      const category = categories.find((entry) => entry.id === categoryId);
+      return category ? category.fullPath || category.name : null;
+    } catch (error) {
+      this.logger.warn(
+        { categoryId, err: error },
+        `[mail] category lookup failed message=${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Emite correos de asignación/reasignación sin bloquear la respuesta HTTP.
    * @param input - Actores y metadatos del ticket.
    * @returns void
@@ -328,11 +350,18 @@ export class TicketsService {
           userIds.add(input.previousTechnicianId);
         }
 
-        const usersById = await this.loadUsersByIds(userIds);
+        const [usersById, categoryName] = await Promise.all([
+          this.loadUsersByIds(userIds),
+          this.resolveTicketCategoryName(input.ticket.categoryId),
+        ]);
         const technicianUser = usersById.get(input.technicianId);
         if (!technicianUser) {
           return;
         }
+        // `ticket.subject` es glpi_tickets.name, que ahora almacena el tag: el
+        // asunto visible del correo es la categoría.
+        const mailSubject = categoryName ?? input.ticket.subject;
+        const mailTag = input.ticket.subject;
         const requesterUser =
           input.ticket.requesterId != null
             ? usersById.get(input.ticket.requesterId) ?? null
@@ -363,7 +392,8 @@ export class TicketsService {
           if (notify.length > 0) {
             const payload: TicketAssignedEvent = {
               ticketId: input.ticket.id,
-              subject: input.ticket.subject,
+              subject: mailSubject,
+              tag: mailTag,
               technicianName: technicianUser.fullName,
               assignedBy,
               notify,
@@ -382,7 +412,8 @@ export class TicketsService {
         if (notify.length > 0) {
           const payload: TicketReassignedEvent = {
             ticketId: input.ticket.id,
-            subject: input.ticket.subject,
+            subject: mailSubject,
+            tag: mailTag,
             previousTechnicianName: previousTechnician?.fullName ?? "Técnico anterior",
             newTechnicianName: technicianUser.fullName,
             reassignedBy: assignedBy,
@@ -867,7 +898,7 @@ export class TicketsService {
     );
 
     const { ticket: created, source: createSource } = await this.applyCreateTicket({
-      name: dto.subject,
+      name: dto.tag?.trim() || "",
       content: dto.description,
       type: TicketMapper.mapTypeToGlpi(dto.type),
       status: statusGlpi,
@@ -905,6 +936,7 @@ export class TicketsService {
       ticketId: created.id,
       ticketType: dto.type,
       subject: dto.subject,
+      tag: dto.tag?.trim() || null,
       description: dto.description,
       requesterId,
       requesterNameFallback: "Solicitante",
@@ -1092,11 +1124,12 @@ export class TicketsService {
 
     if (previousStatus !== status) {
       void (async () => {
-        const [requesterUser, changedBy] = await Promise.all([
+        const [requesterUser, changedBy, categoryName] = await Promise.all([
           ticket.requesterId
             ? this.asService((key) => this.usersRepo.findById(key, ticket.requesterId!))
             : Promise.resolve(null),
           this.resolveActorDisplayName(user.id),
+          this.resolveTicketCategoryName(ticket.categoryId),
         ]);
         const recipients: MailRecipient[] = [];
         if (requesterUser?.email) {
@@ -1104,7 +1137,8 @@ export class TicketsService {
         }
         const payload: TicketStatusChangedEvent = {
           ticketId: id,
-          subject: ticket.subject,
+          subject: categoryName ?? ticket.subject,
+          tag: ticket.subject,
           previousStatus: TICKET_STATUS_LABELS[previousStatus],
           newStatus: TICKET_STATUS_LABELS[status],
           changedBy,
@@ -1316,6 +1350,70 @@ export class TicketsService {
     );
 
     return this.enrichTicket(this.patchTicketAfterRequesterUpdate(ticket, requesterId));
+  }
+
+  /**
+   * Actualiza el tag (glpi_tickets.name) del ticket. Solo super admin (guard en controller).
+   * @param ticketId - ID del ticket.
+   * @param tag - Nuevo tag (cadena vacía lo limpia); se recorta y limita a 15 caracteres.
+   * @returns Ticket enriquecido con el tag actualizado.
+   * @throws {BusinessException} Si el ticket no existe.
+   */
+  async updateTag(ticketId: number, tag: string): Promise<TicketResponseDto> {
+    const normalizedTag = (tag ?? "").trim().slice(0, 15);
+
+    const ticket = await this.findTicketForMutation(ticketId);
+    if (!ticket) {
+      throw new BusinessException({
+        message: `Ticket ${ticketId} not found`,
+        code: API_ERROR_CODE.NOT_FOUND,
+        status: HttpStatus.NOT_FOUND,
+      });
+    }
+
+    const tagSource = await this.applyUpdateName(ticketId, normalizedTag);
+    this.logger.info({ tagSource, ticketId }, "[tag] ticket tag updated");
+
+    return this.enrichTicket({
+      ...ticket,
+      subject: normalizedTag,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Actualiza el nombre/tag en SQL o GLPI reutilizando `GLPI_ASSIGN_SOURCE`.
+   * @param ticketId - ID del ticket.
+   * @param name - Nuevo valor de `glpi_tickets.name`.
+   * @returns Origen efectivo (`mysql` o `glpi-api`).
+   * @throws Propaga errores de API GLPI si SQL no actualiza filas.
+   */
+  private async applyUpdateName(
+    ticketId: number,
+    name: string,
+  ): Promise<TicketLocationSource> {
+    const assignSource = this.config.get("glpi.assignSource", { infer: true });
+
+    if (assignSource === "sql") {
+      try {
+        const updated = await this.createSqlRepo.updateName(ticketId, name);
+        if (updated) {
+          return "mysql";
+        }
+        this.logger.warn(
+          { tagSource: "glpi-fallback", reason: "sql_no_rows", ticketId },
+          "[tag] source=glpi-fallback reason=sql_no_rows",
+        );
+      } catch (error) {
+        this.logger.warn(
+          { tagSource: "glpi-fallback", reason: "sql_error", ticketId, err: error },
+          `[tag] source=glpi-fallback message=${(error as Error).message}`,
+        );
+      }
+    }
+
+    await this.asService((key) => this.ticketsRepo.updateName(key, ticketId, name));
+    return "glpi-api";
   }
 
   /**
@@ -1697,6 +1795,7 @@ export class TicketsService {
     ticketId: number;
     ticketType: TicketType;
     subject: string;
+    tag?: string | null;
     description: string;
     requesterId: number | null;
     requesterNameFallback: string;
@@ -1737,6 +1836,7 @@ export class TicketsService {
       ticketId: input.ticketId,
       type: TICKET_TYPE_LABELS[input.ticketType],
       subject: input.subject,
+      tag: input.tag ?? null,
       description: input.description,
       requesterName:
         (input.requesterId ? usersById.get(input.requesterId)?.fullName : null) ??
@@ -1870,8 +1970,9 @@ export class TicketsService {
       status: ticket.status,
       urgency: ticket.urgency,
       subject: ticket.subject,
+      tag: ticket.subject?.trim() ? ticket.subject.trim() : null,
       description: ticket.description,
-      category: category ? { id: category.id, name: category.name } : null,
+      category: category ? { id: category.id, name: category.fullPath || category.name } : null,
       location: location
         ? { id: location.id, name: location.name || location.fullPath }
         : null,

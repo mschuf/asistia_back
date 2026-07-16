@@ -492,6 +492,7 @@ export class TicketsHistorySqlRepository {
       status: this.parseStatus(row),
       urgency: this.parseUrgency(row),
       subject: row.subject ?? "",
+      tag: row.subject?.trim() ? row.subject.trim() : null,
       description: htmlToPlainText(row.description_raw),
       category:
         categoryId && categoryName

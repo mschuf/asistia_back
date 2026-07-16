@@ -31,6 +31,16 @@ export class CreateTicketDto {
   @MaxLength(200)
   subject!: string;
 
+  @ApiPropertyOptional({
+    example: "URGENTE",
+    maxLength: 15,
+    description: "Tag corto (glpi_tickets.name). Solo lo envía TI/super admin.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(15)
+  tag?: string;
+
   @ApiProperty({ example: "Outlook devuelve el error 0x80004005 al iniciar.", minLength: 10 })
   @IsString()
   @IsNotEmpty()

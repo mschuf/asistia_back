@@ -124,6 +124,32 @@ export class TicketsCreateSqlRepository {
   }
 
   /**
+   * Actualiza el nombre/tag (`glpi_tickets.name`) del ticket.
+   * @param ticketId - ID del ticket GLPI.
+   * @param name - Nuevo valor de `name` (tag).
+   * @returns `true` si se actualizó al menos una fila.
+   * @throws Error de base de datos si la transacción falla.
+   */
+  async updateName(ticketId: number, name: string): Promise<boolean> {
+    return this.mysql.withTransaction(async (connection) => {
+      const exists = await this.ticketExists(connection, ticketId);
+      if (!exists) return false;
+
+      const options: QueryOptions = {
+        sql: `UPDATE glpi_tickets
+              SET name = :name, date_mod = NOW()
+              WHERE id = :ticketId AND COALESCE(is_deleted, 0) = 0`,
+        namedPlaceholders: true,
+      };
+      const [result] = await connection.query<ResultSetHeader>(options, {
+        ticketId,
+        name,
+      } as QueryValues);
+      return result.affectedRows > 0;
+    });
+  }
+
+  /**
    * Actualiza el solicitante del ticket en `glpi_tickets_users`.
    * @param ticketId - ID del ticket GLPI.
    * @param requesterId - ID del nuevo solicitante.

@@ -2,13 +2,15 @@
  * @file ticket-reassigned.template.ts
  * @description Plantillas de correo para notificar la reasignación de un ticket.
  */
-import { escapeHtml } from "./html-utils";
+import { escapeHtml, formatSubjectWithTag } from "./html-utils";
 import type { TicketReassignedRecipientRole } from "../mail.events";
 
 /** Datos de entrada para plantillas de ticket reasignado. */
 export interface TicketReassignedTemplateInput {
   ticketId: number;
   subject: string;
+  /** Tag corto; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   previousTechnicianName: string;
   newTechnicianName: string;
   reassignedBy: string;
@@ -53,7 +55,7 @@ export function buildTicketReassignedHtml(
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
       <h2>Ticket #${input.ticketId}</h2>
-      <p><strong>Asunto:</strong> ${escapeHtml(input.subject)}</p>
+      <p><strong>Asunto:</strong> ${escapeHtml(formatSubjectWithTag(input.subject, input.tag))}</p>
       <p>${intro}</p>
       <p>Técnico anterior: <strong>${escapeHtml(input.previousTechnicianName)}</strong></p>
       <p>Nuevo técnico: <strong>${escapeHtml(input.newTechnicianName)}</strong></p>
@@ -79,5 +81,5 @@ export function buildTicketReassignedText(
         ? `El ticket #${input.ticketId} fue reasignado y ya no figura bajo su responsabilidad.`
         : `Se le reasignó el ticket #${input.ticketId}.`;
 
-  return `${intro} Asunto: "${input.subject}". Técnico anterior: ${input.previousTechnicianName}. Nuevo técnico: ${input.newTechnicianName}. Reasignado por ${input.reassignedBy}.`;
+  return `${intro} Asunto: "${formatSubjectWithTag(input.subject, input.tag)}". Técnico anterior: ${input.previousTechnicianName}. Nuevo técnico: ${input.newTechnicianName}. Reasignado por ${input.reassignedBy}.`;
 }

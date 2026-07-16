@@ -2,7 +2,7 @@
  * @file ticket-created.template.ts
  * @description Plantillas de correo para notificar la creación de un ticket según el rol del destinatario.
  */
-import { escapeHtml, stripHtml } from "./html-utils";
+import { escapeHtml, formatSubjectWithTag, stripHtml } from "./html-utils";
 import type { TicketCreatedRecipientRole } from "../mail.events";
 
 /** Datos de entrada para plantillas de ticket creado. */
@@ -10,6 +10,8 @@ export interface TicketCreatedTemplateInput {
   ticketId: number;
   type: string;
   subject: string;
+  /** Tag corto; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   description: string;
   requesterName: string;
   technicianName: string | null;
@@ -24,7 +26,7 @@ export interface TicketCreatedTemplateInput {
  */
 function buildDetailsRows(input: TicketCreatedTemplateInput): string {
   return [
-    `<tr><td style="padding:4px 8px;"><strong>Asunto</strong></td><td style="padding:4px 8px;">${escapeHtml(input.subject)}</td></tr>`,
+    `<tr><td style="padding:4px 8px;"><strong>Asunto</strong></td><td style="padding:4px 8px;">${escapeHtml(formatSubjectWithTag(input.subject, input.tag))}</td></tr>`,
     `<tr><td style="padding:4px 8px;"><strong>Tipo</strong></td><td style="padding:4px 8px;">${escapeHtml(input.type)}</td></tr>`,
     `<tr><td style="padding:4px 8px;"><strong>Solicitante</strong></td><td style="padding:4px 8px;">${escapeHtml(input.requesterName)}</td></tr>`,
     `<tr><td style="padding:4px 8px;"><strong>Técnico</strong></td><td style="padding:4px 8px;">${escapeHtml(input.technicianName ?? "Sin asignar")}</td></tr>`,
@@ -44,7 +46,7 @@ function buildDetailsRows(input: TicketCreatedTemplateInput): string {
  */
 function buildDetailsText(input: TicketCreatedTemplateInput): string[] {
   return [
-    `Asunto: ${input.subject}`,
+    `Asunto: ${formatSubjectWithTag(input.subject, input.tag)}`,
     `Tipo: ${input.type}`,
     `Solicitante: ${input.requesterName}`,
     `Técnico: ${input.technicianName ?? "Sin asignar"}`,

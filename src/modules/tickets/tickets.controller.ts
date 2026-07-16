@@ -33,6 +33,7 @@ import { TicketsService, type HistoryListMeta } from "./tickets.service";
 import { TicketsCloseService } from "./tickets-close.service";
 import { CreateTicketDto } from "./dto/create-ticket.dto";
 import { UpdateTicketStatusDto } from "./dto/update-ticket-status.dto";
+import { UpdateTicketTagDto } from "./dto/update-ticket-tag.dto";
 import { AssignTechnicianDto } from "./dto/assign-technician.dto";
 import { UpdateTicketLocationDto } from "./dto/update-ticket-location.dto";
 import { UpdateTicketRequesterDto } from "./dto/update-ticket-requester.dto";
@@ -231,6 +232,26 @@ export class TicketsController {
     @Body() dto: UpdateTicketStatusDto,
   ): Promise<UpdateTicketStatusResponseDto> {
     return this.ticketsService.updateStatus(user, id, dto.status, dto.resolutionNote);
+  }
+
+  /**
+   * Actualiza el tag (glpi_tickets.name) del ticket. Solo super admin.
+   * @param id - ID del ticket.
+   * @param dto - Nuevo tag (máximo 15 caracteres; vacío lo limpia).
+   * @returns Ticket enriquecido con el tag actualizado.
+   * @throws {BusinessException} Si el ticket no existe o el usuario no es super admin.
+   */
+  @Patch(":id/tag")
+  @SuperAdmin()
+  @UseGuards(SuperAdminGuard)
+  @ApiOperation({ summary: "Update the tag (glpi_tickets.name) of a ticket (super admin)" })
+  @ApiResponse({ status: 200, type: TicketResponseDto })
+  @ResponseMessage("Ticket tag updated")
+  async updateTag(
+    @Param("id", ParseIntPipe) id: number,
+    @Body() dto: UpdateTicketTagDto,
+  ): Promise<TicketResponseDto> {
+    return this.ticketsService.updateTag(id, dto.tag);
   }
 
   /**

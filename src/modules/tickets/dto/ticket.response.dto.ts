@@ -55,6 +55,13 @@ export class TicketResponseDto {
   @ApiProperty({ example: "No puedo abrir Outlook" })
   subject!: string;
 
+  @ApiProperty({
+    example: "URGENTE",
+    nullable: true,
+    description: "Tag corto (glpi_tickets.name). Se muestra entre corchetes junto a la categoría.",
+  })
+  tag!: string | null;
+
   @ApiProperty({ nullable: true })
   description!: string | null;
 

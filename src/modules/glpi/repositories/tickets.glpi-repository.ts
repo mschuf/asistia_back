@@ -1157,6 +1157,27 @@ export class TicketsGlpiRepository {
   }
 
   /**
+   * Actualiza el nombre/tag (`glpi_tickets.name`) del ticket vía PUT.
+   * @param sessionKey - Clave de sesión GLPI.
+   * @param ticketId - ID del ticket.
+   * @param name - Nuevo valor de `name` (tag).
+   * @returns `Promise<void>`
+   * @throws {GlpiException} Si GLPI rechaza la petición.
+   */
+  async updateName(
+    sessionKey: string,
+    ticketId: number,
+    name: string,
+  ): Promise<void>  {
+    await this.glpi.request<unknown>({
+      method: "PUT",
+      path: `${GLPI_ENDPOINTS.TICKET}/${ticketId}`,
+      sessionKey,
+      body: { input: { id: ticketId, name } },
+    });
+  }
+
+  /**
 
    * Actualiza el solicitante del ticket vía PUT o POST en Ticket_User.
    * @returns Resultado de la operación.

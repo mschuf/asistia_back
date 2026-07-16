@@ -414,6 +414,7 @@ export class TicketsCloseSqlRepository {
       status: TicketMapper.mapStatus(Number(row.status_glpi ?? 1)),
       urgency: TicketMapper.mapUrgency(Number(row.urgency_glpi ?? 3)),
       subject: row.subject ?? "",
+      tag: row.subject?.trim() ? row.subject.trim() : null,
       description: htmlToPlainText(row.description_raw),
       category: categoryId && row.category_name ? { id: categoryId, name: row.category_name } : null,
       location: locationId ? { id: locationId, name: row.location_name } : null,

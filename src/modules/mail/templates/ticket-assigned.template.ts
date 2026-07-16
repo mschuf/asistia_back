@@ -2,13 +2,15 @@
  * @file ticket-assigned.template.ts
  * @description Plantillas de correo para notificar la asignación inicial de un ticket.
  */
-import { escapeHtml } from "./html-utils";
+import { escapeHtml, formatSubjectWithTag } from "./html-utils";
 import type { TicketAssignedRecipientRole } from "../mail.events";
 
 /** Datos de entrada para plantillas de ticket asignado. */
 export interface TicketAssignedTemplateInput {
   ticketId: number;
   subject: string;
+  /** Tag corto; se concatena entre corchetes al asunto del cuerpo. */
+  tag?: string | null;
   technicianName: string;
   assignedBy: string;
 }
@@ -47,7 +49,7 @@ export function buildTicketAssignedHtml(
   return `
     <div style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
       <h2>Ticket #${input.ticketId}</h2>
-      <p><strong>Asunto:</strong> ${escapeHtml(input.subject)}</p>
+      <p><strong>Asunto:</strong> ${escapeHtml(formatSubjectWithTag(input.subject, input.tag))}</p>
       <p>${message}</p>
       <p>Técnico asignado: <strong>${escapeHtml(input.technicianName)}</strong></p>
       <p>Asignado por: ${escapeHtml(input.assignedBy)}</p>
@@ -70,5 +72,5 @@ export function buildTicketAssignedText(
       ? `Su ticket #${input.ticketId} fue asignado a ${input.technicianName}.`
       : `Se le asignó el ticket #${input.ticketId}.`;
 
-  return `${intro} Asunto: "${input.subject}". Técnico asignado: ${input.technicianName}. Asignado por ${input.assignedBy}.`;
+  return `${intro} Asunto: "${formatSubjectWithTag(input.subject, input.tag)}". Técnico asignado: ${input.technicianName}. Asignado por ${input.assignedBy}.`;
 }
